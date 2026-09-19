@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Shell, type Page } from '../layouts/Shell'
 import { Dashboard } from '../pages/Dashboard'
 import { Create } from '../pages/Create'
+import { Library } from '../pages/Library'
 import { Projects } from '../pages/Projects'
 import { Project } from '../pages/Project'
 import { Settings } from '../pages/Settings'
@@ -27,6 +28,7 @@ export function App() {
         {page === 'dashboard' && <Dashboard onCreate={() => setPage('create')} onOpen={open} onAll={() => setPage('projects')} />}
         {page === 'create' && <Create onCreated={open} />}
         {page === 'projects' && <Projects onOpen={open} onCreate={() => setPage('create')} />}
+        {page === 'library' && <Library onCreate={() => setPage('create')} />}
         {page === 'project' && openProject && (
           <Project id={openProject} onBack={() => setPage('projects')} onSettings={() => setPage('settings')} />
         )}

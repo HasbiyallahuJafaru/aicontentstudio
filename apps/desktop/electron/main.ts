@@ -1,13 +1,21 @@
-import { app, BrowserWindow, ipcMain, Menu, screen, shell } from 'electron'
-import { join, resolve } from 'node:path'
+import { app, BrowserWindow, ipcMain, Menu, net, protocol, screen, shell } from 'electron'
+import { existsSync } from 'node:fs'
+import { join, resolve, sep } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { createBackend, type BackendStatus } from './backend'
 import { createSecrets, type SecretName } from './secrets'
 
 const dev = !app.isPackaged
 const dataDir = process.env.ACS_DATA_DIR || (dev ? resolve(app.getAppPath(), '../../data') : join(app.getPath('userData'), 'data'))
+const mediaDir = join(dataDir, 'media')
 const secrets = createSecrets(join(app.getPath('userData'), 'secrets.json'))
 let status: BackendStatus = { state: 'starting' }
 let backend: ReturnType<typeof createBackend>
+
+// Library thumbnails reach the sandboxed renderer over this scheme (it cannot read files itself).
+protocol.registerSchemesAsPrivileged([
+  { scheme: 'media', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } },
+])
 
 const broadcast = (channel: string, ...args: unknown[]) =>
   BrowserWindow.getAllWindows().forEach((w) => { try { w.webContents.send(channel, ...args) } catch { /* window closing */ } })
@@ -37,6 +45,14 @@ function createWindow() {
 
 app.whenReady().then(() => {
   Menu.setApplicationMenu(null)
+  protocol.handle('media', (req) => {
+    // media:///thumbs/x.bmp and media://thumbs/x.bmp are the same URL once parsed; take host + path.
+    const u = new URL(req.url)
+    const rel = decodeURIComponent(`${u.host}${u.pathname}`).replace(/^\/+/, '')
+    const file = resolve(mediaDir, rel)
+    if (!file.startsWith(mediaDir + sep) || !existsSync(file)) return new Response('Not found', { status: 404 })
+    return net.fetch(pathToFileURL(file).toString())
+  })
   backend = createBackend({
     backendDir: dev ? resolve(app.getAppPath(), '../backend') : join(process.resourcesPath, 'backend'),
     dataDir,

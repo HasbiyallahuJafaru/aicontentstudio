@@ -95,7 +95,7 @@ export function Settings() {
 
       <Section title="Content defaults" description="Pre-filled every time you start a new project.">
         <Field label="Topic">{(id) => <Input id={id} value={form.default_topic} onChange={(e) => set('default_topic', e.target.value)} />}</Field>
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-3 gap-4">
           <Field label="Tone">
             {(id) => (
               <select id={id} value={form.default_tone} onChange={(e) => set('default_tone', e.target.value as S['default_tone'])}
@@ -107,6 +107,10 @@ export function Settings() {
           <Field label="Quantity" hint="1 to 20 pieces.">
             {(id) => <Input id={id} type="number" min={1} max={20} className="tnum" value={form.default_quantity}
               onChange={(e) => set('default_quantity', Number(e.target.value))} />}
+          </Field>
+          <Field label="Asset cooldown" hint="Days before a visually similar asset can be used again.">
+            {(id) => <Input id={id} type="number" min={0} max={365} className="tnum" value={form.asset_cooldown_days}
+              onChange={(e) => set('asset_cooldown_days', Number(e.target.value))} />}
           </Field>
         </div>
       </Section>

@@ -10,7 +10,7 @@ os.environ.setdefault("ACS_DATA_DIR", tempfile.mkdtemp())
 
 import httpx  # noqa: E402
 
-from app import content, database, jobs, projects  # noqa: E402
+from app import assets, content, database, jobs, projects  # noqa: E402
 from app.creative import model as creative  # noqa: E402
 from app.creative.schemas import BatchPlan, PieceContent  # noqa: E402
 from app.errors import UserError  # noqa: E402
@@ -49,7 +49,9 @@ class FakeModel(creative.CreativeModel):
 
 
 def run_job(project_id: str, model) -> dict:
-    with mock.patch.object(content, "get_model", lambda: model), mock.patch.object(jobs, "emit"):
+    # content tests run without visuals: no provider hits, no fixture server needed here (test_assets covers that)
+    with mock.patch.object(content, "get_model", lambda: model), \
+            mock.patch.object(assets, "get_providers", lambda: []), mock.patch.object(jobs, "emit"):
         job = jobs.start(project_id)
         for _ in range(200):
             job = jobs.get(job["id"])

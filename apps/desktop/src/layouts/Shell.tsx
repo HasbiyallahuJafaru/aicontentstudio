@@ -1,15 +1,15 @@
 import type { ReactNode } from 'react'
-import { Aperture, Folders, GearSix, PlusCircle, SquaresFour, type Icon } from '@phosphor-icons/react'
+import { Aperture, Folders, GearSix, Images, PlusCircle, SquaresFour, type Icon } from '@phosphor-icons/react'
 import { studio, useBackendStatus } from '../lib/studio'
 import { Button, ErrorNote, cx } from '../components/ui'
 
-export type Page = 'dashboard' | 'create' | 'projects' | 'project' | 'settings'
+export type Page = 'dashboard' | 'create' | 'projects' | 'project' | 'library' | 'settings'
 
-// Library, Queue and Exports join this list in the phases that give them real content.
 const NAV: { id: Page; label: string; icon: Icon }[] = [
   { id: 'dashboard', label: 'Dashboard', icon: SquaresFour },
   { id: 'create', label: 'Create', icon: PlusCircle },
   { id: 'projects', label: 'Projects', icon: Folders },
+  { id: 'library', label: 'Library', icon: Images },
 ]
 
 function RailItem({ id, label, icon: I, active, onClick }: { id: Page; label: string; icon: Icon; active: boolean; onClick: (p: Page) => void }) {

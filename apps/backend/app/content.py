@@ -1,11 +1,11 @@
-"""Content generation pipeline (Milestone 2): brief → batch plan → one piece per plan item, never repeating history."""
+"""Content generation pipeline (Milestone 2+3): brief → batch plan → one piece per plan item → one visual per piece."""
 import json
 import re
 import uuid
 from difflib import SequenceMatcher
 from typing import Callable
 
-from app import projects
+from app import assets, projects
 from app.creative.model import get_model
 from app.database import connect
 
@@ -34,10 +34,12 @@ def _history(limit: int) -> tuple[list[str], list[str]]:
     return [r["quote"] for r in rows], [re.split(r"(?<=[.!?])\s", r["n"] or "", maxsplit=1)[0] for r in rows[:20]]
 
 
-def _insert(project_id: str, idx: int, angle: str, quote: str, content: dict, status: str = "written") -> None:
+def _insert(project_id: str, idx: int, angle: str, quote: str, content: dict, status: str = "written") -> str:
+    id = uuid.uuid4().hex[:12]
     with connect() as conn:
         conn.execute("INSERT INTO content_pieces (id, project_id, idx, status, angle, quote, content) VALUES (?,?,?,?,?,?,?)",
-                     (uuid.uuid4().hex[:12], project_id, idx, status, angle, quote, json.dumps(content, ensure_ascii=False)))
+                     (id, project_id, idx, status, angle, quote, json.dumps(content, ensure_ascii=False)))
+    return id
 
 
 def generate(project_id: str, report: Callable[[str, float], None]) -> None:
@@ -45,6 +47,7 @@ def generate(project_id: str, report: Callable[[str, float], None]) -> None:
     n = brief["quantity"]
     model = get_model()
     history, openings = _history(200)
+    total = 2 * n + 1  # plan + write + visual per piece; keeps the progress bar honest through both phases
 
     report(f"Planning {n} {'angle' if n == 1 else 'angles'}", 0.02)
     plan = model.plan_batch(brief, history[:30] + openings)
@@ -52,8 +55,9 @@ def generate(project_id: str, report: Callable[[str, float], None]) -> None:
     with connect() as conn:  # the new plan replaces any earlier pieces of this project
         conn.execute("DELETE FROM content_pieces WHERE project_id = ?", (project_id,))
     batch: list[str] = []
+    written: list[dict] = []
     for i, item in enumerate(plan.pieces, 1):
-        report(f"Writing piece {i} of {n}", i / (n + 1))
+        report(f"Writing piece {i} of {n}", i / total)
         avoid = batch + history[:30] + openings
         for _ in range(PIECE_ATTEMPTS):
             piece = model.write_piece(brief, plan, item, avoid)
@@ -67,8 +71,10 @@ def generate(project_id: str, report: Callable[[str, float], None]) -> None:
                     {**content, "error": f'Every attempt repeated an earlier line: "{repeat}"'}, status="failed")
         else:
             batch.append(piece.quote.text)
-            _insert(project_id, i, item.angle, piece.quote.text, content)
-    report("Written", 1.0)
+            written.append({"id": _insert(project_id, i, item.angle, piece.quote.text, content), "content": content})
+    if written:
+        assets.assign(brief, written, report)  # same (stage, 0..1) scale: it counts the same total steps
+    report("Done", 1.0)
 
 
 def pieces(project_id: str) -> list[dict]:

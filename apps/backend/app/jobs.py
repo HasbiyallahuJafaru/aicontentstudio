@@ -89,7 +89,7 @@ def _run(job_id: str, project_id: str) -> None:
              error=json.dumps({"message": "Generation failed unexpectedly.", "detail": repr(e)}))
     else:
         _project_status(project_id, "ready")
-        _set(job_id, "job.completed", status="completed", stage="Written", progress=1.0)
+        _set(job_id, "job.completed", status="completed", stage="Done", progress=1.0)
     finally:
         _cancelled.discard(job_id)
 

@@ -7,6 +7,7 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 # Electron passes ACS_DATA_DIR (userData/data when packaged); dev default is <repo>/data.
 DATA_DIR = Path(os.environ.get("ACS_DATA_DIR") or REPO_ROOT / "data")
 DB_PATH = DATA_DIR / "app.db"
+MEDIA_DIR = DATA_DIR / "media"
 
 # API keys, pushed by Electron main via "secrets.load". Dev fallback: <repo>/.env.
 SECRETS: dict[str, str] = {}

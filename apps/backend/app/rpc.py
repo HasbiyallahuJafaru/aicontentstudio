@@ -5,7 +5,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 from pydantic import ValidationError
 
-from app import config, content, database, jobs, projects, settings
+from app import assets, config, content, database, jobs, projects, settings
 from app.errors import UserError
 from app.events import emit, send
 
@@ -31,6 +31,7 @@ METHODS = {
     "projects.delete": projects.delete,
     "pieces.list": content.pieces,
     "pieces.recent": content.recent,
+    "assets.list": assets.list_assets,
     "app.stats": content.stats,
     "jobs.start": jobs.start,
     "jobs.cancel": jobs.cancel,

@@ -24,12 +24,20 @@ export type PieceContent = {
   visual: { preferred_type: 'video' | 'image'; search_query: string; secondary_query: string; mood: string }
   design: { text_density: string; animation: string; composition: string }
   metadata: { title: string; description: string; caption: string; hashtags: string[]; keywords: string[]; alt_text: string }
+  asset?: { id: string; provider: string; asset_type: string }
+  visual_error?: string
   error?: string
 }
 export type Piece = { id: string; idx: number; status: string; angle: string; quote: string; content: PieceContent }
+export type Asset = {
+  id: string; provider: 'pexels' | 'unsplash'; asset_type: 'image' | 'video'; creator: string; license: string
+  source_url: string; width: number; height: number; fps: number; duration: number; created_at: string
+  thumb_path: string; times_used: number; last_used_at: string | null
+}
 export type Settings = {
   ai_model: string; ai_temperature: number; ai_max_tokens: number
   default_topic: string; default_tone: Tone; default_quantity: number
+  asset_cooldown_days: number; asset_weights: Record<string, number>
 }
 export type BackendStatus = { state: 'starting' | 'ready' | 'crashed' | 'stopped'; message?: string; detail?: string }
 export type SecretName = 'DEEPSEEK_API_KEY' | 'PEXELS_API_KEY' | 'UNSPLASH_ACCESS_KEY'
@@ -83,6 +91,9 @@ export function useQuery<T>(method: string, params?: object, refresh?: unknown) 
 }
 
 export const label = (s: string) => s.charAt(0).toUpperCase() + s.slice(1).replace('_', ' ')
+
+/** Local media file (paths are stored relative to the media folder, posix style). */
+export const mediaUrl = (rel: string) => `media:///${rel.replace(/\\/g, '/')}`
 
 export function formatDate(iso: string) {
   const d = new Date(iso)

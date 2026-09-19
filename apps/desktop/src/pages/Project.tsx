@@ -128,6 +128,10 @@ function PieceRow({ piece: p }: { piece: Piece }) {
         <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-5 gap-y-1.5 text-xs">
           <dt className="text-ink-3">Visual</dt>
           <dd data-selectable className="text-ink-2">{label(c.visual.preferred_type)}: {c.visual.search_query}</dd>
+          {c.visual_error && (<>
+            <dt className="text-ink-3">Asset</dt>
+            <dd className="text-danger">{c.visual_error}</dd>
+          </>)}
           <dt className="text-ink-3">Delivery</dt>
           <dd className="text-ink-2">{label(c.narration.delivery.replace('_', ' '))}, {c.design.composition} composition, {c.design.animation} motion</dd>
         </dl>
