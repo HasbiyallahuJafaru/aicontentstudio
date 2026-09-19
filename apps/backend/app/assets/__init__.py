@@ -9,7 +9,7 @@ from itertools import groupby
 
 from PIL import Image
 
-from app import config, settings
+from app import config, settings, visual
 from app.assets.providers import Candidate, VisualProvider, get_providers
 from app.database import connect
 from app.errors import UserError
@@ -46,12 +46,15 @@ def suitable(c: Candidate) -> bool:
     return True
 
 
-def score(c: Candidate, rank: int, pool: int, times_used: int, weights: dict[str, float]) -> float:
+def score(c: Candidate, rank: int, pool: int, times_used: int, weights: dict[str, float], a: dict) -> float:
     live = {
         "relevance": 1 - rank / max(pool, 1),                        # provider search order is its relevance signal
         "novelty": 1 / (1 + times_used),                             # unused beats used; used only reached via fallback
-        "visual_quality": min(max(c.height, MIN_HEIGHT) / 1920, 1),  # resolution proxy until M4 analysis
-        # composition / brand / color arrive with M4 analysis, motion with M5; until then they score 0 in place.
+        "visual_quality": 0.5 * min(max(c.height, MIN_HEIGHT) / 1920, 1) + 0.5 * visual.quality(a),
+        "composition": 1.0 if a["subject_position"] != "center" else 0.6,  # keep the middle free for the quote
+        "brand": visual.no_neon(a["saturation"]),                    # PRD §24: premium and restrained, never neon
+        "color": min(len(a["dominant_colors"]) / 3, 1.0),            # palette richness
+        # motion arrives with M5 frame analysis; until then it scores 0 in place.
     }
     return sum(w * live.get(k, 0.0) for k, w in weights.items())
 
@@ -127,19 +130,29 @@ async def _pick(providers: list[VisualProvider], query: str, wanted: str,
                                    (c.provider, c.provider_asset_id)).fetchone()
             used = ever.get((c.provider, c.provider_asset_id), [0, None])
             phash, themes = (row["perceptual_hash"], row["themes"]) if row else ("", "[]")
+            meta: dict = {}
+            if row:
+                try:  # already in the library: re-analyse its stored thumbnail (also backfills pre-M4 rows)
+                    thumb = (config.MEDIA_DIR / row["thumb_path"]).read_bytes()
+                except OSError:
+                    continue
+                a = visual.analyze(thumb)
+            else:
+                meta["thumb"] = await provider.download_thumb(c)  # metadata + thumbnails first (PRD §64)
+                phash = dhash(meta["thumb"])
+                a = visual.analyze(meta["thumb"])
+                meta["themes"] = json.dumps(visual.themes_from_query(query))
             if used[0]:
                 if fallback is None or used < fallback[0]:
                     fallback = (used, c)  # PRD §18: never reuse until the pool is exhausted; then least-used first
                 continue
-            meta: dict = {}
-            if not row:  # new to the library: fetch the cheap thumbnail for the perceptual check (PRD §64)
-                meta["thumb"] = await provider.download_thumb(c)
-                phash = dhash(meta["thumb"])
+            if visual.quality(a) < visual.QUALITY_FLOOR:
+                continue  # PRD §78: technically poor assets are never offered
             if _cooled_out(phash, json.loads(themes), recent):
                 continue
-            s = score(c, rank, len(block), 0, weights)
+            s = score(c, rank, len(block), 0, weights, a)
             if best is None or s > best[0]:
-                best = (s, c, meta | {"phash": phash, "themes": themes})
+                best = (s, c, meta | {"analysis": a})
     if best:
         return best[1], best[2]
     if fallback:  # every candidate was used: the pool for this query is exhausted, fall back per PRD §18
@@ -163,13 +176,31 @@ async def _assign_one(brief: dict, piece: dict, providers: list[VisualProvider],
 
     provider = next(p for p in providers if p.name == best.provider)
     with connect() as conn:
-        row = conn.execute("SELECT id, thumb_path, perceptual_hash, themes FROM assets "
+        row = conn.execute("SELECT id, thumb_path, perceptual_hash, themes, quality_score FROM assets "
                            "WHERE provider = ? AND provider_asset_id = ?", (best.provider, best.provider_asset_id)).fetchone()
     if row:
         asset_id, phash, themes = row["id"], row["perceptual_hash"], row["themes"]
+        if "analysis" not in meta:  # fallback winner: analyse its stored thumbnail instead of a new download
+            meta["thumb"] = (config.MEDIA_DIR / row["thumb_path"]).read_bytes()
+            meta["analysis"] = visual.analyze(meta["thumb"])
+    else:
+        if "analysis" not in meta:  # brand-new fallback winner: fetch its thumbnail for analysis
+            meta["thumb"] = await provider.download_thumb(best)
+            meta["analysis"] = visual.analyze(meta["thumb"])
+    a = meta["analysis"]
+    if row:
+        if row["quality_score"] is None:  # backfill the analysis columns on pre-M4 rows
+            with connect() as conn:
+                conn.execute("UPDATE assets SET brightness = ?, saturation = ?, contrast = ?, dominant_colors = ?, "
+                             "subject_position = ?, visual_complexity = ?, temperature = ?, quality_score = ?, "
+                             "themes = CASE WHEN themes = '[]' THEN ? ELSE themes END WHERE id = ?",
+                             (a["brightness"], a["saturation"], a["contrast"], json.dumps(a["dominant_colors"]),
+                              a["subject_position"], a["visual_complexity"], a["temperature"], visual.quality(a),
+                              meta.get("themes", "[]"), asset_id))
     else:
         asset_id = uuid.uuid4().hex[:12]
-        phash, themes = meta["phash"], meta["themes"]
+        phash = dhash(meta["thumb"])
+        themes = meta["themes"]
         data = await provider.download(best)
         aext = "mp4" if best.asset_type == "video" else "jpg"  # ponytail: providers only serve mp4/jpeg today
         text = Image.open(io.BytesIO(meta["thumb"])).format.lower()  # thumbs arrive as jpeg/bmp/webp; trust the bytes
@@ -178,14 +209,18 @@ async def _assign_one(brief: dict, piece: dict, providers: list[VisualProvider],
         with connect() as conn:
             conn.execute(
                 "INSERT INTO assets (id, provider, provider_asset_id, asset_type, creator, license, source_url, "
-                "local_path, thumb_path, width, height, fps, duration, hash, perceptual_hash) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                "local_path, thumb_path, width, height, fps, duration, hash, perceptual_hash, brightness, saturation, "
+                "contrast, dominant_colors, subject_position, visual_complexity, temperature, quality_score, themes) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (asset_id, best.provider, best.provider_asset_id, best.asset_type, best.creator, provider.LICENSE,
                  best.source_url, f"assets/{asset_id}.{aext}", f"thumbs/{asset_id}.{text}", best.width, best.height,
-                 best.fps, best.duration, hashlib.sha256(data).hexdigest(), phash))
+                 best.fps, best.duration, hashlib.sha256(data).hexdigest(), phash, a["brightness"], a["saturation"],
+                 a["contrast"], json.dumps(a["dominant_colors"]), a["subject_position"], a["visual_complexity"],
+                 a["temperature"], visual.quality(a), themes))
     with connect() as conn:
         conn.execute("INSERT OR IGNORE INTO asset_usage (asset_id, piece_id) VALUES (?, ?)", (asset_id, piece["id"]))
         content["asset"] = {"id": asset_id, "provider": best.provider, "asset_type": best.asset_type}
+        content["palette"] = visual.palette(a["dominant_colors"])
         conn.execute("UPDATE content_pieces SET content = ? WHERE id = ?",
                      (json.dumps(content, ensure_ascii=False), piece["id"]))
     _remember(best.provider, best.provider_asset_id, phash, themes, ever, recent)
@@ -225,8 +260,9 @@ def assign(brief: dict, pieces: list[dict], report) -> None:
 def list_assets() -> list[dict]:
     with connect() as conn:
         rows = conn.execute("SELECT a.id, a.provider, a.asset_type, a.creator, a.license, a.source_url, a.width, "
-                            "a.height, a.fps, a.duration, a.created_at, a.thumb_path, "
+                            "a.height, a.fps, a.duration, a.created_at, a.thumb_path, a.dominant_colors, "
+                            "a.brightness, a.quality_score, "
                             "(SELECT count(*) FROM asset_usage u WHERE u.asset_id = a.id) AS times_used, "
                             "(SELECT max(u.created_at) FROM asset_usage u WHERE u.asset_id = a.id) AS last_used_at "
                             "FROM assets a ORDER BY a.created_at DESC, a.id DESC").fetchall()
-    return [dict(r) for r in rows]
+    return [{**dict(r), "dominant_colors": json.loads(r["dominant_colors"])} for r in rows]

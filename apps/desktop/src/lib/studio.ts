@@ -32,7 +32,8 @@ export type Piece = { id: string; idx: number; status: string; angle: string; qu
 export type Asset = {
   id: string; provider: 'pexels' | 'unsplash'; asset_type: 'image' | 'video'; creator: string; license: string
   source_url: string; width: number; height: number; fps: number; duration: number; created_at: string
-  thumb_path: string; times_used: number; last_used_at: string | null
+  thumb_path: string; dominant_colors: string[]; brightness: number | null; quality_score: number | null
+  times_used: number; last_used_at: string | null
 }
 export type Settings = {
   ai_model: string; ai_temperature: number; ai_max_tokens: number

@@ -7,6 +7,7 @@ import { Button, Choices, ErrorNote, PageHeader, cx } from '../components/ui'
 type Usage = 'all' | 'never' | 'recent'
 
 const RECENT_DAYS = 7
+const HIGH_QUALITY = 0.6 // matches the technical quality score the analyser stores per asset
 
 function recentlyUsed(a: Asset) {
   if (!a.last_used_at) return false
@@ -18,10 +19,12 @@ export function Library({ onCreate }: { onCreate: () => void }) {
   const [type, setType] = useState<'all' | 'image' | 'video'>('all')
   const [provider, setProvider] = useState<'all' | 'pexels' | 'unsplash'>('all')
   const [usage, setUsage] = useState<Usage>('all')
+  const [quality, setQuality] = useState<'all' | 'high'>('all')
 
   const assets = (data ?? []).filter((a) => (type === 'all' || a.asset_type === type)
     && (provider === 'all' || a.provider === provider)
-    && (usage === 'all' || (usage === 'never' ? a.times_used === 0 : recentlyUsed(a))))
+    && (usage === 'all' || (usage === 'never' ? a.times_used === 0 : recentlyUsed(a)))
+    && (quality === 'all' || (a.quality_score ?? 0) >= HIGH_QUALITY))
 
   return (
     <>
@@ -50,6 +53,8 @@ export function Library({ onCreate }: { onCreate: () => void }) {
               { value: 'unsplash', label: 'Unsplash' }]} value={provider} onChange={setProvider} />
             <Choices legend="Usage" options={[{ value: 'all', label: 'All' }, { value: 'never', label: 'Never used' },
               { value: 'recent', label: 'Recently used' }]} value={usage} onChange={setUsage} />
+            <Choices legend="Quality" options={[{ value: 'all', label: 'All' }, { value: 'high', label: 'High' }]}
+              value={quality} onChange={setQuality} />
           </div>
           {assets.length === 0
             ? <p className="py-12 text-[13px] text-ink-3">No assets match these filters.</p>
@@ -76,7 +81,15 @@ function AssetCard({ asset: a }: { asset: Asset }) {
         )}
       </div>
       <div className="grid gap-0.5 px-3.5 py-3 text-xs">
-        <p className="text-ink">{label(a.provider)} · {label(a.asset_type)}</p>
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-ink">{label(a.provider)} · {label(a.asset_type)}</p>
+          <div className="flex gap-1">
+            {a.dominant_colors.slice(0, 3).map((c) => (
+              <span key={c} title={c} className="size-3 rounded-full shadow-[inset_0_0_0_1px_rgb(255_244_232/0.15)]"
+                style={{ backgroundColor: c }} />
+            ))}
+          </div>
+        </div>
         <p className="tnum text-ink-2">{a.width} × {a.height}</p>
         {a.creator && <p className="truncate text-ink-3" title={a.creator}>{a.creator}</p>}
         <p className="text-ink-3">

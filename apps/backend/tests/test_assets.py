@@ -19,8 +19,8 @@ from tests.test_content import BRIEF, FakeModel  # noqa: E402
 
 
 def bmp(columns, size: int = 8) -> bytes:
-    """A 24-bit BMP from one (r,g,b) tuple per pixel column. Stripes vs solid blocks hash differently in dHash."""
-    pixels = b"".join(bytes(c) for _ in range(size) for c in columns)
+    """A 24-bit BMP from one (r,g,b) tuple per pixel column (BMP stores BGR, so reverse on write)."""
+    pixels = b"".join(bytes((c[2], c[1], c[0])) for _ in range(size) for c in columns)
     header = b"BM" + struct.pack("<IHHI", 54 + len(pixels), 0, 0, 54)
     header += struct.pack("<IiiHHIIiiII", 40, size, size, 1, 24, 0, len(pixels), 2835, 2835, 0, 0)
     return header + pixels
@@ -28,7 +28,8 @@ def bmp(columns, size: int = 8) -> bytes:
 
 STRIPES = [(200, 200, 200), (40, 40, 40)] * 4   # alternating columns
 INVERTED = [(40, 40, 40), (200, 200, 200)] * 4  # opposite gradient
-SOLID = [(90, 90, 90)] * 8
+SOLID = [(128, 128, 128)] * 8
+DARK = [(0, 0, 0), (12, 12, 12)] * 4            # near-black stripes: fails the quality floor
 
 
 class FakeProvider(VisualProvider):
@@ -54,20 +55,20 @@ class FakeProvider(VisualProvider):
         return STRIPES_BYTES[a.provider_asset_id]
 
 
-STRIPES_BYTES: dict[str, bytes] = {}  # pid -> striped thumbnail; solid when listed in SOLID_PIDS
-
-
 def thumb_for(pid: str) -> bytes:
-    return bmp(SOLID) if pid in SOLID_PIDS else bmp(STRIPES)
+    return SPECIAL.get(pid, bmp(STRIPES))
 
 
-def make_thumbs(*pids: str, solid: tuple[str, ...] = ()) -> None:
-    global STRIPES_BYTES, SOLID_PIDS
-    STRIPES_BYTES = {p: bmp(SOLID if p in solid else STRIPES) for p in pids}
-    SOLID_PIDS = solid
+def make_thumbs(*pids: str, solid: tuple[str, ...] = (), dark: tuple[str, ...] = ()) -> None:
+    global SPECIAL
+    SPECIAL = {p: bmp(STRIPES) for p in pids}
+    for p in solid:
+        SPECIAL[p] = bmp(SOLID)
+    for p in dark:
+        SPECIAL[p] = bmp(DARK)
 
 
-SOLID_PIDS: tuple[str, ...] = ()
+SPECIAL: dict[str, bytes] = {}
 
 
 def cand(pid: str, typ: str = "video", h: int = 1920, w: int = 1080, duration: float = 10) -> Candidate:
@@ -207,6 +208,13 @@ class Selection(unittest.TestCase):
         assign_sync(BRIEF, [piece_row(p["id"], 2)], [prov2], [])
         self.assertEqual((prov2.downloads, prov2.thumb_downloads), ([], []))
         self.assertEqual(use_count("a1"), 2)
+
+    def test_poor_quality_candidates_skipped(self):
+        p = projects.create(BRIEF)
+        make_thumbs("a1", "a2", dark=("a1",))  # near-black rank-1 asset loses to the healthy rank-2 asset
+        prov = FakeProvider2([cand("a1"), cand("a2")])
+        assign_sync(BRIEF, [piece_row(p["id"])], [prov], [])
+        self.assertEqual(prov.downloads, ["a2"])
 
     def test_no_candidates_is_a_piece_error_not_a_crash(self):
         p = projects.create(BRIEF)

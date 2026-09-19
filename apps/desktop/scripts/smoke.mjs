@@ -155,6 +155,7 @@ await win.getByText('Pexels · Video').first().waitFor()
 assert.equal(await win.getByText('Pexels · Video').count(), 3)
 assert.equal(await win.getByText('1080 × 1920').count(), 3)
 await win.getByText('Used 1 time').first().waitFor()
+assert.ok(await win.locator('main span[title^="#"]').count() >= 3, 'dominant color swatches shown')
 await shot(win, '6-library')
 await assertNoHorizontalOverflow(win, 'library')
 const choose = (legend, option) =>
