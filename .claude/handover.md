@@ -66,4 +66,5 @@ graphify update . # refresh the code map after changes
 ## Open decisions / notes
 - Sidebar only shows built screens; Library, Queue, Exports are added by the milestone that fills them.
 - Media folder is shown read-only; choosing another folder (PRD §37) needs a move/migrate step, planned for later.
-- Not a git commit yet (repo initialised, nothing committed). Ask the user before committing.
+- Git: `main` pushed to https://github.com/HasbiyallahuJafaru/aicontentstudio (Milestone 1 = commit b53f78b).
+  Commit/push only when the user asks.
