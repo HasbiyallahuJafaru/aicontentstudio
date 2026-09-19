@@ -13,8 +13,8 @@ Last updated: 2026-09-19. Read this first in a new chat, then `.claude/CLAUDE.md
 | **Next: Milestone 3** Pexels/Unsplash providers, asset library, asset metadata, deduplication | Not started |
 | M4 visual analysis, palette · M5 TTS, audio, FFmpeg renderers · M6 preview, regeneration, queue, export · M7 refinement · packaging | Not started |
 
-Git: `main` on https://github.com/HasbiyallahuJafaru/aicontentstudio. Milestone 1 = b53f78b. **Milestone 2 + redesign are
-not committed yet.** Commit/push only when the user asks.
+Git: `main` on https://github.com/HasbiyallahuJafaru/aicontentstudio. Milestone 1 = b53f78b, Milestone 2 + redesign = cba6239.
+Commit/push only when the user asks.
 
 ## What exists
 
