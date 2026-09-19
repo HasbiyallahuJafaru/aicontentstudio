@@ -52,6 +52,13 @@ Git: `main` on https://github.com/HasbiyallahuJafaru/aicontentstudio. Commit/pus
   and text contrast, quality floor, cooldowns, fallback, job integration).
 
 **Desktop** (`apps/desktop`)
+- Splash screen (first thing every launch): full-bleed 60fps open-water clip (`src/assets/splash.webm`, 8s VP9
+  ~2MB, bundled locally so it works offline; re-encoded from "Waves off of dock at Boston harbor" by Adam S. Keck,
+  CC BY-SA 4.0 via Wikimedia Commons - credit shown bottom-right and in the README). Intro copy + two pill buttons:
+  "Let's create content" enters the app on the Create page; "Meet our developer" opens https://hasbiyallahu.xyz via
+  a new `app:openExternal` IPC handler (https-only; the app otherwise blocks all navigation and window opens).
+  `prefers-reduced-motion` pauses the video; on video error a dark scrim remains. Shortcuts (Ctrl+N/Ctrl+,) are
+  inert until the user enters. The splash has no `<main>`, so the smoke checks overflow on `#root > div`.
 - Screens: Dashboard, Create, Projects, Project page (live job progress, pieces with quote/narration/visual/
   delivery, `visual_error` shown under Visual, captions metadata, delete), Settings (keys, AI, content defaults
   incl. Asset cooldown, storage), Library (thumbnail grid, swatches from dominant colors, filters: Type, Provider,
@@ -64,11 +71,14 @@ Git: `main` on https://github.com/HasbiyallahuJafaru/aicontentstudio. Commit/pus
   visuals, asserts Library cards + swatches + filters, restarts and checks persistence. Screenshots → `%TEMP%/acs-smoke`.
 
 **Verified 2026-09-19:** `npm test` from the root (53 unittest + tsc + build + smoke) passes; screenshots reviewed
-(Library with swatches + Quality filter, Project page, Settings).
+(splash with video + both buttons, Create page entry, Library with swatches + Quality filter, Project page,
+Settings). Smoke enters through the splash on both launches. Root README.md written (status, architecture, setup,
+attribution).
 **Not verified:** real DeepSeek / real Pexels / real Unsplash calls (need the user's keys), Unsplash end to end
 (only Pexels faked in smoke), real photos vs constructed test images for the analyser thresholds (0.45 floor,
 0.3 contrast scale are first guesses — revisit with real downloads), video motion (M5, needs FFmpeg frames),
-`npm run dev` HMR, very long strings.
+`npm run dev` HMR, very long strings, the developer link in a packaged build (opens the OS browser via
+shell.openExternal; untested manually), splash loop seam after 8s.
 
 ## How to run
 ```bash

@@ -76,6 +76,8 @@ app.whenReady().then(() => {
     return secrets.status()
   })
   ipcMain.handle('app:openDataDir', () => shell.openPath(dataDir))
+  ipcMain.handle('app:openExternal', (_e, url: string) =>
+    typeof url === 'string' && url.startsWith('https://') ? shell.openExternal(url) : Promise.resolve())
 
   createWindow()
 })

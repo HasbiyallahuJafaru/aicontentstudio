@@ -89,8 +89,13 @@ async function launch() {
   const win = await app.firstWindow()
   await win.setViewportSize({ width: 1440, height: 900 })
   await win.emulateMedia({ reducedMotion: 'reduce' })
-  await win.getByText('Engine ready').waitFor({ timeout: 30_000 })
+  await win.getByRole('button', { name: "Let's create content" }).waitFor({ timeout: 30_000 })
   return { app, win }
+}
+
+async function enterApp(win) {
+  await win.getByRole('button', { name: "Let's create content" }).click()
+  await win.getByText('Engine ready').waitFor({ timeout: 30_000 })
 }
 const shot = (win, name) => win.screenshot({ path: join(out, `${name}.png`) })
 
@@ -110,10 +115,28 @@ async function assertNoHorizontalOverflow(win, page) {
   await win.setViewportSize({ width: 1440, height: 900 })
 }
 
+/** Splash has no <main>; check the app root the same way at two sizes. */
+async function assertNoHorizontalOverflowOnSplash(win) {
+  for (const [width, height] of [[1024, 672], [1440, 900]]) {
+    await win.setViewportSize({ width, height })
+    await win.waitForTimeout(50)
+    const o = await win.evaluate(() => {
+      const root = document.querySelector('#root > div')
+      return { doc: document.documentElement.scrollWidth - innerWidth, inner: root ? root.scrollWidth - root.clientWidth : 0 }
+    })
+    assert.ok(o.doc <= 0 && o.inner <= 0, `splash overflows sideways at ${width}x${height}: ${JSON.stringify(o)}`)
+  }
+  await win.setViewportSize({ width: 1440, height: 900 })
+}
+
 let { app, win } = await launch()
-await win.getByText('Your first batch starts here').waitFor()
-await shot(win, '1-dashboard-empty')
-await assertNoHorizontalOverflow(win, 'dashboard')
+await win.getByText('Meet our developer').waitFor()
+await shot(win, '0-splash')
+await assertNoHorizontalOverflowOnSplash(win)
+await enterApp(win)
+await win.getByRole('heading', { name: 'New project' }).waitFor()
+await shot(win, '1-create-empty')
+await assertNoHorizontalOverflow(win, 'create')
 
 // Settings: keys (encrypted) + a default
 await win.keyboard.press('Control+,')
@@ -170,6 +193,8 @@ await app.close()
 
 // Restart: project, pieces, assets and settings persist
 ;({ app, win } = await launch())
+await enterApp(win)
+await win.getByRole('button', { name: 'Dashboard' }).click()
 await win.getByRole('heading', { name: 'Recent projects' }).waitFor()
 await win.getByText('3 of 3 written').waitFor()
 await assertNoHorizontalOverflow(win, 'dashboard with data')

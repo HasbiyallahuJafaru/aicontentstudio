@@ -15,6 +15,7 @@ const api = {
   secretsStatus: () => ipcRenderer.invoke('secrets:status'),
   setSecret: (name: string, value: string) => ipcRenderer.invoke('secrets:set', name, value),
   openDataDir: () => ipcRenderer.invoke('app:openDataDir'),
+  openExternal: (url: string) => ipcRenderer.invoke('app:openExternal', url),
 }
 
 contextBridge.exposeInMainWorld('studio', api)

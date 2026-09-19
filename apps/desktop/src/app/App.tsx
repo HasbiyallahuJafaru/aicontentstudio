@@ -6,21 +6,26 @@ import { Library } from '../pages/Library'
 import { Projects } from '../pages/Projects'
 import { Project } from '../pages/Project'
 import { Settings } from '../pages/Settings'
+import { Splash } from '../pages/Splash'
 
 export function App() {
   const [page, setPage] = useState<Page>('dashboard')
   const [openProject, setOpenProject] = useState<string>()
+  const [entered, setEntered] = useState(false)
 
   const open = (id: string) => { setOpenProject(id); setPage('project') }
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (!entered) return
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'n') { e.preventDefault(); setPage('create') }
       if ((e.ctrlKey || e.metaKey) && e.key === ',') { e.preventDefault(); setPage('settings') }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [])
+  }, [entered])
+
+  if (!entered) return <Splash onCreate={() => { setEntered(true); setPage('create') }} />
 
   return (
     <Shell page={page} onNavigate={setPage}>
