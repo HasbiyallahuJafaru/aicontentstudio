@@ -1,16 +1,15 @@
 import json
 import logging
 import sys
-import threading
 from concurrent.futures import ThreadPoolExecutor
 
 from pydantic import ValidationError
 
-from app import config, database, projects, settings
+from app import config, content, database, jobs, projects, settings
 from app.errors import UserError
+from app.events import emit, send
 
 log = logging.getLogger("rpc")
-_write_lock = threading.Lock()
 
 
 def _secrets_load(keys: dict) -> dict:
@@ -30,18 +29,13 @@ METHODS = {
     "projects.list": projects.list_,
     "projects.get": projects.get,
     "projects.delete": projects.delete,
+    "pieces.list": content.pieces,
+    "pieces.recent": content.recent,
+    "app.stats": content.stats,
+    "jobs.start": jobs.start,
+    "jobs.cancel": jobs.cancel,
+    "jobs.latest": jobs.latest,
 }
-
-
-def send(obj: dict) -> None:
-    line = json.dumps(obj, ensure_ascii=False)
-    with _write_lock:
-        sys.stdout.write(line + "\n")
-        sys.stdout.flush()
-
-
-def emit(event: str, data: dict | None = None) -> None:
-    send({"event": event, "data": data or {}})
 
 
 def handle(msg: dict) -> dict:
@@ -67,7 +61,8 @@ def serve() -> None:
     sys.stdout.reconfigure(encoding="utf-8")
     sys.stdin.reconfigure(encoding="utf-8")
     database.migrate()
-    # ponytail: fixed pool; long jobs (Phase 6+) will need their own queue with cancel + progress events.
+    jobs.recover()
+    # Requests run on 4 threads; generation jobs run on their own threads (jobs.py) and report via events.
     pool = ThreadPoolExecutor(max_workers=4)
     emit("backend.ready", {"data_dir": str(config.DATA_DIR)})
     for line in sys.stdin:

@@ -38,7 +38,8 @@ def create(brief: dict) -> dict:
 
 def list_(limit: int = 200) -> list[dict]:
     with connect() as conn:
-        rows = conn.execute("SELECT * FROM projects ORDER BY created_at DESC, rowid DESC LIMIT ?", (limit,)).fetchall()
+        rows = conn.execute("SELECT p.*, (SELECT count(*) FROM content_pieces c WHERE c.project_id = p.id AND c.status != 'failed')"
+                            " AS pieces_written FROM projects p ORDER BY created_at DESC, rowid DESC LIMIT ?", (limit,)).fetchall()
     return [_row(r) for r in rows]
 
 

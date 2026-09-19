@@ -10,13 +10,13 @@ when that phase starts. Update this table whenever a dependency changes.
 | UI | React 19 + TypeScript 5.9 + Tailwind CSS 4 (`@tailwindcss/vite`) | MIT / Apache-2.0 / MIT | **Used.** No component kit: ~6 own primitives in `src/components/ui.tsx`. shadcn/Radix only if a real need (dialogs, menus) appears. |
 | Icons | Phosphor (`@phosphor-icons/react`) | MIT | **Used.** One family. |
 | Animation | CSS keyframes/transitions | n/a | **Used.** Motion (framer) only if CSS can't do a specific interaction. |
-| UI font | Segoe UI Variable (Windows system face) | OS | **Used** for the app UI. Output-render fonts must be vendored (OFL) in `assets/fonts` in Phase 10. |
+| UI fonts | Sora Variable (display) + Geist Variable (body) via `@fontsource-variable/*`, bundled by Vite | OFL-1.1 | **Used** (redesign 2026-09-19, user's reference: warm glass, wide display type). Output-render fonts still need vendoring in `assets/fonts` in Phase 10. |
 | Electron ↔ Python | JSON lines over stdin/stdout | n/a | **Used** (user choice 2026-09-19). No port, no token, nothing else on the machine can reach it. Events = lines without `id`. |
 | Backend runtime | Python 3.12, stdlib + pydantic 2 | MIT | **Used.** Threads (ThreadPoolExecutor) for request concurrency. |
 | Database | SQLite via stdlib `sqlite3`, plain `migrations/NNN_*.sql`, `PRAGMA user_version` | Public domain | **Used** (user choice 2026-09-19 over SQLAlchemy/SQLModel). Tables added by the phase that first uses them. WAL mode. |
 | API keys | Electron `safeStorage` (DPAPI) → `userData/secrets.json`, pushed to Python memory via `secrets.load` | MIT | **Used.** Renderer only sees set/not-set. Dev fallback: repo `.env`. |
 | E2E check | playwright-core `_electron` (`apps/desktop/scripts/smoke.mjs`) | Apache-2.0 | **Used.** No browser download needed. |
-| LLM | DeepSeek (OpenAI-compatible, `https://api.deepseek.com`), JSON mode | API | **Plan (M2).** Call with `httpx` (PRD stack), not the openai SDK. Model default `deepseek-flash` (setting). JSON mode can return empty → retry; repair once, then regenerate. |
+| LLM | DeepSeek (OpenAI-compatible `/chat/completions`), JSON mode, via `httpx` 0.28 (BSD-3) | API | **Used (M2).** `verify=ssl.create_default_context()` so the Windows cert store is used (certifi fails behind this machine's TLS-inspecting CA). Model default `deepseek-flash` (setting). Empty content → retry; invalid JSON → repair once → regenerate once; 3 HTTP retries with backoff. `ACS_DEEPSEEK_URL` env overrides the base URL (used by the smoke test's fake server). **Not yet called against the real API.** |
 | Visual providers | Pexels API, Unsplash API via `httpx` | API | **Plan (M3).** Store creator, source URL, asset id, license text for attribution. Verify current terms for automated/commercial use before production. Unsplash requires attribution + download-tracking ping. |
 | Perceptual hash | own dHash/pHash with Pillow (~15 lines) | HPND (Pillow) | **Plan (M3).** `imagehash` (BSD-2) only if own version falls short. |
 | Visual analysis / palette | OpenCV (`opencv-python-headless`) k-means + own scoring | Apache-2.0 | **Plan (M4).** |

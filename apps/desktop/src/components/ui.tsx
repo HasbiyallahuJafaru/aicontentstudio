@@ -11,12 +11,12 @@ export function Button({ variant = 'secondary', kbd, className, children, ...res
     <button
       {...rest}
       className={cx(
-        'no-drag inline-flex h-8 items-center gap-2 rounded-control px-3 text-[13px] font-medium whitespace-nowrap',
-        'transition-[background-color,color,transform] duration-150 active:scale-[0.98]',
+        'no-drag inline-flex h-10 items-center gap-2 rounded-control px-5 text-[13px] font-medium whitespace-nowrap',
+        'transition-[background-color,color,transform,box-shadow] duration-150 active:scale-[0.97]',
         'disabled:pointer-events-none disabled:opacity-40',
-        variant === 'primary' && 'bg-ink text-ground hover:bg-white',
-        variant === 'secondary' && 'bg-raised text-ink hover:bg-line',
-        variant === 'ghost' && 'text-ink-2 hover:bg-raised hover:text-ink',
+        variant === 'primary' && 'bg-ink text-ground shadow-[0_8px_24px_-8px_rgb(255_240_225/0.35)] hover:bg-white',
+        variant === 'secondary' && 'bg-white/[0.07] text-ink hover:bg-white/[0.12]',
+        variant === 'ghost' && 'px-3 text-ink-2 hover:bg-white/[0.06] hover:text-ink',
         variant === 'danger' && 'text-danger hover:bg-danger/10',
         className,
       )}
@@ -43,8 +43,8 @@ export function Input({ className, ...rest }: InputHTMLAttributes<HTMLInputEleme
     <input
       {...rest}
       className={cx(
-        'no-drag h-8 w-full rounded-control border border-line bg-raised px-2.5 text-[13px] text-ink',
-        'placeholder:text-ink-3 hover:border-line-strong focus:border-accent/70 focus:outline-none',
+        'no-drag h-10 w-full rounded-field border border-line bg-black/20 px-3.5 text-[13px] text-ink',
+        'placeholder:text-ink-3 hover:border-line-strong focus:border-accent/70 focus:bg-black/30 focus:outline-none',
         'transition-colors duration-150',
         className,
       )}
@@ -70,9 +70,9 @@ export function Choices<T extends string | number>({ legend, options, value, onC
           <label
             key={o.value}
             className={cx(
-              'no-drag relative flex h-8 items-center rounded-control border px-3 text-[13px]',
+              'no-drag relative flex h-9 items-center rounded-control border px-4 text-[13px]',
               'transition-colors duration-150 has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-accent',
-              selected(o.value) ? 'border-ink/80 bg-ink/[0.07] text-ink' : 'border-line text-ink-2 hover:border-line-strong hover:text-ink',
+              selected(o.value) ? 'border-transparent bg-ink font-medium text-ground' : 'border-line bg-white/[0.03] text-ink-2 hover:border-line-strong hover:text-ink',
             )}
           >
             <input
@@ -96,7 +96,7 @@ export function Choices<T extends string | number>({ legend, options, value, onC
 
 export function ErrorNote({ error, action }: { error: { message: string; detail?: string }; action?: ReactNode }) {
   return (
-    <div role="alert" className="grid gap-2 rounded-panel bg-danger/[0.07] px-4 py-3 text-[13px]">
+    <div role="alert" className="grid gap-2 rounded-field bg-danger/[0.09] px-5 py-4 text-[13px] shadow-[inset_0_0_0_1px_rgb(242_144_127/0.18)]">
       <div className="flex items-start justify-between gap-4">
         <p className="text-ink">{error.message}</p>
         {action}
@@ -114,7 +114,7 @@ export function ErrorNote({ error, action }: { error: { message: string; detail?
 export function PageHeader({ title, children }: { title: string; children?: ReactNode }) {
   return (
     <header className="flex items-end justify-between gap-6 pb-8">
-      <h1 className="font-display text-title font-semibold tracking-[-0.02em]">{title}</h1>
+      <h1 className="font-display text-title font-semibold tracking-[-0.03em]">{title}</h1>
       <div className="flex items-center gap-2">{children}</div>
     </header>
   )

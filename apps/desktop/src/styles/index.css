@@ -1,32 +1,37 @@
 @import "tailwindcss";
+@import "@fontsource-variable/sora";
+@import "@fontsource-variable/geist";
 
 /* Design tokens. One source of truth; components use these names only. */
 @theme {
-  --font-sans: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
-  --font-display: "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
+  --font-sans: "Geist Variable", "Segoe UI Variable Text", system-ui, sans-serif;
+  --font-display: "Sora Variable", "Geist Variable", system-ui, sans-serif;
 
-  --color-ground: #111112;   /* window */
-  --color-panel: #161618;    /* sidebar, panes */
-  --color-raised: #1f1f22;   /* inputs, hover */
-  --color-line: #2a2a2e;     /* hairlines */
-  --color-line-strong: #3a3a40;
-  --color-ink: #ececee;
-  --color-ink-2: #a8a8ae;
-  --color-ink-3: #85858c;
-  --color-accent: #f2b441;   /* tally amber: activity and focus only */
-  --color-danger: #f08a80;
-  --color-ok: #7fd3a0;
+  --color-ground: #0d0c0b;   /* window, warm charcoal */
+  --color-panel: #151312;    /* solid fallback for glass */
+  --color-raised: #24211f;   /* inputs, hover */
+  --color-line: rgb(255 244 232 / 0.08);
+  --color-line-strong: rgb(255 244 232 / 0.16);
+  --color-ink: #f4efe9;
+  --color-ink-2: #b9b1a9;
+  --color-ink-3: #8c847d;
+  --color-accent: #f0873a;   /* ember orange: activity, focus, key numbers */
+  --color-danger: #f2907f;
+  --color-ok: #b9d97a;
 
-  --radius-control: 6px;
-  --radius-panel: 10px;
+  --radius-control: 999px;   /* controls are pills */
+  --radius-field: 14px;      /* inputs, inner blocks */
+  --radius-panel: 26px;      /* glass panels */
 
   --text-2xs: 0.6875rem;
-  --text-title: 1.375rem;
-  --text-title--line-height: 1.2;
+  --text-title: 2.125rem;
+  --text-title--line-height: 1.1;
+  --text-hero: 3.25rem;
+  --text-hero--line-height: 1.05;
 
   --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
-  --duration-fast: 120ms;
-  --duration-base: 220ms;
+  --duration-fast: 150ms;
+  --duration-base: 260ms;
 }
 
 @layer base {
@@ -42,15 +47,48 @@
     cursor: default;
   }
   input, textarea, [data-selectable] { user-select: text; }
-  ::selection { background: color-mix(in oklab, var(--color-accent) 35%, transparent); color: var(--color-ink); }
+  ::selection { background: color-mix(in oklab, var(--color-accent) 40%, transparent); color: var(--color-ink); }
   input { caret-color: var(--color-accent); }
-  :focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; border-radius: var(--radius-control); }
+  :focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; border-radius: 12px; }
   ::-webkit-scrollbar { width: 10px; height: 10px; }
   ::-webkit-scrollbar-thumb { background: var(--color-line-strong); border-radius: 10px; border: 3px solid transparent; background-clip: content-box; }
   ::-webkit-scrollbar-thumb:hover { background-color: var(--color-ink-3); }
   ::-webkit-scrollbar-track { background: transparent; }
   .tnum { font-variant-numeric: tabular-nums; }
   h1, h2 { text-wrap: balance; }
+  p { text-wrap: pretty; }
+}
+
+/* Warm ambient light behind everything (the "studio lamp"), plus fine grain so dark surfaces aren't sterile. */
+.ambient {
+  background:
+    radial-gradient(60% 55% at 72% 8%, rgb(240 135 58 / 0.20), transparent 70%),
+    radial-gradient(45% 50% at 18% 30%, rgb(150 96 120 / 0.16), transparent 70%),
+    radial-gradient(70% 60% at 50% 110%, rgb(120 70 40 / 0.18), transparent 70%),
+    var(--color-ground);
+}
+.grain::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+  opacity: 0.05;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* Frosted panel: translucent fill, blur, 1px inner edge and a top highlight for refraction. */
+@utility glass {
+  background: linear-gradient(180deg, rgb(255 246 236 / 0.075), rgb(255 246 236 / 0.035));
+  backdrop-filter: blur(28px) saturate(140%);
+  border-radius: var(--radius-panel);
+  box-shadow:
+    inset 0 0 0 1px rgb(255 244 232 / 0.07),
+    inset 0 1px 0 rgb(255 244 232 / 0.10),
+    0 24px 60px -24px rgb(20 10 4 / 0.55);
+}
+@media (prefers-reduced-transparency: reduce) {
+  .glass { background: var(--color-panel); backdrop-filter: none; }
 }
 
 .drag { -webkit-app-region: drag; }
@@ -59,14 +97,14 @@
 .titlebar-inset { padding-right: calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw) + 12px); }
 
 @keyframes slot-in {
-  from { opacity: 0; transform: translateY(6px) scale(0.98); }
+  from { opacity: 0; transform: translateY(8px) scale(0.98); }
   to { opacity: 1; transform: none; }
 }
 @keyframes page-in {
-  from { opacity: 0; transform: translateY(4px); }
-  to { opacity: 1; transform: none; }
+  from { opacity: 0; transform: translateY(6px); filter: blur(4px); }
+  to { opacity: 1; transform: none; filter: none; }
 }
 @media (prefers-reduced-motion: no-preference) {
-  .anim-slot { animation: slot-in var(--duration-base) var(--ease-out-expo) both; animation-delay: calc(var(--i, 0) * 30ms); }
-  .anim-page { animation: page-in var(--duration-base) var(--ease-out-expo) both; }
+  .anim-slot { animation: slot-in var(--duration-base) var(--ease-out-expo) both; animation-delay: calc(var(--i, 0) * 35ms); }
+  .anim-page { animation: page-in 320ms var(--ease-out-expo) both; }
 }

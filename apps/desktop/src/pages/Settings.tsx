@@ -11,9 +11,9 @@ const KEYS: { name: SecretName; label: string }[] = [
 
 function Section({ title, description, children }: { title: string; description: string; children: ReactNode }) {
   return (
-    <section className="grid grid-cols-[240px_minmax(0,480px)] gap-10 border-t border-line py-8 first:border-t-0 first:pt-0">
+    <section className="glass mb-5 grid grid-cols-[240px_minmax(0,480px)] gap-10 p-8">
       <div>
-        <h2 className="text-[13px] font-semibold">{title}</h2>
+        <h2 className="font-display text-[15px] font-semibold tracking-[-0.01em]">{title}</h2>
         <p className="mt-1 text-xs text-ink-3">{description}</p>
       </div>
       <div className="grid gap-5">{children}</div>
@@ -99,7 +99,7 @@ export function Settings() {
           <Field label="Tone">
             {(id) => (
               <select id={id} value={form.default_tone} onChange={(e) => set('default_tone', e.target.value as S['default_tone'])}
-                className="h-8 rounded-control border border-line bg-raised px-2 text-[13px] text-ink hover:border-line-strong focus:border-accent/70 focus:outline-none">
+                className="h-10 rounded-field border border-line bg-black/20 px-3 text-[13px] text-ink hover:border-line-strong focus:border-accent/70 focus:outline-none">
                 {TONES.map((t) => <option key={t} value={t}>{label(t)}</option>)}
               </select>
             )}

@@ -7,64 +7,72 @@ Last updated: 2026-09-19. Read this first in a new chat, then `.claude/CLAUDE.md
 | PRD milestone | State |
 |---|---|
 | Phase 0 research | Done: `DECISIONS.md` |
-| **Milestone 1**: Electron shell, React, Python process, SQLite, Settings, basic project creation (PRD phases 1–5) | **Done, verified** (below) |
-| Milestone 2: DeepSeek, content schemas, content generation, project persistence of pieces | **Next** |
-| M3 Pexels/Unsplash, asset library, dedup · M4 visual analysis, palette · M5 TTS, audio, FFmpeg renderers · M6 preview, regeneration, queue, export · M7 UI refinement pass · packaging | Not started |
+| Milestone 1: Electron shell, React, Python process, SQLite, Settings, basic project creation | Done, verified |
+| **Milestone 2**: DeepSeek, content schemas, batch generation, persistence of pieces | **Done, verified with a fake DeepSeek** (never called the real API yet) |
+| UI redesign to the user's reference (warm glass, icon rail, Sora/Geist, pill controls) | Done, one screenshot review round |
+| **Next: Milestone 3** Pexels/Unsplash providers, asset library, asset metadata, deduplication | Not started |
+| M4 visual analysis, palette · M5 TTS, audio, FFmpeg renderers · M6 preview, regeneration, queue, export · M7 refinement · packaging | Not started |
 
-## What exists (Milestone 1)
+Git: `main` on https://github.com/HasbiyallahuJafaru/aicontentstudio. Milestone 1 = b53f78b. **Milestone 2 + redesign are
+not committed yet.** Commit/push only when the user asks.
 
-**Backend** (`apps/backend`, Python 3.12 venv in `.venv`, only dep pydantic):
-- stdio JSON-lines RPC (`app/rpc.py`): request `{id, method, params}` → `{id, result}` or
-  `{id, error: {message, detail}}`; events `{event, data}` (only `backend.ready` so far). Requests run on a
-  4-thread pool. Logs go to stderr as JSON lines (Electron writes them to `<data>/logs/backend.log`).
-- Methods: `app.info`, `settings.get`, `settings.update`, `projects.create|list|get|delete`, `secrets.load` (main-only).
-- SQLite at `<data>/app.db`, migrations via `PRAGMA user_version`. Tables: `projects` (id, name, status, brief JSON,
-  created_at, updated_at), `settings` (key → JSON; key `app` holds the `Settings` pydantic model).
-- `CreativeBrief` pydantic model (topic, tone, mood, audience, format, quantity 1–20, platforms ≥1) in `projects.py`.
-- `UserError(message, detail)` = human-readable error; the UI shows `detail` under "View technical details".
-- Data dir: `ACS_DATA_DIR` env (Electron sets it) else `<repo>/data`. Packaged: `userData/data`.
+## What exists
 
-**Desktop** (`apps/desktop`):
-- Electron main starts Python (`.venv\Scripts\python.exe main.py`), restarts it up to 3×/min on crash, then shows
-  "Engine stopped" + Restart button; dev mode restarts it when `app/*.py|sql` changes. Stops it on quit.
-- IPC: renderer can call any backend method except `secrets.*`. API keys (DeepSeek, Pexels, Unsplash) are
-  encrypted with `safeStorage` in `userData/secrets.json` and pushed to Python memory on every backend start/change.
-- Screens: Dashboard (recent projects / empty state), Create (brief form + live batch preview of frames at real
-  aspect ratios; Ctrl+Enter), Projects (list + detail pane, delete with confirm or Delete key), Settings (API keys,
-  AI model/temperature/max tokens, content defaults, media folder + Open). Shortcuts: Ctrl+N new, Ctrl+, settings.
-- Design: dark neutral "grading suite", Segoe UI Variable, one amber accent for activity/focus, off-white primary
-  button. Tokens in `src/styles/index.css`; primitives in `src/components/ui.tsx`.
-- "Create project" saves a **draft** only; the UI says AI generation isn't connected yet.
+**Backend** (`apps/backend`, venv `.venv`, deps: pydantic, httpx)
+- stdio JSON-lines RPC (`app/rpc.py`, method table `METHODS`); `app/events.py` writes responses/events to stdout.
+  Events: `backend.ready`, `job.started|progress|completed|failed|cancelled` (payload = job row).
+- Methods: `app.info`, `app.stats`, `settings.get|update`, `projects.create|list|get|delete`, `pieces.list`,
+  `pieces.recent`, `jobs.start|cancel|latest`, `secrets.load` (Electron main only).
+- DB migrations: `001_init` (projects, settings), `002_content` (content_pieces, generation_jobs).
+- `app/creative/`: `schemas.py` (BatchPlan with distinct angles/subjects, PieceContent = quote/narration/visual/design
+  hints/metadata; quote author must be null), `prompts.py` (provider-neutral messages), `model.py` (`CreativeModel`
+  interface + `DeepSeekModel`, `get_model()` raises "Add your DeepSeek API key…" if none).
+- `app/content.py`: pipeline = plan batch (avoiding recent quotes + narration openings) → write each piece; quote
+  similarity via difflib ≥0.75 vs history+batch, up to 3 attempts then the piece is stored `failed` with the reason.
+  Regenerating a project replaces its pieces. `recent()`, `stats()` for the dashboard.
+- `app/jobs.py`: one thread per job, progress = real steps (plan, piece i of n), cancel between steps, `recover()` on
+  startup marks interrupted jobs failed. Project status: draft → generating → ready | failed.
+- Tests: `python -m unittest` = 16 tests (fake model; `httpx.MockTransport` for repair/retry/401/empty/wrong count).
 
-**Verified 2026-09-19:** backend `python -m unittest` 6/6 (includes real stdio process test); `tsc --noEmit` clean;
-`electron-vite build` ok; `npm run smoke` passes: engine starts, create project, save API key (checked encrypted
-on disk), change a setting, restart app → project, setting and key all persist. Screenshots reviewed once.
+**Desktop** (`apps/desktop`)
+- Screens: Studio dashboard (hero with real stats + fanned frames showing the latest real quotes, recent projects),
+  Create (glass brief form + live batch preview; "Create and generate" if a DeepSeek key is set, else "Save as draft"),
+  Projects (list), Project page (Generate / Generate again with Ctrl+Enter, live stage + progress bar + Cancel,
+  pieces with quote, narration, visual query, delivery, collapsible captions/metadata, failed-piece reasons, delete),
+  Settings (glass sections: keys, AI, content defaults, storage).
+- Design system (`src/styles/index.css` tokens + `glass` utility, `.ambient` glow, `.grain`; primitives in
+  `src/components/ui.tsx`): warm charcoal, ember-orange accent, Sora display / Geist body, pill controls,
+  14px fields, 26px panels. `useJob()` in `src/lib/studio.ts` listens to job events.
+- `scripts/smoke.mjs` runs the real app against a local fake DeepSeek server: set keys, save a setting, create and
+  generate 3 pieces, restart, check everything persisted. Screenshots → `%TEMP%/acs-smoke`.
 
-**Not verified:** backend crash → auto-restart path; `npm run dev` HMR (only production build was run);
-window sizes other than 1440×900; long text in project names.
+**Verified 2026-09-19:** `npm test` from the root (16 unittest + tsc + build + smoke) passes; screenshots reviewed.
+**Layout fix (2026-09-19):** the user's display is 1280×672 logical (1920×1080 at 150%). The window now sizes to the
+screen work area (was a fixed 1440×900 that spilled off-screen), the shell grid uses `minmax(0,1fr)`, and the smoke
+test asserts no sideways overflow on every screen at 1024×672, 1280×672, 1366×768 and 1920×1080.
+**Not verified:** a real DeepSeek call (needs the user's key; prompt quality unknown), crash auto-restart,
+`npm run dev` HMR, very long quotes/project names.
 
 ## How to run
 ```bash
 npm run setup     # once: venv + pip + npm install (set NODE_OPTIONS=--use-system-ca first on this machine)
 npm run dev       # Electron + Vite HMR + Python auto-restart
-npm test          # unittest + typecheck + build + smoke (screenshots → %TEMP%/acs-smoke)
+npm test          # all checks
 graphify update . # refresh the code map after changes
 ```
 
-## Next: Milestone 2 (DeepSeek + content generation)
-1. Migration `002`: `content_pieces` (id, project_id FK cascade, idx, status, creative_angle, quote, narration,
-   visual query JSON, design hints JSON, metadata JSON, created_at) + `quote_history` or reuse pieces for similarity.
-2. `app/creative/`: `CreativeModel` interface + `DeepSeekModel` (httpx, JSON mode, schema-validated, repair once
-   then regenerate, bounded retries with backoff, human errors like "DeepSeek authentication failed. Check your key
-   in Settings."). Batch plan first (angles + visual diversity, PRD §75–76), then each piece.
-3. Quote dedup against recent history (stdlib `difflib` ratio first; ponytail note on ceiling).
-4. Jobs: `generation_jobs` table + job runner emitting `job.started/progress/stage/completed/failed` events;
-   cancel flag. UI: project page shows pieces as they arrive with real stage progress; "Generate" replaces the draft note.
-5. Tests with a fake DeepSeek (no paid calls): schema validation, invalid JSON repair, dedup, batch diversity.
-6. Then add Queue to the sidebar (it has real content once jobs exist).
+## Next: Milestone 3 (Pexels + Unsplash, asset library, dedup)
+1. First, with the user's DeepSeek key: generate one real batch, read the output, tune `prompts.py` if quotes sound AI-ish.
+2. Migration `003`: `assets` (PRD §17 fields incl. creator, source_url, license, phash, dominant colors placeholder
+   until M4) + `asset_usage` (asset_id, piece_id, used_at).
+3. `app/assets/`: `VisualProvider` interface, `PexelsProvider`, `UnsplashProvider` (httpx with the same ssl context,
+   metadata + thumbnails first, download only the chosen asset; Unsplash download-tracking ping; human errors).
+4. Candidate scoring (weights configurable in settings), exact hash + own dHash for near-duplicates, cooldown rules
+   (PRD §18), select per piece using `visual.search_query` / `secondary_query`.
+5. Library page (thumbnail grid, filters: type, provider, used/never used, 60 FPS) added to the rail.
+6. Tests with fake providers; smoke with a fake provider server like the fake DeepSeek.
 
 ## Open decisions / notes
-- Sidebar only shows built screens; Library, Queue, Exports are added by the milestone that fills them.
-- Media folder is shown read-only; choosing another folder (PRD §37) needs a move/migrate step, planned for later.
-- Git: `main` pushed to https://github.com/HasbiyallahuJafaru/aicontentstudio (Milestone 1 = commit b53f78b).
-  Commit/push only when the user asks.
+- Rail only shows built screens; Library, Queue, Exports arrive with their milestones.
+- Platform-specific metadata adapters (PRD §69) come with export (M6); pieces currently hold one metadata set.
+- Media folder is read-only in Settings; changing it needs a move step (later).

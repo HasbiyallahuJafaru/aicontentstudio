@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, Menu, shell } from 'electron'
+import { app, BrowserWindow, ipcMain, Menu, screen, shell } from 'electron'
 import { join, resolve } from 'node:path'
 import { createBackend, type BackendStatus } from './backend'
 import { createSecrets, type SecretName } from './secrets'
@@ -13,11 +13,14 @@ const broadcast = (channel: string, ...args: unknown[]) =>
   BrowserWindow.getAllWindows().forEach((w) => { try { w.webContents.send(channel, ...args) } catch { /* window closing */ } })
 
 function createWindow() {
+  // Fit the display's work area (scaled laptops can be narrower than 1440 logical px), never larger.
+  const area = screen.getPrimaryDisplay().workAreaSize
   const win = new BrowserWindow({
-    width: 1440,
-    height: 900,
-    minWidth: 1024,
-    minHeight: 680,
+    width: Math.min(1440, area.width),
+    height: Math.min(900, area.height),
+    minWidth: Math.min(1024, area.width),
+    minHeight: Math.min(680, area.height),
+    center: true,
     show: false,
     backgroundColor: '#111112',
     title: 'AI Social Content Studio',
