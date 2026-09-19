@@ -1,0 +1,3343 @@
+# AI Social Content Studio
+## Desktop AI Content Generation and Rendering Application
+
+**Status:** Build from scratch  
+**Platform:** Desktop first  
+**Primary OS:** Windows  
+**Architecture:** Electron frontend + Python backend  
+**Storage:** Local SQLite  
+**Rendering:** FFmpeg  
+**AI:** DeepSeek API  
+**Visual Sources:** Pexels + Unsplash  
+**TTS:** Open source local TTS  
+**Distribution:** Export for external scheduler such as Metricool  
+**Primary Output:** Premium social media videos and images  
+**Initial Content Frequency:** Up to 6 content pieces per day
+
+---
+
+# 1. Product Definition
+
+Build a premium desktop application that automatically creates high quality social media content from short form ideas, themes, quotes, and creative directions.
+
+The application is a **local content production studio**, not a social media scheduling platform.
+
+Its responsibility is:
+
+1. Generate the creative concept.
+2. Generate the quote/copy.
+3. Generate narration.
+4. Determine the appropriate visual format.
+5. Find suitable visual assets.
+6. Avoid repetitive visual assets.
+7. Analyze the selected visual.
+8. Generate a visual design system for that specific asset.
+9. Generate narration audio.
+10. Render polished videos and images.
+11. Generate platform specific metadata.
+12. Present the result in a premium desktop interface.
+13. Allow the user to review, regenerate, edit, approve, and export.
+14. Save the project locally so it can be reopened later.
+
+The application does **not initially need to publish directly to social networks**.
+
+Generated content should be exported in an organized format suitable for uploading or scheduling through Metricool or another external scheduling platform.
+
+---
+
+# 2. Product Philosophy
+
+The application should feel like a **professional creative tool**, not an AI utility.
+
+Do not build:
+
+- A generic CRUD dashboard.
+- A collection of forms.
+- A basic admin panel.
+- A chat interface with an "Generate" button.
+- A generic SaaS dashboard.
+- A simple quote over an image generator.
+- A collection of cards with gradients and excessive rounded corners.
+
+The product should feel closer to a premium creative desktop application.
+
+The quality target is the level of precision, interaction quality, visual hierarchy, preview experience, motion, and polish found in modern professional desktop creative software.
+
+Use Recordly as a UX quality reference.
+
+Recordly demonstrates an important principle:
+
+> The interface should make complicated media processing feel simple.
+
+Its current architecture combines Electron orchestration with a renderer driven media pipeline, polished preview, motion effects, editing controls, project persistence, and export. The new application should apply the same philosophy to **AI generated social content**, rather than copying Recordly's exact interface. citeturn0search1turn0search5
+
+---
+
+# 3. Primary User
+
+The initial user is the owner/operator of the application.
+
+The application does not need:
+
+- Multi user accounts.
+- SaaS authentication.
+- Team permissions.
+- Cloud databases.
+- Cloud file storage.
+- Subscription billing.
+- User management.
+
+This is a local desktop creative workstation.
+
+---
+
+# 4. Core Workflow
+
+The primary workflow should be:
+
+```text
+Create
+  ↓
+Creative Brief
+  ↓
+AI Content Generation
+  ↓
+Visual Selection
+  ↓
+Visual Analysis
+  ↓
+Design Generation
+  ↓
+Narration
+  ↓
+Rendering
+  ↓
+Preview
+  ↓
+Review
+  ↓
+Approve
+  ↓
+Export
+```
+
+The user should be able to complete the normal workflow without understanding the underlying technical system.
+
+---
+
+# 5. Desktop Architecture
+
+Use:
+
+```text
+Electron
+   │
+   ├── React frontend
+   │
+   ├── Electron main process
+   │
+   └── IPC
+        │
+        ▼
+   Python backend
+        │
+        ├── DeepSeek
+        ├── Pexels
+        ├── Unsplash
+        ├── TTS
+        ├── FFmpeg
+        ├── OpenCV
+        └── SQLite
+```
+
+The Electron application is responsible for:
+
+- UI.
+- Window management.
+- File dialogs.
+- Preview.
+- Application lifecycle.
+- IPC.
+- User interactions.
+- Project navigation.
+
+Python is responsible for:
+
+- Content generation.
+- AI calls.
+- Asset searching.
+- Asset downloading.
+- Asset analysis.
+- Deduplication.
+- Palette extraction.
+- TTS orchestration.
+- Media processing.
+- FFmpeg rendering.
+- Metadata generation.
+- Database operations.
+- Background jobs.
+
+Do not duplicate business logic between TypeScript and Python.
+
+Python is the source of truth for the content generation pipeline.
+
+---
+
+# 6. Recommended Repository
+
+Use this structure:
+
+```text
+social-content-studio/
+│
+├── apps/
+│   │
+│   ├── desktop/
+│   │   ├── electron/
+│   │   │   ├── main.ts
+│   │   │   ├── preload.ts
+│   │   │   └── ipc/
+│   │   │
+│   │   ├── src/
+│   │   │   ├── app/
+│   │   │   ├── components/
+│   │   │   ├── features/
+│   │   │   ├── layouts/
+│   │   │   ├── pages/
+│   │   │   ├── hooks/
+│   │   │   ├── stores/
+│   │   │   ├── lib/
+│   │   │   └── styles/
+│   │   │
+│   │   ├── package.json
+│   │   └── vite.config.ts
+│   │
+│   └── backend/
+│       ├── app/
+│       │   ├── core/
+│       │   ├── config/
+│       │   ├── database/
+│       │   ├── models/
+│       │   ├── schemas/
+│       │   │
+│       │   ├── content/
+│       │   ├── creative/
+│       │   ├── assets/
+│       │   ├── analysis/
+│       │   ├── design/
+│       │   ├── audio/
+│       │   ├── rendering/
+│       │   ├── export/
+│       │   └── jobs/
+│       │
+│       ├── tests/
+│       ├── requirements.txt
+│       └── main.py
+│
+├── assets/
+│   ├── fonts/
+│   ├── music/
+│   ├── sfx/
+│   └── templates/
+│
+├── data/
+│   ├── app.db
+│   ├── projects/
+│   ├── assets/
+│   ├── audio/
+│   ├── renders/
+│   └── exports/
+│
+├── docs/
+│
+├── scripts/
+│
+├── .env.example
+├── README.md
+└── package.json
+```
+
+Keep the architecture modular.
+
+Do not create a giant Python file.
+
+Do not create a giant React component.
+
+Do not put rendering, API calls, database logic, and UI logic into the same module.
+
+---
+
+# 7. Technology Stack
+
+## Desktop
+
+Use:
+
+- Electron
+- React
+- TypeScript
+- Vite
+
+## UI
+
+Use:
+
+- Tailwind CSS
+- shadcn/ui or similarly high quality accessible primitives
+- Framer Motion where useful
+- Lucide icons or another consistent icon system
+
+Do not use excessive third party UI components.
+
+The interface should feel custom designed.
+
+## Backend
+
+Use:
+
+- Python 3.11+
+- Pydantic
+- SQLite
+- SQLAlchemy or SQLModel
+- httpx
+- Pillow
+- OpenCV
+- FFmpeg
+- local TTS engine
+
+## AI
+
+Use:
+
+- DeepSeek API
+
+The DeepSeek integration must be abstracted behind an interface.
+
+Example:
+
+```python
+class CreativeModel:
+    async def generate_content(self, brief: CreativeBrief) -> ContentPlan:
+        ...
+```
+
+Do not tightly couple the application to one provider.
+
+---
+
+# 8. Local Application Philosophy
+
+The application should work without a permanent server.
+
+Do not introduce:
+
+- Redis
+- PostgreSQL
+- Docker
+- Kubernetes
+- Railway
+- Render
+- cloud worker queues
+
+unless a future requirement explicitly demands them.
+
+SQLite is sufficient for the first version.
+
+All generated media should remain local.
+
+---
+
+# 9. Application Layout
+
+The desktop application should have a professional creative application layout.
+
+Recommended:
+
+```text
+┌──────────────────────────────────────────────────────────────┐
+│ Logo / Project             Search        Settings      ●      │
+├──────────────┬───────────────────────────────────────────────┤
+│              │                                               │
+│ Dashboard    │                                               │
+│              │                                               │
+│ Create       │                MAIN WORKSPACE                  │
+│ Projects     │                                               │
+│ Library      │                                               │
+│ Queue        │                                               │
+│ Exports      │                                               │
+│              │                                               │
+│ Settings     │                                               │
+│              │                                               │
+└──────────────┴───────────────────────────────────────────────┘
+```
+
+The sidebar should be restrained.
+
+Do not create a dashboard with twenty metric cards.
+
+The primary focus should always be the content creation workspace.
+
+---
+
+# 10. Main Screens
+
+The application should contain:
+
+## Dashboard
+
+Show:
+
+- Recent projects.
+- Recent renders.
+- Generation queue.
+- Today's generated content.
+- Asset usage.
+- Quick create action.
+
+The dashboard should be visually calm.
+
+Avoid meaningless analytics.
+
+---
+
+## Create
+
+The primary creation workspace.
+
+User can specify:
+
+### Content goal
+
+Examples:
+
+- Motivation
+- Discipline
+- Personal growth
+- Mindset
+- Productivity
+- Relationships
+- Reflection
+- Confidence
+- Success
+- Resilience
+
+### Tone
+
+Examples:
+
+- Cinematic
+- Reflective
+- Calm
+- Intense
+- Inspirational
+- Conversational
+- Emotional
+- Minimal
+- Thoughtful
+
+### Output
+
+Options:
+
+- Video
+- Image
+- Automatic
+- Video + Image
+
+### Quantity
+
+Examples:
+
+```text
+1
+3
+6
+Custom
+```
+
+### Platforms
+
+Checkboxes:
+
+- YouTube Shorts
+- Instagram Reels
+- Instagram Feed
+- TikTok
+
+The user should not have to manually configure technical video parameters unless they open Advanced Settings.
+
+---
+
+# 11. Creative Brief
+
+The creative brief should be represented as structured data.
+
+Example:
+
+```json
+{
+  "topic": "discipline",
+  "tone": "cinematic",
+  "mood": "quiet determination",
+  "audience": "young professionals",
+  "format": "automatic",
+  "quantity": 6
+}
+```
+
+---
+
+# 12. DeepSeek Creative Generation
+
+DeepSeek should act as the creative director.
+
+It should generate structured JSON.
+
+Never depend on freeform text parsing.
+
+Example:
+
+```json
+{
+  "theme": "discipline",
+  "quote": {
+    "text": "You do not need to feel ready. You need to keep moving.",
+    "author": null
+  },
+  "narration": {
+    "text": "You do not need to feel ready. You need to keep moving. Some days the progress is invisible. Keep going anyway.",
+    "delivery": "calm_reflective"
+  },
+  "visual": {
+    "preferred_type": "video",
+    "search_query": "person walking alone mountain sunrise cinematic",
+    "secondary_query": "runner sunrise mountain cinematic",
+    "mood": "quiet determination"
+  },
+  "design": {
+    "text_density": "low",
+    "animation": "slow",
+    "composition": "editorial"
+  },
+  "metadata": {
+    "youtube_title": "Keep Moving",
+    "description": "...",
+    "hashtags": [
+      "#discipline",
+      "#mindset",
+      "#motivation"
+    ]
+  }
+}
+```
+
+DeepSeek should NOT determine exact:
+
+- HEX colors
+- Font sizes
+- Pixel positions
+- Video bitrate
+- FFmpeg parameters
+- Crop coordinates
+
+Those belong to deterministic application logic.
+
+---
+
+# 13. Content Quality Rules
+
+Generated quotes must:
+
+- Sound natural.
+- Avoid obvious AI phrasing.
+- Avoid unnecessary clichés.
+- Avoid repetitive structures.
+- Avoid excessive punctuation.
+- Avoid fake quotations attributed to real people.
+- Avoid fabricated authors.
+- Avoid repeating recent quotes.
+- Avoid producing six variations of the same sentence.
+
+The system should maintain a local history of generated quotes.
+
+Before accepting a new quote, compare it against recent content.
+
+Reject highly similar content.
+
+---
+
+# 14. Content Variation
+
+When generating six pieces, the system should deliberately vary:
+
+- Quote structure.
+- Opening.
+- Emotional intensity.
+- Visual type.
+- Visual subject.
+- Composition.
+- Color treatment.
+- Animation.
+- Narration style.
+- Camera movement where applicable.
+
+The six posts should feel like they belong to the same brand without looking like duplicates.
+
+---
+
+# 15. Asset Providers
+
+Support:
+
+```text
+Pexels
+Unsplash
+```
+
+Create provider interfaces:
+
+```python
+class VisualProvider:
+    async def search_images(self, query: str, limit: int):
+        ...
+
+    async def search_videos(self, query: str, limit: int):
+        ...
+
+    async def download(self, asset):
+        ...
+```
+
+Implement:
+
+```text
+PexelsProvider
+UnsplashProvider
+```
+
+Do not allow provider specific logic to leak into the rendering system.
+
+---
+
+# 16. Asset Selection
+
+Never blindly use the first search result.
+
+The system should:
+
+1. Search multiple candidates.
+2. Download metadata first.
+3. Filter unsuitable assets.
+4. Check previous usage.
+5. Calculate similarity.
+6. Analyze visual quality.
+7. Score candidates.
+8. Select the highest scoring eligible asset.
+
+Possible scoring:
+
+```text
+semantic relevance       30%
+visual quality           20%
+composition              15%
+brand compatibility      15%
+color compatibility      10%
+novelty                   5%
+motion quality            5%
+```
+
+Make these weights configurable.
+
+---
+
+# 17. Asset Deduplication
+
+The system must prevent repetitive content.
+
+Track:
+
+```text
+provider
+provider_asset_id
+asset_type
+source_url
+local_path
+width
+height
+fps
+duration
+hash
+perceptual_hash
+dominant_colors
+brightness
+saturation
+contrast
+motion_score
+times_used
+last_used_at
+themes
+```
+
+Use:
+
+- Cryptographic hash for exact duplicates.
+- Perceptual hash for visually similar images.
+- Frame sampling for video similarity.
+- Color histogram comparison.
+- Metadata similarity.
+
+---
+
+# 18. Asset Cooldown
+
+Implement configurable reuse rules.
+
+Example defaults:
+
+```text
+Same asset:
+Never reuse until asset pool exhausted.
+
+Similar asset:
+7 day cooldown.
+
+Same visual category:
+3 day cooldown.
+
+Same dominant composition:
+3 day cooldown.
+```
+
+These should be configurable.
+
+---
+
+# 19. Video Asset Rules
+
+Video assets should be evaluated for:
+
+- Resolution.
+- Aspect ratio.
+- FPS.
+- Duration.
+- Motion.
+- Camera movement.
+- Subject position.
+- Visual quality.
+- Lighting.
+- Compression artifacts.
+
+The preferred source is genuine 60 FPS footage.
+
+If a source is 60 FPS:
+
+```text
+Preserve 60 FPS.
+```
+
+If a source is 30 FPS:
+
+```text
+Do not pretend that interpolation makes it genuine 60 FPS.
+```
+
+Do not artificially convert every source to 60 FPS merely for marketing purposes.
+
+The application should preserve the source's actual temporal information unless a deliberate interpolation feature is later added.
+
+---
+
+# 20. Video Output
+
+Primary vertical video target:
+
+```text
+Resolution: 1080 × 1920
+Aspect ratio: 9:16
+Frame rate: 60 FPS when source supports it
+Codec: H.264
+Audio: AAC
+```
+
+Use high quality encoding.
+
+Make bitrate/quality configurable under Advanced Settings.
+
+Do not use unnecessarily enormous files.
+
+---
+
+# 21. Image Output
+
+Primary Instagram image:
+
+```text
+1080 × 1350
+4:5
+```
+
+Optional:
+
+```text
+1080 × 1080
+1:1
+```
+
+The image renderer must not simply place text in the center.
+
+It should understand:
+
+- Subject location.
+- Negative space.
+- Contrast.
+- Brightness.
+- Visual hierarchy.
+- Reading distance.
+- Text density.
+
+---
+
+# 22. Visual Analyzer
+
+Create a deterministic visual analysis engine.
+
+Input:
+
+```text
+Image
+or
+Video
+```
+
+Output:
+
+```json
+{
+  "brightness": 0.42,
+  "contrast": 0.68,
+  "saturation": 0.31,
+  "temperature": "cool",
+  "dominant_colors": [
+    "#253832",
+    "#718078",
+    "#D3DAD6"
+  ],
+  "subject_position": "right",
+  "visual_complexity": 0.46,
+  "motion_score": 0.72
+}
+```
+
+For video additionally calculate:
+
+- Motion intensity.
+- Scene changes.
+- Usable segments.
+- Camera movement.
+- Temporal stability.
+- Subject persistence.
+
+---
+
+# 23. HEX / Palette Engine
+
+Do not hardcode a single brand palette for every post.
+
+Instead:
+
+```text
+Source visual
+      ↓
+Color extraction
+      ↓
+Brand constraints
+      ↓
+Accessible palette
+      ↓
+Design tokens
+```
+
+Example:
+
+```json
+{
+  "primary": "#53645F",
+  "secondary": "#A7B4AD",
+  "dark": "#18201E",
+  "light": "#E5ECE8",
+  "text": "#FFFFFF",
+  "overlay": "#18201E"
+}
+```
+
+The palette should adapt to the source while remaining within the application's visual identity.
+
+---
+
+# 24. Brand Visual Identity
+
+The default visual identity should be:
+
+- Premium.
+- Minimal.
+- Cinematic.
+- Editorial.
+- Modern.
+- Restrained.
+- Human.
+- High contrast where appropriate.
+
+Avoid:
+
+- Neon.
+- Excessive gradients.
+- Generic AI aesthetics.
+- Excessive glassmorphism.
+- Cartoon UI.
+- Oversized rounded cards.
+- Random decorative blobs.
+- Excessive shadows.
+- Purple AI gradients.
+- Cheap looking templates.
+
+---
+
+# 25. Typography
+
+Use a small controlled font system.
+
+Suggested categories:
+
+```text
+Primary:
+Clean modern sans serif.
+
+Secondary:
+Editorial serif where appropriate.
+
+UI:
+Highly readable modern sans serif.
+```
+
+Fonts must be locally packaged or otherwise licensed for redistribution.
+
+The design engine must automatically select font size based on:
+
+- Quote length.
+- Number of lines.
+- Output dimensions.
+- Safe area.
+- Subject location.
+
+---
+
+# 26. Text Placement
+
+Text should be positioned based on the visual.
+
+Example:
+
+```text
+Subject on left
+→ place text on right.
+
+Subject on right
+→ place text on left.
+
+Busy center
+→ avoid center.
+
+Large negative space
+→ exploit negative space.
+```
+
+Never place text directly over important facial features or major visual subjects unless intentionally designed.
+
+---
+
+# 27. Dynamic Overlay
+
+The system may use:
+
+- Dark translucent overlay.
+- Gradient overlay.
+- Local contrast enhancement.
+- Blur behind text.
+- Text shadow.
+
+But these must be subtle.
+
+The purpose is readability, not decoration.
+
+---
+
+# 28. Motion Design
+
+Static images can be converted into dynamic videos.
+
+Possible effects:
+
+```text
+slow zoom
+slow pan
+parallax
+subtle scale movement
+light camera drift
+```
+
+Motion should be:
+
+- Smooth.
+- Slow.
+- Intentional.
+- Cinematic.
+
+Never use cheap zoom in/out effects.
+
+---
+
+# 29. TTS
+
+Implement a replaceable TTS abstraction.
+
+```python
+class TTSProvider:
+    async def generate(
+        self,
+        text: str,
+        voice: str,
+        speed: float
+    ) -> AudioResult:
+        ...
+```
+
+The initial implementation should use an open source/local TTS engine.
+
+The provider must be replaceable later.
+
+Potential providers can be evaluated during implementation based on:
+
+- Naturalness.
+- Speed.
+- CPU requirements.
+- Licensing.
+- Voice quality.
+- Windows compatibility.
+- Offline operation.
+
+Do not hardcode the architecture around one TTS engine.
+
+---
+
+# 30. Narration
+
+Narration should not always be the quote copied verbatim.
+
+DeepSeek should create natural spoken delivery.
+
+Example:
+
+```text
+You won't always feel motivated.
+
+That's the point.
+
+Discipline begins when motivation ends.
+```
+
+The TTS engine should receive the spoken version.
+
+The visual quote can be shorter:
+
+```text
+Discipline begins when motivation ends.
+```
+
+---
+
+# 31. Audio
+
+Support:
+
+- Narration.
+- Background music.
+- Optional subtle sound effects.
+
+Audio mixing should be deterministic.
+
+Example:
+
+```text
+Narration: primary
+Music: low background level
+SFX: optional
+```
+
+Automatically normalize audio.
+
+Prevent clipping.
+
+Use fades where appropriate.
+
+---
+
+# 32. Rendering Architecture
+
+Do not generate video directly from UI components.
+
+Use a renderer service.
+
+```python
+class Renderer:
+    def render_video(self, project: RenderProject):
+        ...
+
+    def render_image(self, project: RenderProject):
+        ...
+```
+
+FFmpeg should be invoked through a controlled subprocess layer.
+
+Never construct unsafe shell strings.
+
+Use argument arrays.
+
+Capture:
+
+- stdout.
+- stderr.
+- exit code.
+- duration.
+- progress.
+
+---
+
+# 33. Render Pipeline
+
+```text
+Content
+  ↓
+Visual
+  ↓
+Visual analysis
+  ↓
+Design tokens
+  ↓
+Narration
+  ↓
+Music
+  ↓
+Composition
+  ↓
+FFmpeg
+  ↓
+Quality validation
+  ↓
+Final asset
+```
+
+---
+
+# 34. Quality Validation
+
+Every render must pass automated checks.
+
+Video:
+
+```text
+Correct resolution
+Correct orientation
+Correct FPS
+Valid codec
+Valid audio
+No corrupted frames
+Expected duration
+Audio not clipped
+File exists
+File playable
+```
+
+Image:
+
+```text
+Correct resolution
+Correct format
+Valid color profile
+File readable
+No unexpected transparency
+```
+
+Reject failed outputs.
+
+Do not silently export broken media.
+
+---
+
+# 35. Project Model
+
+Each generated piece should be a project.
+
+Example:
+
+```json
+{
+  "id": "project_001",
+  "status": "completed",
+  "theme": "discipline",
+  "quote": "...",
+  "narration": "...",
+  "visual_asset_id": "asset_123",
+  "design": {},
+  "audio": {},
+  "outputs": []
+}
+```
+
+Projects should be reopenable.
+
+---
+
+# 36. Database
+
+Use SQLite.
+
+Tables:
+
+```text
+projects
+content_pieces
+assets
+asset_usage
+renders
+audio_assets
+generation_jobs
+export_jobs
+settings
+```
+
+Do not store large binary media inside SQLite.
+
+Store file paths.
+
+---
+
+# 37. File Storage
+
+Use application controlled directories.
+
+Example:
+
+```text
+data/
+├── projects/
+│   └── project_id/
+│       ├── project.json
+│       ├── source/
+│       ├── audio/
+│       ├── renders/
+│       └── exports/
+│
+├── assets/
+│
+├── cache/
+│
+└── logs/
+```
+
+The user should be able to choose an alternative media directory.
+
+---
+
+# 38. Job System
+
+The application should have a lightweight local job manager.
+
+States:
+
+```text
+queued
+running
+completed
+failed
+cancelled
+```
+
+Example:
+
+```text
+Generate content
+      ↓
+Find asset
+      ↓
+Analyze asset
+      ↓
+Generate audio
+      ↓
+Render
+      ↓
+Validate
+```
+
+Each stage should expose progress.
+
+Example:
+
+```text
+Generating creative      20%
+Finding visuals          35%
+Analyzing visual         45%
+Generating narration     60%
+Rendering                85%
+Validating               98%
+Completed               100%
+```
+
+---
+
+# 39. UI Job Feedback
+
+Never freeze the UI while Python works.
+
+The UI must remain responsive.
+
+Display:
+
+- Current operation.
+- Progress.
+- Current project.
+- Estimated stage.
+- Logs on demand.
+- Cancel button where safe.
+
+Do not show meaningless fake progress.
+
+Progress should correspond to actual pipeline stages.
+
+---
+
+# 40. Preview Experience
+
+The preview is one of the most important parts of the application.
+
+It should feel premium.
+
+Requirements:
+
+- Large video preview.
+- Play/pause.
+- Scrubbing.
+- Current time.
+- Duration.
+- Volume.
+- Fullscreen.
+- Output format indicator.
+- Resolution indicator.
+- FPS indicator.
+- Regenerate button.
+- Approve button.
+
+For images:
+
+- Large canvas.
+- Zoom.
+- Fit.
+- Actual size.
+- Before/after design comparison.
+
+---
+
+# 41. Content Review Screen
+
+After generation, show:
+
+```text
+┌─────────────────────────────────────────────────────────────┐
+│ Content 01                                    ● Ready       │
+│                                                             │
+│                  VIDEO PREVIEW                              │
+│                                                             │
+│                                                             │
+│                                                             │
+│─────────────────────────────────────────────────────────────│
+│ Quote                                                       │
+│ "..."                                                       │
+│                                                             │
+│ Narration                                                   │
+│ "..."                                                       │
+│                                                             │
+│ Visual: Pexels                                              │
+│ Palette: [●] [●] [●]                                       │
+│                                                             │
+│ [Regenerate]              [Approve]                         │
+└─────────────────────────────────────────────────────────────┘
+```
+
+Do not overwhelm the screen.
+
+Progressive disclosure should be used.
+
+Advanced metadata can live in a side panel.
+
+---
+
+# 42. Editor Philosophy
+
+The application does not need to become a full video editor.
+
+Do not recreate Premiere Pro.
+
+The initial editor should focus on:
+
+- Quote.
+- Text placement.
+- Font.
+- Palette.
+- Visual.
+- Narration.
+- Music.
+- Animation intensity.
+- Duration.
+- Output format.
+
+Advanced timeline editing is not required for MVP.
+
+---
+
+# 43. Regeneration
+
+Every important stage should support regeneration.
+
+Examples:
+
+```text
+Regenerate quote
+Regenerate narration
+Find another visual
+Regenerate design
+Change voice
+Regenerate image
+Regenerate video
+```
+
+Do not regenerate everything when only one component changed.
+
+If the user changes the visual:
+
+```text
+Visual
+   ↓
+Reanalyze
+   ↓
+Recalculate palette
+   ↓
+Update design
+   ↓
+Render
+```
+
+Do not regenerate the quote unnecessarily.
+
+---
+
+# 44. Asset Library
+
+The application should maintain a local asset library.
+
+Display:
+
+- Thumbnail.
+- Provider.
+- Type.
+- Dimensions.
+- FPS.
+- Duration.
+- Dominant colors.
+- Usage count.
+- Last used.
+- Associated themes.
+
+Allow filtering:
+
+```text
+Images
+Videos
+Pexels
+Unsplash
+Recently used
+Never used
+High quality
+60 FPS
+```
+
+---
+
+# 45. Search UX
+
+Search should feel like a professional media library.
+
+Show:
+
+```text
+[ Search visuals... ]
+
+Filters
+────────────────────
+Type
+Provider
+Orientation
+Duration
+FPS
+Color
+Mood
+Usage
+```
+
+Use thumbnails rather than text heavy result lists.
+
+---
+
+# 46. Content Queue
+
+The queue should show:
+
+```text
+Queued
+Generating
+Rendering
+Ready
+Approved
+Exported
+Failed
+```
+
+Use clear visual status.
+
+Do not use excessive colored badges.
+
+---
+
+# 47. Export
+
+Export should produce organized folders.
+
+Example:
+
+```text
+exports/
+└── 2026-09-19/
+    ├── 001_discipline/
+    │   ├── video_9x16.mp4
+    │   ├── image_4x5.jpg
+    │   ├── thumbnail.jpg
+    │   ├── caption.txt
+    │   └── metadata.json
+    │
+    ├── 002_mindset/
+    │   └── ...
+```
+
+Also support:
+
+```text
+Export all
+Export selected
+Copy export folder
+Open export folder
+```
+
+---
+
+# 48. Metricool Integration
+
+Do not build a scheduler initially.
+
+The application should export files and metadata in a format convenient for Metricool.
+
+The architecture should allow a future publisher adapter:
+
+```python
+class Publisher:
+    def publish(self, content):
+        ...
+```
+
+Future implementations:
+
+```text
+Metricool
+YouTube
+Instagram
+TikTok
+```
+
+But they are not part of MVP.
+
+---
+
+# 49. Settings
+
+Settings should include:
+
+## AI
+
+- DeepSeek API key.
+- Model.
+- Temperature where supported.
+- Max generation tokens.
+
+## Visual providers
+
+- Pexels API key.
+- Unsplash API key.
+
+## TTS
+
+- Provider.
+- Voice.
+- Speed.
+- Volume.
+
+## Rendering
+
+- Output resolution.
+- FPS.
+- Quality.
+- Audio bitrate.
+
+## Content
+
+- Default topics.
+- Default tone.
+- Default content quantity.
+- Asset cooldown.
+
+## Storage
+
+- Media directory.
+- Cache directory.
+- Export directory.
+
+---
+
+# 50. API Key Security
+
+API keys must never be exposed to the React renderer.
+
+Use Electron main process or Python backend.
+
+Never place secrets in:
+
+```text
+VITE_*
+```
+
+Never commit `.env`.
+
+Use:
+
+```text
+.env
+```
+
+for development.
+
+For packaged desktop builds, use an appropriate OS secure storage mechanism where practical.
+
+At minimum, never log API keys.
+
+---
+
+# 51. Error Handling
+
+Errors should be human readable.
+
+Bad:
+
+```text
+HTTP 401
+```
+
+Better:
+
+```text
+Pexels authentication failed.
+
+Check your Pexels API key in Settings.
+```
+
+Technical details should be available under:
+
+```text
+View technical details
+```
+
+---
+
+# 52. Logging
+
+Use structured logs.
+
+Store:
+
+```text
+timestamp
+level
+component
+job_id
+project_id
+message
+exception
+```
+
+Never log:
+
+- API keys.
+- Private tokens.
+- Sensitive user data.
+
+---
+
+# 53. UI Design System
+
+The UI should be designed before implementing screens.
+
+Establish:
+
+```text
+Spacing scale
+Typography scale
+Border radius
+Elevation
+Icon sizes
+Button sizes
+Input sizes
+Animation durations
+Color tokens
+```
+
+Do not randomly style each screen.
+
+---
+
+# 54. Visual Direction
+
+The interface should be:
+
+```text
+Premium
+Quiet
+Precise
+Editorial
+Technical
+Modern
+Confident
+```
+
+Think:
+
+```text
+Professional creative software
++
+Modern AI tool
++
+Desktop native feeling
+```
+
+Not:
+
+```text
+Generic AI SaaS dashboard
+```
+
+---
+
+# 55. Layout Rules
+
+Use generous spacing.
+
+Prefer:
+
+```text
+Large canvas
+Small controls
+Strong hierarchy
+Clear grouping
+```
+
+Avoid:
+
+```text
+Dense grids
+Tiny text
+Too many cards
+Too many borders
+Too many floating buttons
+```
+
+---
+
+# 56. Animation
+
+Use motion sparingly.
+
+Examples:
+
+- Sidebar transitions.
+- Panel transitions.
+- Preview transitions.
+- Progress transitions.
+- Modal entrance.
+- Hover states.
+- Content regeneration states.
+
+Animation should make the application feel responsive, not decorative.
+
+Use short durations.
+
+Avoid excessive spring animations.
+
+---
+
+# 57. Empty States
+
+Empty states should explain what to do.
+
+Example:
+
+```text
+No projects yet
+
+Create your first content batch and we'll build
+the visuals, narration and final renders for you.
+
+[ Create content ]
+```
+
+Do not use meaningless illustrations unless they genuinely improve the experience.
+
+---
+
+# 58. Loading States
+
+Never use a generic spinner for long operations.
+
+Use stage specific progress.
+
+Example:
+
+```text
+Finding the right visual
+
+Searching 24 candidates
+Filtering duplicates
+Analyzing composition
+Selecting final asset
+```
+
+This makes the system feel intelligent without pretending that the AI is doing something it is not.
+
+---
+
+# 59. Desktop Window
+
+The application should support:
+
+- Resizable window.
+- Minimum sensible size.
+- Native title bar integration where appropriate.
+- Keyboard shortcuts.
+- Context menus.
+- File dialogs.
+- Drag and drop.
+- Open containing folder.
+- Copy file path.
+
+---
+
+# 60. Keyboard Shortcuts
+
+Implement useful shortcuts.
+
+Examples:
+
+```text
+Ctrl/Cmd + N
+New project
+
+Ctrl/Cmd + S
+Save
+
+Ctrl/Cmd + Enter
+Generate
+
+Space
+Play/pause preview
+
+Ctrl/Cmd + E
+Export
+
+Delete
+Remove selected item
+
+Escape
+Close modal
+```
+
+---
+
+# 61. Accessibility
+
+The UI should support:
+
+- Keyboard navigation.
+- Visible focus states.
+- Accessible labels.
+- Sufficient contrast.
+- Reduced motion preference where practical.
+- Screen reader friendly controls.
+
+Do not sacrifice accessibility for visual polish.
+
+---
+
+# 62. Performance
+
+The UI must remain responsive while rendering.
+
+Heavy work belongs in Python processes.
+
+Do not:
+
+- Run FFmpeg synchronously on the Electron UI thread.
+- Decode large videos unnecessarily in React.
+- Load thousands of thumbnails simultaneously.
+- Keep large binary assets in application state.
+
+Use thumbnails and lazy loading.
+
+---
+
+# 63. Caching
+
+Cache:
+
+- API search results.
+- Downloaded assets.
+- Visual analysis.
+- TTS output.
+- Generated metadata.
+
+Do not regenerate an identical asset unnecessarily.
+
+Cache keys should be deterministic.
+
+---
+
+# 64. Asset Download Strategy
+
+Do not download every search result at full resolution.
+
+First retrieve metadata and thumbnails.
+
+Only download the selected asset at the required resolution.
+
+This reduces:
+
+- Bandwidth.
+- Disk usage.
+- Processing time.
+
+---
+
+# 65. Video Segment Selection
+
+If a selected video is longer than needed:
+
+```text
+Analyze video
+     ↓
+Find usable segments
+     ↓
+Score each segment
+     ↓
+Select best segment
+```
+
+Do not always use the first N seconds.
+
+Score based on:
+
+- Motion.
+- Subject visibility.
+- Composition.
+- Stability.
+- Visual relevance.
+- Color compatibility.
+
+---
+
+# 66. Image to Video
+
+For still images used in video outputs:
+
+Create subtle motion.
+
+Possible:
+
+```text
+Ken Burns
+Slow push in
+Slow pull out
+Horizontal drift
+Vertical drift
+Parallax
+```
+
+The movement should respect the composition.
+
+---
+
+# 67. Background Music
+
+The architecture should support a local music library.
+
+Each track should have metadata:
+
+```text
+track_id
+title
+genre
+mood
+tempo
+duration
+file_path
+license
+```
+
+The content engine can select music based on mood.
+
+Do not automatically download copyrighted music from random sources.
+
+Use properly licensed music.
+
+---
+
+# 68. Content Metadata
+
+Every content piece should generate:
+
+```text
+Title
+Description
+Caption
+Hashtags
+Keywords
+Alt text
+Suggested posting time
+Theme
+```
+
+The system should produce platform specific metadata.
+
+Do not use the exact same metadata blindly across every platform.
+
+---
+
+# 69. Platform Adaptation
+
+Create adapters:
+
+```text
+platforms/
+├── youtube.py
+├── instagram.py
+└── tiktok.py
+```
+
+These adapters initially only generate metadata and export configurations.
+
+They do not publish.
+
+---
+
+# 70. YouTube Shorts Output
+
+Generate:
+
+```text
+9:16
+1080 × 1920
+60 FPS where source supports it
+MP4
+H.264
+AAC
+```
+
+Metadata:
+
+```text
+title
+description
+hashtags
+keywords
+```
+
+---
+
+# 71. Instagram Reels Output
+
+Generate:
+
+```text
+9:16
+1080 × 1920
+MP4
+```
+
+Generate:
+
+```text
+caption
+hashtags
+cover frame
+```
+
+---
+
+# 72. Instagram Feed Output
+
+Generate:
+
+```text
+4:5
+1080 × 1350
+JPG
+```
+
+Optional:
+
+```text
+1:1
+1080 × 1080
+```
+
+---
+
+# 73. TikTok Output
+
+Generate:
+
+```text
+9:16
+1080 × 1920
+MP4
+```
+
+Generate:
+
+```text
+caption
+hashtags
+cover frame
+```
+
+---
+
+# 74. Content Calendar
+
+The desktop application should provide a simple calendar view.
+
+It does not publish.
+
+It simply shows:
+
+```text
+September 19
+  ✓ Content 1
+  ✓ Content 2
+  ○ Content 3
+  ○ Content 4
+```
+
+This helps the user understand what has been generated.
+
+---
+
+# 75. Batch Generation
+
+Batch generation is important.
+
+Example:
+
+```text
+Generate 6 pieces
+
+1. Discipline
+2. Discipline
+3. Discipline
+4. Discipline
+5. Discipline
+6. Discipline
+```
+
+But the content engine should deliberately diversify them.
+
+Do not send six completely independent identical prompts.
+
+Generate a batch plan first.
+
+Example:
+
+```json
+{
+  "batch_theme": "discipline",
+  "pieces": [
+    {
+      "angle": "consistency"
+    },
+    {
+      "angle": "motivation vs discipline"
+    },
+    {
+      "angle": "quiet work"
+    },
+    {
+      "angle": "delayed results"
+    },
+    {
+      "angle": "small habits"
+    },
+    {
+      "angle": "showing up"
+    }
+  ]
+}
+```
+
+Then generate each piece.
+
+---
+
+# 76. Batch Visual Diversity
+
+The batch planner should also diversify:
+
+```text
+1 → mountain video
+2 → city video
+3 → person image
+4 → ocean image
+5 → runner video
+6 → abstract video
+```
+
+Subject repetition should be discouraged.
+
+---
+
+# 77. Quality Score
+
+Every generated asset should receive an internal quality score.
+
+Example:
+
+```text
+Content quality
+Visual quality
+Narration quality
+Design quality
+Technical quality
+Novelty
+```
+
+Do not expose a fake "AI score" to users unless the score is meaningful.
+
+Use it internally to determine whether regeneration is necessary.
+
+---
+
+# 78. Regeneration Threshold
+
+Example:
+
+```text
+If technical validation fails:
+    automatically regenerate.
+
+If visual quality < threshold:
+    choose another asset.
+
+If quote similarity > threshold:
+    regenerate quote.
+
+If narration generation fails:
+    retry with fallback TTS.
+
+If rendering fails:
+    retry once.
+
+If retry fails:
+    mark job failed.
+```
+
+Never create infinite loops.
+
+---
+
+# 79. Retry Policy
+
+Use bounded retries.
+
+Example:
+
+```text
+API:
+3 retries
+
+Download:
+3 retries
+
+TTS:
+2 retries
+
+Rendering:
+1 retry
+```
+
+Use exponential backoff for external APIs.
+
+---
+
+# 80. Offline Capability
+
+The application should still open and allow:
+
+- Browsing existing projects.
+- Viewing downloaded assets.
+- Editing existing content.
+- Re-rendering existing projects.
+- Exporting existing projects.
+
+AI generation obviously requires network access.
+
+---
+
+# 81. Packaging
+
+Use Electron Builder.
+
+Produce:
+
+```text
+Windows installer
+```
+
+Later:
+
+```text
+macOS
+Linux
+```
+
+Do not optimize for all operating systems in MVP.
+
+Windows is the primary target.
+
+---
+
+# 82. Backend Communication
+
+Use a clear IPC boundary.
+
+Example:
+
+```text
+Electron
+    │
+    │ generateContent()
+    ▼
+Python
+    │
+    │ result
+    ▼
+Electron
+```
+
+For long jobs, use event based progress:
+
+```text
+job.started
+job.progress
+job.stage
+job.completed
+job.failed
+```
+
+---
+
+# 83. IPC Security
+
+Use a preload bridge.
+
+Do not expose Node.js APIs directly to the renderer.
+
+Avoid:
+
+```text
+nodeIntegration: true
+```
+
+Use:
+
+```text
+contextIsolation: true
+```
+
+Expose only explicit methods.
+
+---
+
+# 84. Python Process Management
+
+Electron should launch and supervise the Python backend.
+
+Requirements:
+
+- Start backend automatically.
+- Detect startup failure.
+- Capture backend logs.
+- Stop backend on application exit.
+- Detect unexpected backend termination.
+- Restart when safe.
+- Show useful errors.
+
+---
+
+# 85. Development Mode
+
+During development:
+
+```text
+Electron
+   ↓
+Python local process
+```
+
+Hot reload:
+
+```text
+React/Vite HMR
+Python development server/process restart
+```
+
+Do not require Docker.
+
+---
+
+# 86. Testing
+
+Implement tests for:
+
+## Python
+
+- Content schema.
+- Quote deduplication.
+- Asset deduplication.
+- Palette extraction.
+- Visual scoring.
+- Metadata generation.
+- Render configuration.
+- File handling.
+
+## React
+
+- Main navigation.
+- Creation flow.
+- Preview.
+- Settings.
+- Queue.
+- Asset library.
+
+## Integration
+
+Test:
+
+```text
+Brief
+ ↓
+DeepSeek
+ ↓
+Asset selection
+ ↓
+Analysis
+ ↓
+TTS
+ ↓
+FFmpeg
+ ↓
+Validation
+```
+
+Use mocked external APIs in automated tests.
+
+Do not make CI depend on paid API calls.
+
+---
+
+# 87. Render Test Fixtures
+
+Include a small local fixture library.
+
+Examples:
+
+```text
+test_image.jpg
+test_video_30fps.mp4
+test_video_60fps.mp4
+test_audio.wav
+```
+
+Use these to test the renderer.
+
+---
+
+# 88. Acceptance Test
+
+The application is not complete until this workflow works:
+
+```text
+Launch application
+        ↓
+Create project
+        ↓
+Choose "Discipline"
+        ↓
+Choose cinematic
+        ↓
+Generate 6
+        ↓
+AI creates six distinct concepts
+        ↓
+Visual assets are selected
+        ↓
+Previously used assets are avoided
+        ↓
+Assets are analyzed
+        ↓
+Palette is generated
+        ↓
+Narration is generated
+        ↓
+TTS creates audio
+        ↓
+FFmpeg creates output
+        ↓
+Technical validation passes
+        ↓
+Preview appears
+        ↓
+User can regenerate individual components
+        ↓
+User approves
+        ↓
+Export
+        ↓
+Correct folder structure created
+```
+
+---
+
+# 89. Design Acceptance Criteria
+
+The UI must not be considered complete simply because all screens exist.
+
+The agent must evaluate:
+
+### Visual hierarchy
+
+Can the user immediately identify:
+
+- Where they are.
+- What they are creating.
+- What is currently processing.
+- What needs attention.
+
+### Spacing
+
+No:
+
+- cramped controls
+- arbitrary margins
+- inconsistent gaps
+- misaligned elements
+
+### Typography
+
+No:
+
+- excessive font sizes
+- random weights
+- inconsistent line heights
+
+### Components
+
+No:
+
+- duplicated button styles
+- inconsistent inputs
+- inconsistent cards
+- inconsistent modal patterns
+
+---
+
+# 90. Premium UI Acceptance Criteria
+
+The interface should pass this test:
+
+> If all branding were removed, would this look like a serious professional creative application?
+
+If the answer is no, continue refining.
+
+The interface should not look like:
+
+- a university project
+- a generic dashboard
+- a template from a UI generator
+- a basic Electron starter application
+- a generic Tailwind admin panel
+
+---
+
+# 91. Recordly Inspired UX Principles
+
+Use the following principles from Recordly as inspiration:
+
+### 1. Immediate preview
+
+Users should quickly see the effect of changes.
+
+### 2. Automation over complexity
+
+The system should make intelligent defaults instead of requiring manual configuration.
+
+### 3. Renderer driven output
+
+The preview and exported media should be driven by the same underlying design state.
+
+### 4. Persistent projects
+
+Projects should be reopenable.
+
+### 5. Professional media controls
+
+Playback and export controls should feel intentional.
+
+### 6. Motion matters
+
+Subtle motion dramatically improves perceived quality.
+
+### 7. Progressive disclosure
+
+Basic users see simple controls.
+
+Advanced users can open deeper configuration.
+
+Recordly's current product emphasizes polished motion, styled frames, timeline control, preview, and project persistence. These principles should inform the UX, but the new product must remain focused on AI social content generation rather than screen recording. citeturn0search1turn0search5
+
+---
+
+# 92. What NOT To Build
+
+Do not build:
+
+- Social media scheduler.
+- Full video editor.
+- Cloud backend.
+- User authentication.
+- Billing.
+- Team collaboration.
+- Complex analytics.
+- Social account OAuth.
+- Server side media storage.
+- Redis.
+- PostgreSQL.
+- Microservices.
+- Kubernetes.
+- Overcomplicated plugin system.
+
+The first version is a **desktop creative engine**.
+
+---
+
+# 93. MVP Definition
+
+MVP must include:
+
+```text
+Electron desktop UI
+Python backend
+SQLite
+DeepSeek
+Pexels
+Unsplash
+Asset history
+Asset deduplication
+Visual analysis
+HEX palette generation
+Open source TTS
+FFmpeg
+Video rendering
+Image rendering
+60 FPS preservation
+Project persistence
+Batch generation
+Preview
+Regeneration
+Export
+Settings
+```
+
+---
+
+# 94. Phase 2
+
+After MVP:
+
+```text
+Advanced editor
+Timeline
+More TTS voices
+More visual providers
+Automatic music selection
+Advanced motion
+Video segment editor
+Carousel generation
+Better visual similarity
+Cloud backup
+Direct publishing
+Metricool API
+```
+
+---
+
+# 95. Phase 3
+
+Potential future:
+
+```text
+Cloud sync
+Multi device
+Team collaboration
+Content analytics
+Performance feedback
+Automatic content strategy
+Platform performance learning
+AI visual style learning
+```
+
+Do not implement these now.
+
+---
+
+# 96. Agentic Builder Instructions
+
+The implementing agent must work in phases.
+
+Do not attempt to build the entire application blindly in one pass.
+
+Follow:
+
+```text
+Phase 1
+Repository and architecture
+
+Phase 2
+Desktop shell
+
+Phase 3
+Design system
+
+Phase 4
+Python backend
+
+Phase 5
+Database
+
+Phase 6
+Content engine
+
+Phase 7
+Asset engine
+
+Phase 8
+Visual analyzer
+
+Phase 9
+TTS
+
+Phase 10
+Renderer
+
+Phase 11
+Preview
+
+Phase 12
+Export
+
+Phase 13
+Testing
+
+Phase 14
+Polish
+```
+
+After every phase:
+
+1. Run the application.
+2. Inspect the result.
+3. Run tests.
+4. Fix errors.
+5. Review architecture.
+6. Continue only after acceptance criteria pass.
+
+---
+
+# 97. Agentic Builder Rules
+
+The agent must:
+
+- Read the entire specification before coding.
+- Inspect the existing repository before changing anything.
+- Keep modules small.
+- Avoid unnecessary dependencies.
+- Prefer existing mature open source libraries.
+- Never duplicate functionality unnecessarily.
+- Never silently remove requirements.
+- Never replace requirements with easier alternatives.
+- Never build fake functionality.
+- Never use placeholder buttons for core functionality.
+- Never mark functionality complete without testing it.
+
+---
+
+# 98. UI Agent Rules
+
+The UI agent must:
+
+- Design the visual system before building all screens.
+- Reuse components.
+- Maintain consistent spacing.
+- Maintain consistent typography.
+- Use motion intentionally.
+- Test at different window sizes.
+- Test long text.
+- Test empty states.
+- Test error states.
+- Test loading states.
+- Test failed renders.
+- Test very long quotes.
+- Test missing thumbnails.
+- Test slow APIs.
+
+---
+
+# 99. Backend Agent Rules
+
+The backend agent must:
+
+- Use typed Pydantic schemas.
+- Validate external API responses.
+- Validate all file paths.
+- Sanitize filenames.
+- Avoid shell injection.
+- Use subprocess argument arrays for FFmpeg.
+- Never trust AI generated JSON blindly.
+- Validate DeepSeek output against schemas.
+- Implement bounded retries.
+- Log failures.
+- Never expose API keys.
+
+---
+
+# 100. AI Agent Rules
+
+DeepSeek output must always pass schema validation.
+
+If DeepSeek returns invalid JSON:
+
+```text
+repair once
+    ↓
+validate
+    ↓
+retry generation if necessary
+```
+
+Do not build a fragile parser that attempts to interpret arbitrary prose.
+
+---
+
+# 101. External API Rules
+
+External APIs must be isolated behind provider classes.
+
+Example:
+
+```text
+providers/
+├── deepseek/
+├── pexels/
+└── unsplash/
+```
+
+Each provider should have:
+
+```text
+client
+schemas
+errors
+service
+tests
+```
+
+Do not scatter HTTP requests across the codebase.
+
+---
+
+# 102. Licensing and Attribution
+
+Before production use, verify the current terms of every external visual provider and every TTS/music model or asset.
+
+The implementation must preserve provider metadata needed for attribution or compliance.
+
+Do not assume that "API accessible" automatically means unrestricted commercial automated use.
+
+Store:
+
+```text
+provider
+creator
+source URL
+asset ID
+license/usage metadata where available
+```
+
+This makes future compliance much easier.
+
+---
+
+# 103. No Repetitive Content
+
+The system should treat repetition as a first class engineering problem.
+
+Maintain separate histories for:
+
+```text
+Quotes
+Visual assets
+Visual categories
+Narration openings
+Music
+Color palettes
+Design layouts
+```
+
+The goal is not random variation.
+
+The goal is **coherent variety**.
+
+---
+
+# 104. Content Identity
+
+Each content piece should have:
+
+```text
+content_id
+theme
+creative_angle
+quote
+narration
+visual
+visual_analysis
+design
+audio
+render
+platform_metadata
+```
+
+This creates a single source of truth.
+
+---
+
+# 105. Master Content Object
+
+Use a structure conceptually similar to:
+
+```python
+class ContentPiece:
+    id: str
+    theme: str
+    creative_angle: str
+    quote: Quote
+    narration: Narration
+    visual: VisualAsset
+    visual_analysis: VisualAnalysis
+    design: DesignSpec
+    audio: AudioSpec
+    outputs: list[RenderOutput]
+    metadata: PlatformMetadata
+```
+
+Everything else should derive from this object.
+
+---
+
+# 106. Rendering Abstraction
+
+Rendering should be deterministic.
+
+Given:
+
+```text
+ContentPiece
++
+DesignSpec
++
+RenderSpec
+```
+
+the renderer should produce the same output every time, subject to codec/environment differences.
+
+This is important for debugging.
+
+---
+
+# 107. Design Abstraction
+
+Do not hardcode layouts into FFmpeg commands.
+
+Create a design specification:
+
+```json
+{
+  "canvas": {
+    "width": 1080,
+    "height": 1920
+  },
+  "text": {
+    "position": "lower_left",
+    "alignment": "left",
+    "font": "Primary",
+    "size": 74
+  },
+  "overlay": {
+    "type": "gradient",
+    "strength": 0.35
+  },
+  "motion": {
+    "type": "slow_zoom",
+    "strength": 0.08
+  }
+}
+```
+
+FFmpeg becomes an implementation detail.
+
+---
+
+# 108. Preview and Export Must Share State
+
+The UI preview must be generated from the same design model used by the final renderer.
+
+Do not create:
+
+```text
+Fake preview
++
+Different export implementation
+```
+
+That creates inconsistencies.
+
+The preview should accurately represent the final output as closely as practical.
+
+---
+
+# 109. Development Milestone 1
+
+First implement only:
+
+```text
+Electron shell
+React
+Python process
+SQLite
+Settings
+Basic project creation
+```
+
+Do not start with AI.
+
+Confirm the desktop architecture works.
+
+---
+
+# 110. Development Milestone 2
+
+Implement:
+
+```text
+DeepSeek
+Content schemas
+Content generation
+Project persistence
+```
+
+Test generated JSON extensively.
+
+---
+
+# 111. Development Milestone 3
+
+Implement:
+
+```text
+Pexels
+Unsplash
+Asset library
+Asset metadata
+Deduplication
+```
+
+---
+
+# 112. Development Milestone 4
+
+Implement:
+
+```text
+Visual analysis
+HEX extraction
+Palette engine
+Composition detection
+```
+
+---
+
+# 113. Development Milestone 5
+
+Implement:
+
+```text
+TTS
+Audio mixing
+FFmpeg
+Video renderer
+Image renderer
+```
+
+---
+
+# 114. Development Milestone 6
+
+Implement:
+
+```text
+Preview
+Regeneration
+Queue
+Export
+```
+
+---
+
+# 115. Development Milestone 7
+
+Perform a dedicated UI refinement pass.
+
+Do not add features.
+
+Only improve:
+
+- spacing
+- typography
+- interaction
+- transitions
+- empty states
+- loading states
+- errors
+- visual hierarchy
+- responsiveness
+- accessibility
+- preview experience
+
+This phase is mandatory.
+
+---
+
+# 116. Final Acceptance Test
+
+A build should not be considered complete until a clean installation can:
+
+```text
+Launch
+    ↓
+Configure API keys
+    ↓
+Create batch
+    ↓
+Generate six concepts
+    ↓
+Find visual assets
+    ↓
+Avoid previously used assets
+    ↓
+Analyze visuals
+    ↓
+Generate palettes
+    ↓
+Generate narration
+    ↓
+Generate TTS
+    ↓
+Render video/image
+    ↓
+Validate outputs
+    ↓
+Preview
+    ↓
+Regenerate one component
+    ↓
+Approve
+    ↓
+Export
+    ↓
+Close application
+    ↓
+Reopen application
+    ↓
+Project still exists
+```
+
+All of the above must work without manually editing files.
+
+---
+
+# 117. Final Quality Gate
+
+Before declaring the application finished, the agent must conduct five reviews.
+
+## Architecture Review
+
+Check:
+
+- Coupling.
+- Duplication.
+- Error handling.
+- Security.
+- File handling.
+- Process management.
+
+## UI Review
+
+Check:
+
+- Visual hierarchy.
+- Spacing.
+- Typography.
+- Responsive desktop behavior.
+- Accessibility.
+- Loading states.
+- Error states.
+- Empty states.
+
+## Media Review
+
+Generate real sample videos and images.
+
+Inspect them visually.
+
+Do not rely only on code tests.
+
+## Performance Review
+
+Measure:
+
+- Application startup.
+- Memory usage.
+- Thumbnail loading.
+- Video preview.
+- Rendering.
+- Large asset handling.
+
+## Product Review
+
+Ask:
+
+> Does this feel like a professional creative application?
+
+If not, refine it.
+
+---
+
+# 118. Core Principle
+
+The application should be technically lightweight but creatively sophisticated.
+
+The desired architecture is:
+
+```text
+Small infrastructure
+        +
+Strong local processing
+        +
+Structured AI
+        +
+Excellent visual analysis
+        +
+High quality rendering
+        +
+Exceptional desktop UX
+```
+
+Do not confuse simplicity of infrastructure with simplicity of product quality.
+
+The application should feel simple to use because the complexity is handled internally.
+
+---
+
+# 119. Definition of Done
+
+The project is done when:
+
+- The application installs on Windows.
+- Electron launches correctly.
+- Python backend launches automatically.
+- SQLite persists projects.
+- DeepSeek generates structured content.
+- Pexels and Unsplash work through provider abstractions.
+- Asset usage is tracked.
+- Duplicate assets are avoided.
+- Similar assets are discouraged.
+- Visuals are analyzed.
+- HEX palettes are generated.
+- Design layouts adapt to the source visual.
+- TTS produces narration.
+- FFmpeg renders images and videos.
+- Genuine 60 FPS sources can remain 60 FPS.
+- Video output is 1080 × 1920.
+- Image output is 1080 × 1350.
+- Generated content can be previewed.
+- Individual components can be regenerated.
+- Projects can be reopened.
+- Exports are organized.
+- API keys are protected.
+- Errors are handled gracefully.
+- The UI is polished.
+- The application does not feel like a generic AI dashboard.
+- The full generation workflow works from start to finish.
+
+Most importantly:
+
+**The final application should look and feel like a premium desktop creative tool, while internally remaining a relatively small Python + Electron application.**
