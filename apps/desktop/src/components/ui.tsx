@@ -1,6 +1,7 @@
 // The small shared component set. Every screen builds from these; no one-off button or input styles.
 import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode } from 'react'
-import { useId } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
+import { CaretDown, Check } from '@phosphor-icons/react'
 
 const cx = (...c: (string | false | undefined)[]) => c.filter(Boolean).join(' ')
 
@@ -117,6 +118,76 @@ export function PageHeader({ title, children }: { title: string; children?: Reac
       <h1 className="font-display text-title font-semibold tracking-[-0.03em]">{title}</h1>
       <div className="flex items-center gap-2">{children}</div>
     </header>
+  )
+}
+
+/** Branded dropdown (replaces the unreadable native select popup): keyboard aware, closes on outside click. */
+export function Select<T extends string>({ id, value, options, onChange, className }: {
+  id?: string
+  value: T
+  options: { value: T; label: string }[]
+  onChange: (v: T) => void
+  className?: string
+}) {
+  const [open, setOpen] = useState(false)
+  const [active, setActive] = useState(0)
+  const ref = useRef<HTMLDivElement>(null)
+  const current = options.find((o) => o.value === value)
+
+  useEffect(() => {
+    if (!open) return
+    const onDoc = (e: MouseEvent) => { if (!ref.current?.contains(e.target as Node)) setOpen(false) }
+    document.addEventListener('mousedown', onDoc)
+    return () => document.removeEventListener('mousedown', onDoc)
+  }, [open])
+
+  const indexOf = (v: T) => Math.max(0, options.findIndex((o) => o.value === v))
+
+  function toggle() {
+    setActive(indexOf(value))
+    setOpen((o) => !o)
+  }
+
+  function onKeyDown(e: React.KeyboardEvent) {
+    if (!open) {
+      if (e.key === 'Enter' || e.key === ' ' || e.key === 'ArrowDown') { e.preventDefault(); toggle() }
+      return
+    }
+    if (e.key === 'Escape' || e.key === 'Tab') setOpen(false)
+    else if (e.key === 'ArrowDown') { e.preventDefault(); setActive((a) => Math.min(a + 1, options.length - 1)) }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); setActive((a) => Math.max(a - 1, 0)) }
+    else if (e.key === 'Enter') { e.preventDefault(); setOpen(false); onChange(options[active].value) }
+  }
+
+  return (
+    <div ref={ref} className={cx('relative', className)}>
+      <button type="button" id={id} aria-haspopup="listbox" aria-expanded={open}
+        onClick={toggle} onKeyDown={onKeyDown}
+        className={cx('flex h-10 w-full items-center justify-between gap-2 rounded-field border bg-black/20 px-3.5 text-left text-[13px] text-ink',
+          'transition-colors duration-150 focus:outline-none',
+          open ? 'border-accent/70 bg-black/30' : 'border-line hover:border-line-strong')}>
+        {current?.label}
+        <CaretDown size={13} className={cx('shrink-0 text-ink-3 transition-transform duration-150', open && 'rotate-180')} />
+      </button>
+      {open && (
+        <ul role="listbox"
+          className="absolute left-0 right-0 top-full z-50 mt-1.5 grid gap-0.5 rounded-field bg-[#17181a] p-1 shadow-[inset_0_0_0_1px_rgb(255_244_232/0.1),0_24px_48px_-16px_rgb(0_0_0/0.85)]">
+          {options.map((o, i) => (
+            <li key={o.value}>
+              <button type="button" role="option" aria-selected={o.value === value}
+                onMouseEnter={() => setActive(i)}
+                onClick={() => { setOpen(false); onChange(o.value) }}
+                className={cx('flex w-full items-center justify-between gap-2 rounded-[10px] px-3 py-2 text-left text-[13px] transition-colors duration-100',
+                  i === active ? 'bg-white/[0.08] text-ink' : 'text-ink-2',
+                  o.value === value && 'font-medium')}>
+                {o.label}
+                {o.value === value && <Check size={13} weight="bold" className="shrink-0 text-accent" />}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   )
 }
 

@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { Check, FolderOpen } from '@phosphor-icons/react'
 import { call, label, studio, TONES, useQuery, BackendError, type SecretName, type Settings as S } from '../lib/studio'
-import { Button, ErrorNote, Field, Input, PageHeader } from '../components/ui'
+import { Button, ErrorNote, Field, Input, PageHeader, Select } from '../components/ui'
 
 const KEYS: { name: SecretName; label: string }[] = [
   { name: 'DEEPSEEK_API_KEY', label: 'DeepSeek API key' },
@@ -98,10 +98,8 @@ export function Settings() {
         <div className="grid grid-cols-3 gap-4">
           <Field label="Tone">
             {(id) => (
-              <select id={id} value={form.default_tone} onChange={(e) => set('default_tone', e.target.value as S['default_tone'])}
-                className="h-10 rounded-field border border-line bg-black/20 px-3 text-[13px] text-ink hover:border-line-strong focus:border-accent/70 focus:outline-none">
-                {TONES.map((t) => <option key={t} value={t}>{label(t)}</option>)}
-              </select>
+              <Select id={id} value={form.default_tone} onChange={(v) => set('default_tone', v as S['default_tone'])}
+                options={TONES.map((t) => ({ value: t, label: label(t) }))} />
             )}
           </Field>
           <Field label="Quantity" hint="1 to 20 pieces.">
@@ -118,11 +116,8 @@ export function Settings() {
       <Section title="Narration" description="The voice that reads each piece aloud in rendered videos.">
         <Field label="Voice engine" hint="Windows voices are built in. Kokoro sounds more natural but must be installed first.">
           {(id) => (
-            <select id={id} value={form.tts_provider} onChange={(e) => set('tts_provider', e.target.value as S['tts_provider'])}
-              className="h-10 rounded-field border border-line bg-black/20 px-3 text-[13px] text-ink hover:border-line-strong focus:border-accent/70 focus:outline-none">
-              <option value="windows">Windows voices (offline)</option>
-              <option value="kokoro">Kokoro (local neural)</option>
-            </select>
+            <Select id={id} value={form.tts_provider} onChange={(v) => set('tts_provider', v as S['tts_provider'])}
+              options={[{ value: 'windows', label: 'Windows voices (offline)' }, { value: 'kokoro', label: 'Kokoro (local neural)' }]} />
           )}
         </Field>
         <Field label="Voice name" hint="Leave empty for the default voice.">

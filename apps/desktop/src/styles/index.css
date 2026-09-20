@@ -35,7 +35,7 @@
 }
 
 @layer base {
-  html, body, #root { height: 100%; }
+  html, body, #root { height: 100%; color-scheme: dark; }
   body {
     background: var(--color-ground);
     color: var(--color-ink);
