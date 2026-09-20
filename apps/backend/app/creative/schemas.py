@@ -6,16 +6,25 @@ from pydantic import AfterValidator, BaseModel, Field, field_validator, model_va
 Text = Annotated[str, AfterValidator(lambda s: " ".join(s.split()))]  # collapse stray whitespace/newlines
 
 
+def capped(max_len: int):
+    """Collapse whitespace and cut to the cap instead of rejecting: an over-long model line must not fail a
+    whole generation (real case: a 94-char angle)."""
+    def check(s: str) -> str:
+        s = " ".join(s.split())
+        return s[:max_len].rstrip() or s
+    return AfterValidator(check)
+
+
 class PlanItem(BaseModel):
-    angle: str = Field(min_length=3, max_length=80)
-    visual_subject: str = Field(min_length=3, max_length=80)
+    angle: Annotated[str, capped(80)] = Field(min_length=3)
+    visual_subject: Annotated[str, capped(80)] = Field(min_length=3)
     visual_type: Literal["video", "image"]
     intensity: Literal["low", "medium", "high"]
-    narration_style: str = Field(min_length=3, max_length=60)
+    narration_style: Annotated[str, capped(60)] = Field(min_length=3)
 
 
 class BatchPlan(BaseModel):
-    batch_theme: str = Field(min_length=1, max_length=80)
+    batch_theme: Annotated[str, capped(80)] = Field(min_length=1)
     pieces: list[PlanItem] = Field(min_length=1, max_length=20)
 
     @model_validator(mode="after")
@@ -34,14 +43,14 @@ class Quote(BaseModel):
 
 class Narration(BaseModel):
     text: Text = Field(min_length=20, max_length=700)
-    delivery: str = Field(min_length=3, max_length=40)
+    delivery: Annotated[str, capped(40)] = Field(min_length=3)
 
 
 class Visual(BaseModel):
     preferred_type: Literal["video", "image"]
-    search_query: str = Field(min_length=3, max_length=100)
-    secondary_query: str = Field(min_length=3, max_length=100)
-    mood: str = Field(min_length=3, max_length=60)
+    search_query: Annotated[str, capped(100)] = Field(min_length=3)
+    secondary_query: Annotated[str, capped(100)] = Field(min_length=3)
+    mood: Annotated[str, capped(60)] = Field(min_length=3)
 
 
 class DesignHints(BaseModel):
@@ -51,7 +60,7 @@ class DesignHints(BaseModel):
 
 
 class Metadata(BaseModel):
-    title: str = Field(min_length=3, max_length=100)
+    title: Annotated[str, capped(100)] = Field(min_length=3)
     description: str = Field(min_length=10, max_length=1000)
     caption: str = Field(min_length=10, max_length=2200)
     hashtags: list[str] = Field(min_length=3, max_length=15)

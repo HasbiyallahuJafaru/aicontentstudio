@@ -191,3 +191,18 @@ class ToneVoices(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class OverlongModelLines(unittest.TestCase):
+    """A model that writes past a schema cap must not fail the whole generation (real case: 94-char angle)."""
+
+    def test_plan_strings_are_trimmed_to_the_cap(self):
+        from app.creative.schemas import BatchPlan
+        plan = BatchPlan.model_validate({
+            "batch_theme": "discipline",
+            "pieces": [{"angle": "a" * 94, "visual_subject": "s" * 94, "visual_type": "video",
+                        "intensity": "medium", "narration_style": "calm"},
+                       {"angle": "b" * 94, "visual_subject": "t" * 94, "visual_type": "image",
+                        "intensity": "low", "narration_style": "warm"}]})
+        self.assertEqual(len(plan.pieces[0].angle), 80)
+        self.assertEqual(len(plan.pieces[1].visual_subject), 80)

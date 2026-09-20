@@ -79,11 +79,21 @@ export function createBackend(o: Options) {
   }
 
   function call(method: string, params: object = {}): Promise<Reply> {
-    if (!child) return Promise.resolve({ error: { message: 'The backend is not running.' } })
+    const proc = child
+    // a backend that just stopped (or is stopping) has already closed stdin: writing would throw
+    // ERR_STREAM_WRITE_AFTER_END in the main process, so answer with an error reply instead.
+    if (!proc || proc.stdin.writableEnded || proc.stdin.destroyed) {
+      return Promise.resolve({ error: { message: 'The backend is not running.' } })
+    }
     const id = nextId++
     return new Promise((resolve) => {
       pending.set(id, resolve)
-      child!.stdin.write(JSON.stringify({ id, method, params }) + '\n')
+      try {
+        proc.stdin.write(JSON.stringify({ id, method, params }) + '\n')
+      } catch (e) {
+        pending.delete(id)
+        resolve({ error: { message: 'The backend is not running.', detail: String(e) } })
+      }
     })
   }
 
