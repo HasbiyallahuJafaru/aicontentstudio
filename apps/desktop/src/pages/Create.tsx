@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { CaretRight } from '@phosphor-icons/react'
 import { call, FORMATS, hasKey, label, PLATFORMS, TONES, TOPICS, useQuery, BackendError, type Brief, type Project, type Settings } from '../lib/studio'
-import { Button, Choices, ErrorNote, Field, Input, PageHeader, cx } from '../components/ui'
+import { Button, Autocomplete, Choices, ErrorNote, Field, Input, PageHeader, cx } from '../components/ui'
 
 const PRESETS = [1, 3, 6]
 
@@ -52,10 +52,8 @@ export function Create({ onCreated }: { onCreated: (id: string) => void }) {
         <div className="glass grid content-start gap-7 p-8">
           <Field label="Topic" hint="Pick a theme or type your own.">
             {(id) => (
-              <>
-                <Input id={id} list="topics" value={brief.topic} maxLength={60} onChange={(e) => set('topic', e.target.value)} autoFocus />
-                <datalist id="topics">{TOPICS.map((t) => <option key={t} value={t} />)}</datalist>
-              </>
+              <Autocomplete id={id} value={brief.topic} suggestions={TOPICS} maxLength={60} autoFocus
+                onChange={(v) => set('topic', v)} />
             )}
           </Field>
 

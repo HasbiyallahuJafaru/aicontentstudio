@@ -121,7 +121,12 @@ export function PageHeader({ title, children }: { title: string; children?: Reac
   )
 }
 
-/** Branded dropdown (replaces the unreadable native select popup): keyboard aware, closes on outside click. */
+/** Shared dropdown popup look (PRD): black background, white text, rounded, airier spacing. */
+const POPUP_CLS = 'z-50 grid max-h-[320px] gap-1.5 overflow-y-auto rounded-field bg-black p-1.5 shadow-[inset_0_0_0_1px_rgb(255_244_232/0.1),0_24px_48px_-16px_rgb(0_0_0/0.85)]'
+const OPTION_CLS = 'flex w-full items-center justify-between gap-2 rounded-[10px] px-3.5 py-2.5 text-left text-[13px] text-ink transition-colors duration-100 hover:bg-white/[0.08]'
+
+/** Branded dropdown (replaces the unreadable native select popup): keyboard aware, closes on outside click.
+ * The popup is pinned to the screen spot where it opened - it does not travel with page scroll. */
 export function Select<T extends string>({ id, value, options, onChange, className }: {
   id?: string
   value: T
@@ -131,6 +136,7 @@ export function Select<T extends string>({ id, value, options, onChange, classNa
 }) {
   const [open, setOpen] = useState(false)
   const [active, setActive] = useState(0)
+  const [rect, setRect] = useState<{ left: number; top: number; width: number }>()
   const ref = useRef<HTMLDivElement>(null)
   const current = options.find((o) => o.value === value)
 
@@ -144,6 +150,8 @@ export function Select<T extends string>({ id, value, options, onChange, classNa
   const indexOf = (v: T) => Math.max(0, options.findIndex((o) => o.value === v))
 
   function toggle() {
+    const r = ref.current?.getBoundingClientRect()
+    if (r) setRect({ left: r.left, top: r.bottom + 6, width: r.width })
     setActive(indexOf(value))
     setOpen((o) => !o)
   }
@@ -169,19 +177,82 @@ export function Select<T extends string>({ id, value, options, onChange, classNa
         {current?.label}
         <CaretDown size={13} className={cx('shrink-0 text-ink-3 transition-transform duration-150', open && 'rotate-180')} />
       </button>
-      {open && (
-        <ul role="listbox"
-          className="absolute left-0 right-0 top-full z-50 mt-1.5 grid gap-0.5 rounded-field bg-[#17181a] p-1 shadow-[inset_0_0_0_1px_rgb(255_244_232/0.1),0_24px_48px_-16px_rgb(0_0_0/0.85)]">
+      {open && rect && (
+        <ul role="listbox" style={{ position: 'fixed', top: rect.top, left: rect.left, width: rect.width }} className={POPUP_CLS}>
           {options.map((o, i) => (
             <li key={o.value}>
               <button type="button" role="option" aria-selected={o.value === value}
                 onMouseEnter={() => setActive(i)}
                 onClick={() => { setOpen(false); onChange(o.value) }}
-                className={cx('flex w-full items-center justify-between gap-2 rounded-[10px] px-3 py-2 text-left text-[13px] transition-colors duration-100',
-                  i === active ? 'bg-white/[0.08] text-ink' : 'text-ink-2',
-                  o.value === value && 'font-medium')}>
+                className={cx(OPTION_CLS, i === active && 'bg-white/[0.08]', o.value === value && 'font-medium')}>
                 {o.label}
                 {o.value === value && <Check size={13} weight="bold" className="shrink-0 text-accent" />}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+
+/** Text input with branded suggestions (replaces the native datalist popup on Create). */
+export function Autocomplete({ id, value, suggestions, onChange, onFocus, ...rest }: Omit<
+  InputHTMLAttributes<HTMLInputElement>, 'value' | 'onChange'> & {
+  value: string
+  suggestions: string[]
+  onChange: (v: string) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [active, setActive] = useState(-1)
+  const [rect, setRect] = useState<{ left: number; top: number; width: number }>()
+  const ref = useRef<HTMLDivElement>(null)
+  const typed = value.trim().toLowerCase()
+  const list = suggestions.filter((s) => s.toLowerCase() !== typed &&
+    (typed === '' || s.toLowerCase().includes(typed)))
+
+  useEffect(() => {
+    if (!open) return
+    const onDoc = (e: MouseEvent) => { if (!ref.current?.contains(e.target as Node)) setOpen(false) }
+    document.addEventListener('mousedown', onDoc)
+    return () => document.removeEventListener('mousedown', onDoc)
+  }, [open])
+
+  function show() {
+    const r = ref.current?.getBoundingClientRect()
+    if (r) setRect({ left: r.left, top: r.bottom + 6, width: r.width })
+    setOpen(true)
+  }
+
+  function onKeyDown(e: React.KeyboardEvent) {
+    if (open && e.key === 'Escape') { e.preventDefault(); setOpen(false); return }
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      if (!open) { show(); return }
+      e.preventDefault()
+      setActive((a) => (e.key === 'ArrowDown' ? Math.min(a + 1, list.length - 1) : Math.max(a - 1, -1)))
+    } else if (e.key === 'Enter' && open && active >= 0 && list[active]) {
+      e.preventDefault()
+      onChange(list[active])
+      setOpen(false)
+      setActive(-1)
+    }
+  }
+
+  return (
+    <div ref={ref} className="relative">
+      <Input {...rest} id={id} value={value} role="combobox" aria-expanded={open} autoComplete="off"
+        onFocus={(e) => { onFocus?.(e); show() }}
+        onChange={(e) => { onChange((e.target as HTMLInputElement).value); show(); setActive(-1) }}
+        onKeyDown={onKeyDown} />
+      {open && rect && list.length > 0 && (
+        <ul role="listbox" style={{ position: 'fixed', top: rect.top, left: rect.left, width: rect.width }} className={POPUP_CLS}>
+          {list.map((s, i) => (
+            <li key={s}>
+              <button type="button" role="option" aria-selected={i === active}
+                onMouseEnter={() => setActive(i)}
+                onClick={() => { onChange(s); setOpen(false); setActive(-1) }}
+                className={cx(OPTION_CLS, i === active && 'bg-white/[0.08]')}>
+                {s}
               </button>
             </li>
           ))}
