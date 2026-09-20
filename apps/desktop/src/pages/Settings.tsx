@@ -115,6 +115,49 @@ export function Settings() {
         </div>
       </Section>
 
+      <Section title="Narration" description="The voice that reads each piece aloud in rendered videos.">
+        <Field label="Voice engine" hint="Windows voices are built in. Kokoro sounds more natural but must be installed first.">
+          {(id) => (
+            <select id={id} value={form.tts_provider} onChange={(e) => set('tts_provider', e.target.value as S['tts_provider'])}
+              className="h-10 rounded-field border border-line bg-black/20 px-3 text-[13px] text-ink hover:border-line-strong focus:border-accent/70 focus:outline-none">
+              <option value="windows">Windows voices (offline)</option>
+              <option value="kokoro">Kokoro (local neural)</option>
+            </select>
+          )}
+        </Field>
+        <Field label="Voice name" hint="Leave empty for the default voice.">
+          {(id) => <Input id={id} value={form.tts_voice} placeholder="e.g. Microsoft Zira Desktop" spellCheck={false}
+            onChange={(e) => set('tts_voice', e.target.value)} />}
+        </Field>
+        <div className="grid grid-cols-2 gap-4">
+          <Field label="Speed" hint="0.5 to 2. 1 is normal speech.">
+            {(id) => <Input id={id} type="number" step={0.1} min={0.5} max={2} className="tnum" value={form.tts_speed}
+              onChange={(e) => set('tts_speed', Number(e.target.value))} />}
+          </Field>
+          <Field label="Volume" hint="0 to 1.">
+            {(id) => <Input id={id} type="number" step={0.05} min={0} max={1} className="tnum" value={form.tts_volume}
+              onChange={(e) => set('tts_volume', Number(e.target.value))} />}
+          </Field>
+        </div>
+      </Section>
+
+      <Section title="Render" description="How videos and images are rendered when you press Render on a project.">
+        <div className="grid grid-cols-2 gap-4">
+          <Field label="Quality" hint="14 to 32. Lower is sharper and larger files.">
+            {(id) => <Input id={id} type="number" step={1} min={14} max={32} className="tnum" value={form.render_crf}
+              onChange={(e) => set('render_crf', Number(e.target.value))} />}
+          </Field>
+          <Field label="Music volume" hint="0 to 0.5, mixed under the narration.">
+            {(id) => <Input id={id} type="number" step={0.05} min={0} max={0.5} className="tnum" value={form.music_volume}
+              onChange={(e) => set('music_volume', Number(e.target.value))} />}
+          </Field>
+        </div>
+        <Field label="Music file" hint="Optional background track, fades in and out under the narration.">
+          {(id) => <Input id={id} value={form.music_path} placeholder="Path to an mp3 or wav on this computer" spellCheck={false}
+            onChange={(e) => set('music_path', e.target.value)} />}
+        </Field>
+      </Section>
+
       <Section title="Storage" description="Projects, downloaded assets, renders and exports live here.">
         <Field label="Media folder">
           {(id) => (

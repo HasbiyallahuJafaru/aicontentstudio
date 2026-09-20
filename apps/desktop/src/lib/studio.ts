@@ -39,6 +39,13 @@ export type Settings = {
   ai_model: string; ai_temperature: number; ai_max_tokens: number
   default_topic: string; default_tone: Tone; default_quantity: number
   asset_cooldown_days: number; asset_weights: Record<string, number>
+  tts_provider: 'windows' | 'kokoro'; tts_voice: string; tts_speed: number; tts_volume: number
+  music_path: string; music_volume: number
+  render_crf: number; render_audio_bitrate: string; render_width: number; render_height: number
+}
+export type Render = {
+  id: string; piece_id: string; kind: 'video' | 'image'; local_path: string
+  duration: number | null; created_at: string; idx: number
 }
 export type BackendStatus = { state: 'starting' | 'ready' | 'crashed' | 'stopped'; message?: string; detail?: string }
 export type SecretName = 'DEEPSEEK_API_KEY' | 'PEXELS_API_KEY' | 'UNSPLASH_ACCESS_KEY'

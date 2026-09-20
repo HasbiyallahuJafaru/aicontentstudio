@@ -21,11 +21,13 @@ Skip long design ceremonies; one screenshot review round per UI phase.
 
 ## Layout
 - `apps/backend/` Python 3.12 (stdlib + pydantic). `main.py` → `app/rpc.py` (method table `METHODS`), one module per
-  area (`projects.py`, `settings.py`, later `content/`, `assets/`, …), `app/migrations/NNN_*.sql`, `tests/`.
-- `apps/desktop/` Electron + React. `electron/main.ts` (window, IPC allowlist), `electron/backend.ts` (spawn/supervise
-  Python), `electron/secrets.ts` (safeStorage), `electron/preload.ts` (the only renderer API: `window.studio`),
-  `src/lib/studio.ts` (typed calls, hooks, shared constants), `src/components/ui.tsx` (all primitives),
-  `src/pages/*`, `src/layouts/Shell.tsx`, `src/styles/index.css` (design tokens).
+  area (`projects.py`, `settings.py`, `content.py`, `assets/`, `visual.py`, `tts.py`, `render.py`, `renders.py`),
+  `app/assets/fonts/` (bundled Sora, OFL), `app/migrations/NNN_*.sql`, `tests/`.
+- `apps/desktop/` Electron + React. `electron/main.ts` (window, IPC allowlist, media:// protocol),
+  `electron/backend.ts` (spawn/supervise Python), `electron/secrets.ts` (safeStorage), `electron/preload.ts` (the
+  only renderer API: `window.studio`), `src/lib/studio.ts` (typed calls, hooks, shared constants),
+  `src/components/ui.tsx` (all primitives), `src/pages/*` (Splash first, then the Shell pages),
+  `src/styles/index.css` (design tokens).
 
 ## Working rules
 - **Ponytail:** laziest solution that works. Stdlib/native first, no one-implementation interfaces unless the PRD
@@ -34,6 +36,10 @@ Skip long design ceremonies; one screenshot review round per UI phase.
 - **UI (taste + impeccable):** use the tokens and primitives; no one-off styles, no em dashes in UI copy, no eyebrow
   labels, no metric-card walls, no fake data or placeholder buttons for core features. Honest progress only.
 - **Python is the source of truth** for pipeline logic; TypeScript never duplicates it. Renderer never sees API keys.
+- **Rendering (M5):** ffmpeg always runs as a subprocess with argument arrays (never shell strings), wrapped with a
+  timeout + kill so a hang can never wedge a job. Windows drive-colon paths in drawtext need quoting AND escaping:
+  `fontfile='C\:/...'`. Production renders default to 1080×1920; tests use small resolutions (540×960, ≤2s clips)
+  per the user's ask — keep it that way.
 - **Every phase ends with:** `npm test` from the repo root (backend unittest + typecheck + build + smoke), a look at
   the smoke screenshots, `graphify update .`, and an updated `.claude/handover.md`. Never claim something works
   without running it; say plainly what wasn't verified.

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
-import { ArrowLeft, Sparkle, Trash } from '@phosphor-icons/react'
-import { call, formatDate, FORMATS, hasKey, label, PLATFORMS, useJob, useQuery, BackendError, type Piece, type Project as P } from '../lib/studio'
+import { ArrowLeft, Play, Sparkle, Trash } from '@phosphor-icons/react'
+import { call, formatDate, FORMATS, hasKey, label, PLATFORMS, useJob, useQuery, BackendError,
+  type Piece, type Project as P, type Render } from '../lib/studio'
 import { Button, ErrorNote, cx } from '../components/ui'
 
 export function Project({ id, onBack, onSettings }: { id: string; onBack: () => void; onSettings: () => void }) {
@@ -8,17 +9,26 @@ export function Project({ id, onBack, onSettings }: { id: string; onBack: () => 
   const { job, reload: reloadJob } = useJob(id)
   const running = job?.status === 'queued' || job?.status === 'running'
   const { data: pieces } = useQuery<Piece[]>('pieces.list', { project_id: id }, job?.updated_at)
+  const { data: renders } = useQuery<Render[]>('renders.list', { project_id: id }, job?.updated_at)
   const [keySet, setKeySet] = useState<boolean>()
   const [error, setError] = useState<BackendError>()
 
   useEffect(() => { hasKey('DEEPSEEK_API_KEY').then(setKeySet) }, [])
   useEffect(() => { if (job && !running) reloadProject() }, [job?.status])
 
+  const renderable = !!pieces?.some((p) => p.status !== 'failed' && p.content.asset)
+
   async function generate() {
     if (running || !keySet) return
     if (pieces?.length && !confirm('Generate again? This replaces the pieces below with a new batch.')) return
     setError(undefined)
     try { await call('jobs.start', { project_id: id }); reloadJob() } catch (e) { setError(e as BackendError) }
+  }
+
+  async function render() {
+    if (running || !renderable) return
+    setError(undefined)
+    try { await call('jobs.start', { project_id: id, kind: 'render' }); reloadJob() } catch (e) { setError(e as BackendError) }
   }
 
   async function remove() {
@@ -49,6 +59,10 @@ export function Project({ id, onBack, onSettings }: { id: string; onBack: () => 
           </div>
           <div className="flex shrink-0 items-center gap-2">
             <Button variant="ghost" onClick={remove} aria-label="Delete project"><Trash size={15} /></Button>
+            <Button onClick={render} disabled={running || !renderable}
+              title={renderable ? 'Narrate and render every piece' : 'Generate pieces with visuals first'}>
+              <Play size={13} weight="fill" />Render
+            </Button>
             <Button variant="primary" onClick={generate} disabled={running || !keySet} kbd="Ctrl Enter">
               <Sparkle size={14} weight="fill" />{pieces?.length ? 'Generate again' : 'Generate'}
             </Button>
@@ -86,7 +100,7 @@ export function Project({ id, onBack, onSettings }: { id: string; onBack: () => 
       )}
 
       <ol className={cx('grid', (!!pieces?.length || running) && 'glass px-8 py-2')}>
-        {pieces?.map((p) => <PieceRow key={p.id} piece={p} />)}
+        {pieces?.map((p) => <PieceRow key={p.id} piece={p} renders={renders?.filter((r) => r.piece_id === p.id)} />)}
         {running && (pieces?.length ?? 0) < b.quantity && job?.stage.startsWith('Writing') && (
           <li className="grid grid-cols-[56px_minmax(0,1fr)] gap-6 border-t border-line py-7 first:border-t-0" aria-hidden>
             <span className="tnum pt-1 text-xs text-ink-3">{String((pieces?.length ?? 0) + 1).padStart(3, '0')}</span>
@@ -101,7 +115,7 @@ export function Project({ id, onBack, onSettings }: { id: string; onBack: () => 
   )
 }
 
-function PieceRow({ piece: p }: { piece: Piece }) {
+function PieceRow({ piece: p, renders }: { piece: Piece; renders?: Render[] }) {
   const c = p.content
   if (p.status === 'failed') {
     return (
@@ -119,7 +133,20 @@ function PieceRow({ piece: p }: { piece: Piece }) {
       <span className="tnum pt-2 font-display text-xs text-accent">{String(p.idx).padStart(3, '0')}</span>
       <div className="grid gap-4">
         <div className="grid gap-2">
-          <p className="text-xs text-ink-3">{label(p.angle)}</p>
+          <div className="flex items-center justify-between gap-4">
+            <p className="text-xs text-ink-3">{label(p.angle)}</p>
+            {!!renders?.length && (
+              <div className="flex shrink-0 gap-1.5">
+                {renders.map((r) => (
+                  <span key={r.id} title={r.local_path}
+                    className="inline-flex items-center gap-1 rounded-full bg-accent/15 px-2.5 py-0.5 text-2xs font-medium text-accent">
+                    {r.kind === 'video' ? <Play size={8} weight="fill" /> : null}
+                    {label(r.kind)}{r.duration ? ` ${r.duration.toFixed(1)}s` : ''}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
           <blockquote data-selectable className="max-w-[34ch] font-display text-[24px] leading-[1.25] font-semibold tracking-[-0.025em] text-balance">
             {c.quote.text}
           </blockquote>

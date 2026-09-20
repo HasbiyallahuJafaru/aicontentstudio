@@ -1,10 +1,13 @@
-"""Lightweight local job manager (PRD §38). One thread per job; state in SQLite; progress pushed as events."""
+"""Lightweight local job manager (PRD §38). One thread per job; state in SQLite; progress pushed as events.
+
+kind = 'generate' writes content (M2), kind = 'render' produces videos/images (M5); both share this runner.
+"""
 import json
 import logging
 import threading
 import uuid
 
-from app import content
+from app import content, renders
 from app.database import connect
 from app.errors import UserError
 from app.events import emit
@@ -48,17 +51,17 @@ def _project_status(project_id: str, status: str) -> None:
                      (status, project_id))
 
 
-def start(project_id: str) -> dict:
+def start(project_id: str, kind: str = "generate") -> dict:
     running = latest(project_id)
     if running and running["status"] in ("queued", "running"):
-        raise UserError("This project is already generating.")
+        raise UserError("This project already has a job running.")
     job_id = uuid.uuid4().hex[:12]
     with connect() as conn:
         if conn.execute("SELECT 1 FROM projects WHERE id = ?", (project_id,)).fetchone() is None:
             raise UserError("This project no longer exists.", f"project id {project_id}")
-        conn.execute("INSERT INTO generation_jobs (id, project_id) VALUES (?, ?)", (job_id, project_id))
+        conn.execute("INSERT INTO generation_jobs (id, project_id, kind) VALUES (?, ?, ?)", (job_id, project_id, kind))
     _project_status(project_id, "generating")
-    threading.Thread(target=_run, args=(job_id, project_id), daemon=True, name=f"job-{job_id}").start()
+    threading.Thread(target=_run, args=(job_id, project_id, kind), daemon=True, name=f"job-{job_id}").start()
     return get(job_id)
 
 
@@ -67,15 +70,16 @@ def cancel(id: str) -> dict:
     return {"cancelling": id}
 
 
-def _run(job_id: str, project_id: str) -> None:
+def _run(job_id: str, project_id: str, kind: str = "generate") -> None:
     def report(stage: str, progress: float) -> None:
         if job_id in _cancelled:
             raise Cancelled
         _set(job_id, "job.progress", stage=stage, progress=round(progress, 3))
 
-    _set(job_id, "job.started", status="running", stage="Starting")
+    stage = "Generating" if kind == "generate" else "Rendering"
+    _set(job_id, "job.started", status="running", stage=stage)
     try:
-        content.generate(project_id, report)
+        (content.generate if kind == "generate" else renders.render_project)(project_id, report)
     except Cancelled:
         _project_status(project_id, "draft" if not content.pieces(project_id) else "ready")
         _set(job_id, "job.cancelled", status="cancelled", stage="Cancelled")

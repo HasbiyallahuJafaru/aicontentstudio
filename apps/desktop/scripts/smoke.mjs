@@ -2,7 +2,8 @@
 // fake DeepSeek + Pexels servers (no paid calls). Screenshots go to SMOKE_OUT (default: <tmp>/acs-smoke). Exit 1 on failure.
 import { _electron as electron } from 'playwright-core'
 import { createServer } from 'node:http'
-import { mkdtempSync, readFileSync, mkdirSync } from 'node:fs'
+import { mkdtempSync, readFileSync, readdirSync, mkdirSync } from 'node:fs'
+import { spawnSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import assert from 'node:assert/strict'
@@ -172,6 +173,39 @@ await shot(win, '5-project-written')
 assert.equal(await win.locator('blockquote').count(), 3)
 await assertNoHorizontalOverflow(win, 'project')
 
+// Render: swap the fake downloaded bytes for real clips, set narration speed, render all three pieces
+const assetsDir = join(root, 'data', 'media', 'assets')
+// 14s: longer than any duration the fake Pexels metadata advertises, so the renderer's middle-segment
+// seek always lands inside the real file
+for (const f of readdirSync(assetsDir).filter((f) => f.endsWith('.mp4'))) {
+  const r = spawnSync('ffmpeg', ['-v', 'error', '-y', '-f', 'lavfi', '-i', 'testsrc2=size=1080x1920:rate=30:duration=14',
+    '-c:v', 'libx264', '-preset', 'ultrafast', join(assetsDir, f)], { timeout: 120_000, encoding: 'utf8' })
+  assert.equal(r.status, 0, `fixture clip failed: ${r.stderr}`)
+}
+await win.keyboard.press('Control+,')
+await win.getByRole('heading', { name: 'Narration' }).waitFor()
+await win.getByLabel('Speed').fill('1.1')
+await win.getByRole('button', { name: 'Save changes' }).click()
+await win.getByText('Saved', { exact: true }).waitFor()
+await win.getByRole('heading', { name: 'Narration' }).scrollIntoViewIfNeeded()
+await shot(win, '5b-settings-narration')
+await win.getByRole('button', { name: 'Projects' }).click()
+await win.getByText('Discipline').click()
+await win.getByRole('button', { name: 'Render', exact: true }).click()
+const chips = () => win.locator('span[title^="renders/"]')
+try {
+  await chips().first().waitFor({ timeout: 240_000 })
+  await win.waitForFunction(() => document.querySelectorAll('span[title^="renders/"]').length === 3,
+    undefined, { timeout: 240_000 })
+} catch (e) {
+  await shot(win, 'debug-render-timeout')
+  console.error('PAGE TEXT AT TIMEOUT:', await win.evaluate(() => document.body.innerText.slice(0, 2000)))
+  throw e
+}
+await win.getByText(/Video \d\.\ds/).first().waitFor()
+await shot(win, '5c-project-rendered')
+await assertNoHorizontalOverflow(win, 'project-rendered')
+
 // Library: three downloaded videos with thumbnails, usage counts, and working filters
 await win.getByRole('button', { name: 'Library' }).click()
 await win.getByText('Pexels · Video').first().waitFor()
@@ -200,6 +234,7 @@ await win.getByText('3 of 3 written').waitFor()
 await assertNoHorizontalOverflow(win, 'dashboard with data')
 await win.getByText('Discipline').click()
 await win.locator('blockquote').getByText(QUOTES[0]).waitFor()
+assert.equal(await win.locator('span[title^="renders/"]').count(), 3, 'renders survive restart')
 await win.getByRole('button', { name: 'Library' }).click()
 await win.getByText('Pexels · Video').first().waitFor()
 assert.equal(await win.getByText('Pexels · Video').count(), 3, 'assets survive restart')

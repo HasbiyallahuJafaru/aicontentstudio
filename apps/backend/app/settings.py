@@ -24,6 +24,20 @@ class Settings(BaseModel):
     asset_weights: dict[str, float] = Field(
         default_factory=lambda: {"relevance": 0.30, "visual_quality": 0.20, "composition": 0.15, "brand": 0.15,
                                  "color": 0.10, "novelty": 0.05, "motion": 0.05})
+    # PRD §49 TTS: provider, voice, speed, volume. 'windows' = SAPI voices (always there, offline);
+    # 'kokoro' = local neural voices (needs `python -m app.tts download`, see app/tts.py).
+    tts_provider: Literal["windows", "kokoro"] = "windows"
+    tts_voice: str = Field("", max_length=80)
+    tts_speed: float = Field(1.0, ge=0.5, le=2)
+    tts_volume: float = Field(1.0, ge=0, le=1)
+    # PRD §67 music: user-supplied licensed file only; never downloaded. Mixed quietly under the narration.
+    music_path: str = Field("", max_length=500)
+    music_volume: float = Field(0.15, ge=0, le=0.5)
+    # PRD §20: quality configurable under Advanced Settings. CRF 18-32 (lower = better, bigger files).
+    render_crf: int = Field(22, ge=14, le=32)
+    render_audio_bitrate: str = Field("192k", pattern=r"^\d+k$")
+    render_width: int = Field(1080, ge=360, le=2160)
+    render_height: int = Field(1920, ge=640, le=3840)
 
 
 def _load() -> Settings:

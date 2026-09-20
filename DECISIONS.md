@@ -21,14 +21,22 @@ when that phase starts. Update this table whenever a dependency changes.
 | Perceptual hash | own dHash (64-bit, 9×8 grayscale) with Pillow | HPND (Pillow) | **Used (M3).** Pillow ≥11 in `requirements.txt` (also the base for M4 analysis). Hamming ≤10 bits = "similar" → cooldown. `imagehash` (BSD-2) only if the own version falls short. |
 | Local media in UI | `media://` privileged Electron protocol → `<dataDir>/media` via `net.fetch(pathToFileURL)` | n/a | **Used (M3).** The renderer is sandboxed and cannot read files; the handler guards against path traversal. |
 | Visual analysis / palette | Own deterministic engine in `app/visual.py` (Pillow quantize + gradient stats, HLS clamps) | n/a | **Used (M4).** PRD §22/§23: brightness, contrast, saturation, temperature, dominant HEX colors, subject position (thirds), complexity, technical quality score. Palette = brand-clamped design tokens per piece (no neon, contrast-checked text). OpenCV only if a real need appears (e.g. M5 motion needs frame work, which is FFmpeg's job). |
-| TTS | Candidates: Kokoro-82M via `kokoro-onnx` (Apache-2.0 weights, MIT lib, CPU, Windows OK); Piper (`piper1-gpl` is GPL-3.0; the MIT original is archived) | see left | **Plan (M5).** Kokoro first. Behind a `TTSProvider` interface as the PRD requires. |
-| Rendering | FFmpeg CLI (subprocess, argument arrays) | LGPL/GPL build-dependent | **Plan (M5).** Separate process, no linking. Must be bundled in the installer. Dev machine has 9.0.1 on PATH. |
+| TTS | `TTSProvider` (PRD §29): **WindowsTTS** (SAPI voices via PowerShell, local, zero deps) is the default; **KokoroTTS** (kokoro-onnx, Apache-2.0) wired as the quality upgrade - optional install (`pip install kokoro-onnx soundfile` + `python -m app.tts download`) | MIT / Apache-2.0 | **Used (M5).** Voice/speed/volume in settings; narration wavs in media/audio. |
+| Rendering | FFmpeg CLI (subprocess, argument arrays) | LGPL/GPL build-dependent | **Used (M5).** libx264 + AAC, loudnorm narration, PIL-built palette scrim, Sora drawtext; resolution/CRF/audio bitrate in settings; §34 validation via ffprobe/PIL. Dev machine has 9.0.1 on PATH; must be bundled in the installer. |
+| Splash / bundled media | Waves clip (CC BY-SA 4.0, Adam S. Keck) re-encoded to 8s VP9 ~2MB; Sora font (OFL) bundled for drawtext | CC BY-SA / OFL | **Used.** Attribution: splash bottom-right + README. |
 | Music | User-supplied licensed tracks + metadata | per track | **Plan.** Never auto-download. |
 | Packaging | electron-builder (NSIS) + PyInstaller-frozen backend in `resources/backend` | MIT / GPL with bootloader exception | **Plan (packaging).** `electron/backend.ts` already expects `resources/backend` when packaged but still launches `python main.py`; switch to the frozen exe then. |
 
 ## Environment gotchas (this machine)
 
-- A local TLS-inspecting CA: Node needs `NODE_OPTIONS=--use-system-ca` for npm/network (`npm install`, Electron download).
+- A local TLS-inspecting CA: Node needs `NODE_OPTIONS=--use-system-ca` for npm/network (`npm install`, Electron download);
+  curl needs `--ssl-no-revoke` (schannel revocation check fails); some CDNs (Wikimedia) are extremely slow regardless.
+- ffmpeg drawtext on Windows: the drive-colon must be quoted AND escaped (`fontfile='C\:/...'`) or the filtergraph
+  parser splits the option; prefer forward slashes.
+- ffmpeg spawned from the Electron-backed Python (M5, solved 2026-09-20): with stdin inherited from Electron it can
+  finish its whole encode in ~2s and then hang forever at exit (it polls the never-EOF stdin pipe) - fixed with
+  `-nostdin` + `stdin=DEVNULL`. A stderr PIPE also made it exit 1 mid-teardown in bisect runs, so stderr goes to a
+  temp file; a 180s no-progress watchdog (`render.py` STALL_SECS) kills any wedge as a backstop.
 - npm 11 blocks install scripts; `apps/desktop/package.json` `allowScripts` approves electron + esbuild. If
   `node_modules/electron/dist` is missing: `node node_modules/electron/install.js` (retry; downloads are flaky).
 - VS Code terminals set `ELECTRON_RUN_AS_NODE=1`, which makes Electron run as plain Node (`app` is undefined).
