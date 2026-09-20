@@ -28,7 +28,8 @@ export type PieceContent = {
   visual_error?: string
   error?: string
 }
-export type Piece = { id: string; idx: number; status: string; angle: string; quote: string; content: PieceContent }
+export type PieceStatus = 'written' | 'rendering' | 'ready' | 'approved' | 'exported' | 'failed'
+export type Piece = { id: string; idx: number; status: PieceStatus; angle: string; quote: string; project_id: string; content: PieceContent }
 export type Asset = {
   id: string; provider: 'pexels' | 'unsplash'; asset_type: 'image' | 'video'; creator: string; license: string
   source_url: string; width: number; height: number; fps: number; duration: number; created_at: string
@@ -45,8 +46,16 @@ export type Settings = {
 }
 export type Render = {
   id: string; piece_id: string; kind: 'video' | 'image'; local_path: string
-  duration: number | null; created_at: string; idx: number
+  duration: number | null; fps: number | null; width: number | null; height: number | null
+  created_at: string; idx: number
 }
+export type QueueData = {
+  pieces: { id: string; idx: number; status: PieceStatus; quote: string; project_id: string; project: string
+    created_at: string; renders: number }[]
+  jobs: (Job & { project: string })[]
+}
+export type ExportRun = { id: string; project_id: string; dir: string; path: string; pieces: number
+  created_at: string; project: string }
 export type BackendStatus = { state: 'starting' | 'ready' | 'crashed' | 'stopped'; message?: string; detail?: string }
 export type SecretName = 'DEEPSEEK_API_KEY' | 'PEXELS_API_KEY' | 'UNSPLASH_ACCESS_KEY'
 

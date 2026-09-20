@@ -5,6 +5,8 @@ import { Create } from '../pages/Create'
 import { Library } from '../pages/Library'
 import { Projects } from '../pages/Projects'
 import { Project } from '../pages/Project'
+import { Queue } from '../pages/Queue'
+import { Exports } from '../pages/Exports'
 import { Settings } from '../pages/Settings'
 import { Splash } from '../pages/Splash'
 
@@ -34,6 +36,8 @@ export function App() {
         {page === 'create' && <Create onCreated={open} />}
         {page === 'projects' && <Projects onOpen={open} onCreate={() => setPage('create')} />}
         {page === 'library' && <Library onCreate={() => setPage('create')} />}
+        {page === 'queue' && <Queue onOpen={open} />}
+        {page === 'exports' && <Exports onOpenProject={open} />}
         {page === 'project' && openProject && (
           <Project id={openProject} onBack={() => setPage('projects')} onSettings={() => setPage('settings')} />
         )}

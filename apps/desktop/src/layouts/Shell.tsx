@@ -1,15 +1,17 @@
 import type { ReactNode } from 'react'
-import { Aperture, Folders, GearSix, Images, PlusCircle, SquaresFour, type Icon } from '@phosphor-icons/react'
+import { Aperture, Export, Folders, GearSix, Images, ListChecks, PlusCircle, SquaresFour, type Icon } from '@phosphor-icons/react'
 import { studio, useBackendStatus } from '../lib/studio'
 import { Button, ErrorNote, cx } from '../components/ui'
 
-export type Page = 'dashboard' | 'create' | 'projects' | 'project' | 'library' | 'settings'
+export type Page = 'dashboard' | 'create' | 'projects' | 'project' | 'library' | 'queue' | 'exports' | 'settings'
 
 const NAV: { id: Page; label: string; icon: Icon }[] = [
   { id: 'dashboard', label: 'Dashboard', icon: SquaresFour },
   { id: 'create', label: 'Create', icon: PlusCircle },
   { id: 'projects', label: 'Projects', icon: Folders },
   { id: 'library', label: 'Library', icon: Images },
+  { id: 'queue', label: 'Queue', icon: ListChecks },
+  { id: 'exports', label: 'Exports', icon: Export },
 ]
 
 function RailItem({ id, label, icon: I, active, onClick }: { id: Page; label: string; icon: Icon; active: boolean; onClick: (p: Page) => void }) {

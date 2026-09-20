@@ -7,7 +7,7 @@ import logging
 import threading
 import uuid
 
-from app import content, renders
+from app import content, export, renders
 from app.database import connect
 from app.errors import UserError
 from app.events import emit
@@ -51,7 +51,9 @@ def _project_status(project_id: str, status: str) -> None:
                      (status, project_id))
 
 
-def start(project_id: str, kind: str = "generate") -> dict:
+def start(project_id: str, kind: str = "generate", piece_ids: list[str] | None = None) -> dict:
+    if kind not in ("generate", "render", "export"):
+        raise UserError("Unknown job kind.", kind)
     running = latest(project_id)
     if running and running["status"] in ("queued", "running"):
         raise UserError("This project already has a job running.")
@@ -60,8 +62,10 @@ def start(project_id: str, kind: str = "generate") -> dict:
         if conn.execute("SELECT 1 FROM projects WHERE id = ?", (project_id,)).fetchone() is None:
             raise UserError("This project no longer exists.", f"project id {project_id}")
         conn.execute("INSERT INTO generation_jobs (id, project_id, kind) VALUES (?, ?, ?)", (job_id, project_id, kind))
-    _project_status(project_id, "generating")
-    threading.Thread(target=_run, args=(job_id, project_id, kind), daemon=True, name=f"job-{job_id}").start()
+    if kind == "generate":  # render/export ride the same job system but don't change the project's own stage
+        _project_status(project_id, "generating")
+    threading.Thread(target=_run, args=(job_id, project_id, kind, piece_ids), daemon=True,
+                     name=f"job-{job_id}").start()
     return get(job_id)
 
 
@@ -70,16 +74,19 @@ def cancel(id: str) -> dict:
     return {"cancelling": id}
 
 
-def _run(job_id: str, project_id: str, kind: str = "generate") -> None:
+def _run(job_id: str, project_id: str, kind: str = "generate", piece_ids: list[str] | None = None) -> None:
     def report(stage: str, progress: float) -> None:
         if job_id in _cancelled:
             raise Cancelled
         _set(job_id, "job.progress", stage=stage, progress=round(progress, 3))
 
-    stage = "Generating" if kind == "generate" else "Rendering"
+    stage = {"generate": "Generating", "render": "Rendering", "export": "Exporting"}[kind]
     _set(job_id, "job.started", status="running", stage=stage)
     try:
-        (content.generate if kind == "generate" else renders.render_project)(project_id, report)
+        if kind == "export":
+            export.export_project(project_id, report, piece_ids)
+        else:
+            (content.generate if kind == "generate" else renders.render_project)(project_id, report)
     except Cancelled:
         _project_status(project_id, "draft" if not content.pieces(project_id) else "ready")
         _set(job_id, "job.cancelled", status="cancelled", stage="Cancelled")

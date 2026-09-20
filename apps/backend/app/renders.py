@@ -23,12 +23,16 @@ def _asset_for(piece: dict) -> dict | None:
 
 
 def _wanted_kinds(brief: dict, piece: dict) -> list[str]:
-    """video_image renders both; explicit format forces one; otherwise the plan's preferred type."""
-    if brief["format"] == "video_image":
-        return ["video", "image"]
+    """video_image renders both; explicit format forces one; otherwise the plan's preferred type.
+    Instagram Feed is a 4:5 image post (PRD §72), so targeting it always renders the image as well."""
     if brief["format"] in ("video", "image"):
-        return [brief["format"]]
-    return [piece["content"]["visual"]["preferred_type"]]
+        kinds = [brief["format"]]
+    elif brief["format"] == "video_image":
+        kinds = ["video", "image"]
+    else:
+        kinds = [piece["content"]["visual"]["preferred_type"]]
+    kinds += ["image"] if "instagram_feed" in brief["platforms"] else []
+    return sorted(set(kinds), key=lambda k: k != "video")
 
 
 def render_project(project_id: str, report) -> None:
@@ -68,23 +72,24 @@ def render_project(project_id: str, report) -> None:
                         info = renderer.render_video(
                             src=config.MEDIA_DIR / asset["local_path"], narration=narration.path,
                             scrim_png=scrim_png, out=full_out, quote=content_data["quote"]["text"],
-                            subject_position=asset["subject_position"] or "center",
-                            palette=content_data["palette"], src_fps=asset["fps"],
-                            src_duration=asset["duration"], still=asset["asset_type"] == "image",
-                            progress=None)
-                        duration = info["duration"]
+                            subject_position=asset["subject_position"] or "center", palette=content_data["palette"],
+                            src_fps=asset["fps"], src_duration=asset["duration"],
+                            still=asset["asset_type"] == "image", progress=None)
+                        duration, fps, w, h = info["duration"], info["fps"], renderer.w, renderer.h
                     else:
                         renderer.render_image(src=config.MEDIA_DIR / asset["local_path"], out=full_out,
                                               quote=content_data["quote"]["text"],
                                               subject_position=asset["subject_position"] or "center",
                                               palette=content_data["palette"])
-                        duration = None
+                        duration, fps, w, h = None, None, render.IMAGE_W, render.IMAGE_H
                 except UserError as e:
                     raise UserError(f"Piece {piece['idx']} ({kind}) failed to render: {e}", e.detail)
-                with connect() as conn:
-                    conn.execute("INSERT OR REPLACE INTO renders (id, project_id, piece_id, kind, local_path, duration) "
-                                 "VALUES (?,?,?,?,?,?)",
-                                 (uuid.uuid4().hex[:12], project_id, piece["id"], kind, out.as_posix(), duration))
+                with connect() as conn:  # one row per piece+kind: a re-render replaces the stale output
+                    conn.execute("DELETE FROM renders WHERE piece_id = ? AND kind = ?", (piece["id"], kind))
+                    conn.execute("INSERT INTO renders (id, project_id, piece_id, kind, local_path, duration, "
+                                 "fps, width, height) VALUES (?,?,?,?,?,?,?,?,?)",
+                                 (uuid.uuid4().hex[:12], project_id, piece["id"], kind, out.as_posix(), duration,
+                                  fps, w, h))
             with connect() as conn:
                 conn.execute("UPDATE content_pieces SET status = 'ready' WHERE id = ?", (piece["id"],))
             piece["status"] = "ready"
@@ -98,7 +103,7 @@ def render_project(project_id: str, report) -> None:
 
 def list_(project_id: str) -> list[dict]:
     with connect() as conn:
-        rows = conn.execute("SELECT r.id, r.piece_id, r.kind, r.local_path, r.duration, r.created_at, "
-                            "c.idx FROM renders r JOIN content_pieces c ON c.id = r.piece_id "
+        rows = conn.execute("SELECT r.id, r.piece_id, r.kind, r.local_path, r.duration, r.fps, r.width, r.height, "
+                            "r.created_at, c.idx FROM renders r JOIN content_pieces c ON c.id = r.piece_id "
                             "WHERE r.project_id = ? ORDER BY c.idx, r.kind", (project_id,)).fetchall()
     return [dict(r) for r in rows]

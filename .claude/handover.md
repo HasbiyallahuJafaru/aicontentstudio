@@ -1,6 +1,6 @@
 # Handover
 
-Last updated: 2026-09-20 (Milestone 5 complete, not committed). Read this first in a new chat, then `.claude/CLAUDE.md` rules.
+Last updated: 2026-09-20 (Milestone 6 built, verified, not committed). Read this first in a new chat, then `.claude/CLAUDE.md` rules.
 Update it after every phase.
 
 ## Where things stand
@@ -14,8 +14,9 @@ Update it after every phase.
 | Milestone 3: Pexels/Unsplash pipeline (scoring, dedup, cooldown), Library | Done, verified with fake providers. Pushed: 9f03e6c + 126fa5c. |
 | Milestone 4: visual analysis, HEX extraction, palette engine, composition detection | Done, verified on constructed images. Pushed: cb17653. |
 | Splash + root README (user request) | Done. Pushed: b73d254 + 84a95ff. |
-| **Milestone 5**: TTS, audio mixing, FFmpeg renderers, render UI | **Done and verified 2026-09-20: 63 backend tests green, full `npm test` (backend + tsc + build + smoke incl. real renders) green twice in a row. Nothing committed.** |
-| M6 preview, regeneration, queue, export · M7 refinement, packaging | Not started |
+| Milestone 5: TTS, audio mixing, FFmpeg renderers, render UI | Done, verified, pushed: b815a50. |
+| **Milestone 6**: preview, regeneration, queue, export | **Done, verified 2026-09-20: 74 backend tests green, full `npm test` (backend + tsc + build + smoke incl. preview/approve/regenerate/export) green. Nothing committed.** |
+| M7 refinement, packaging | Not started |
 
 Git: `main` on https://github.com/HasbiyallahuJafaru/aicontentstudio. Commit/push only when the user asks.
 
@@ -68,6 +69,27 @@ Git: `main` on https://github.com/HasbiyallahuJafaru/aicontentstudio. Commit/pus
     still->video 60fps, image 1080x1350), full render job (generation -> real video file swap -> FakeTTS ->
     kind='render' -> renders rows + piece ready). Test avoids other modules' fixture quote + wipes asset_usage so
     the full-suite run doesn't trip quote dedup or the visual cooldown.
+- **M6:**
+  - `app/platforms/` (PRD §69-73): youtube_shorts / instagram_reels+feed / tiktok adapters in one module — pure
+    metadata shaping (title truncation, caption+hashtags limits, cover + file per platform, suggested_time
+    heuristics), never publish. A platform whose required render is missing reports `unavailable` at export.
+  - `app/export.py` (PRD §47, §68): export runs as jobs kind='export' (all or selected piece_ids) →
+    `exports/<date>/NNN_<slug>/` with video_9x16.mp4, image_4x5.jpg, thumbnail.jpg (ffmpeg frame grab), caption.txt
+    and metadata.json (base metadata + per-platform blocks); pieces walk to status 'exported'; `exports.list_`.
+  - `app/content.py`: `regenerate(piece_id, scope)` (§43 quote/narration/design via one model call reusing the
+    piece's plan item, quote dedup with 3 attempts; 'visual' re-runs assets.assign — cooldown pushes away from the
+    current asset) and `approve(piece_id)` (ready→approved). Both drop stale renders → status 'written'.
+  - `app/queue.py` (§46): pieces across projects with status + render counts, plus recent jobs; `queue.list`.
+  - `app/jobs.py`: kind validate generate|render|export; export passes optional piece_ids; project status only
+    flips to 'generating' for generate jobs. Migration 006: renders.fps/width/height + exports table.
+  - `renders.py`: `_wanted_kinds` adds image when instagram_feed is targeted (§72 4:5 pair); one row per
+    piece+kind (re-render replaces); fps/width/height recorded and returned by `renders.list_`.
+  - Desktop: Preview modal (`components/Preview.tsx`) — native `<video controls>` + MP4/H.264/resolution/FPS/
+    duration indicators, image fit/actual + before/after, Redo one part (Quote/Narration/Visual/Design), Approve,
+    Export this piece; render chips open it. Rail gains Queue + Exports screens (stage tabs with counts;
+    export runs with Open folder via guarded `app:openExportPath` IPC + Copy path). Project header gains Export.
+  - `tests/test_m6.py`: adapters, regenerate (narration keeps everything else; visual picks a different asset;
+    scope/failed guards), approve gating, export folder + metadata.json + statuses, queue.list.
 
 **Desktop** (`apps/desktop`)
 - Splash screen every launch: bundled 60fps waves clip `src/assets/splash.webm` (8s VP9 ~2MB, from "Waves off of
@@ -82,24 +104,25 @@ Git: `main` on https://github.com/HasbiyallahuJafaru/aicontentstudio. Commit/pus
 - M5 UI: Settings "Narration" (engine windows/kokoro, voice, speed, volume) + "Render" (quality CRF, music path +
   volume) sections; Project page Render button (jobs.start kind='render', disabled while a job runs or no piece
   has an asset) with accent rendered chips (Video X.Xs / Image) from `renders.list` on each piece row.
-- `scripts/smoke.mjs`: fake DeepSeek + fake Pexels; enters through the splash both launches; generates 3 pieces
-  with visuals, swaps the fake asset bytes for real 14s ffmpeg clips, sets narration speed in Settings, renders
-  the project, asserts 3 rendered chips (+ after restart), asserts Library + swatches + filters, persistence.
+  - `scripts/smoke.mjs`: fake DeepSeek + fake Pexels; enters through the splash both launches; generates 3 pieces
+    with visuals, swaps the fake asset bytes for real 14s ffmpeg clips, sets narration speed in Settings, renders
+    the project, previews a piece (video + indicators), approves + regenerates narration + re-renders, exports the
+    project (Exported chips), checks Queue stage tabs and the Exports run, screenshots everything.
 
-**Verified 2026-09-20:** full `npm test` green twice in a row (63 backend tests incl. real-SAPI + real-ffmpeg,
-tsc, build, smoke with 3 real 1080x1920 renders in ~9s). Screenshots reviewed: settings Narration/Render sections,
-project page with rendered chips. WindowsTTS verified standalone. Windows package: not committed yet.
+**Verified 2026-09-20:** full `npm test` green (74 backend tests, tsc, build, smoke with the full M6 flow incl.
+export folders on disk). Screenshots reviewed: preview modal with indicators, project with exported chips, queue
+tabs, exports run. WindowsTTS + real ffmpeg verified. Nothing committed yet (M6).
 **Not verified:** real DeepSeek/Pexels/Unsplash calls (need user keys); analyser thresholds on real photos;
-`npm run dev` HMR; developer link in a packaged build; splash loop seam; renders at non-1080 settings in the UI
-(only tests); Kokoro end to end (model not downloaded).
+`npm run dev` HMR; developer link in a packaged build; renders at non-1080 settings in the UI; Kokoro end to end.
 
-## Resume here (after Milestone 5)
+## Resume here (after Milestone 6)
 
-1. Commit/push M5 when the user asks (nothing committed yet; `git status` shows backend M5 files + UI + docs).
-2. With the user's keys: one real DeepSeek batch + real Pexels downloads; sanity-check analyser thresholds
-   (0.45 floor, 0.3 contrast scale) and tune `prompts.py` if quotes sound AI-ish. Watch a rendered video end to
-   end and judge drawtext legibility/scrim strength on real footage. Pending since M3.
-3. M6: preview, regeneration, queue, export (platform metadata adapters PRD §69, per-type asset pairs).
+1. Commit/push M6 when the user asks (nothing committed since b815a50 M5).
+2. M7: refinement pass + packaging (electron-builder NSIS + PyInstaller-frozen backend in resources/backend,
+   bundled ffmpeg per DECISIONS). Also the calendar view (§74) only if the user asks for it — it is not in the
+   M6/M7 scope the handover tracks.
+3. Real-key verification round (pending since M3): one real DeepSeek batch + real Pexels downloads; watch a
+   rendered video end to end; tune prompts/thresholds if needed.
 
 ## How to run
 ```bash
@@ -109,8 +132,9 @@ npm test          # all checks
 graphify update . # refresh the code map after changes
 ```
 
-## Next after M5
-- See "Resume here" above: commit M5 when asked, real-key verification, then M6.
+## Next after M6
+- See "Resume here" above: commit M6 when asked, then M7 (refinement + packaging), plus the real-key
+  verification round pending since M3.
 
 ## Open decisions / notes
 - Rail shows Dashboard, Create, Projects, Library; Queue and Exports arrive with M6.

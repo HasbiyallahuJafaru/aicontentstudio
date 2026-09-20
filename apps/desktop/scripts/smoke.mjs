@@ -192,10 +192,10 @@ await shot(win, '5b-settings-narration')
 await win.getByRole('button', { name: 'Projects' }).click()
 await win.getByText('Discipline').click()
 await win.getByRole('button', { name: 'Render', exact: true }).click()
-const chips = () => win.locator('span[title^="renders/"]')
+const chips = () => win.locator('button[title^="renders/"]')
 try {
   await chips().first().waitFor({ timeout: 240_000 })
-  await win.waitForFunction(() => document.querySelectorAll('span[title^="renders/"]').length === 3,
+  await win.waitForFunction(() => document.querySelectorAll('button[title^="renders/"]').length === 3,
     undefined, { timeout: 240_000 })
 } catch (e) {
   await shot(win, 'debug-render-timeout')
@@ -203,6 +203,54 @@ try {
   throw e
 }
 await win.getByText(/Video \d\.\ds/).first().waitFor()
+await shot(win, '5c-project-rendered')
+await assertNoHorizontalOverflow(win, 'project-rendered')
+
+// Preview: native video player with render facts (PRD 40)
+await win.getByRole('button', { name: 'Preview' }).first().click()
+await win.locator('video').waitFor({ timeout: 15_000 })
+try {
+  await win.getByText(/MP4 · H\.264 · 1080 × 1920 · \d+ FPS/).waitFor({ timeout: 20_000 })
+} catch (e) {
+  await shot(win, 'debug-preview')
+  console.error('MODAL TEXT:', await win.evaluate(() => document.querySelector('[role="dialog"]')?.innerText ?? 'NO DIALOG'))
+  throw e
+}
+await shot(win, '5d-preview')
+await win.keyboard.press('Escape')
+
+// Approve piece 1, then regenerate its narration (PRD 41/43): its render is stale, chips drop to 2
+await win.getByRole('button', { name: 'Preview' }).first().click()
+await win.getByRole('button', { name: 'Approve', exact: true }).click()
+await win.getByText('Approved', { exact: true }).first().waitFor()
+await win.getByRole('button', { name: 'Preview' }).first().click()
+await win.getByRole('button', { name: 'Narration' }).click()
+await win.waitForFunction(() => document.querySelectorAll('button[title^="renders/"]').length === 2,
+  undefined, { timeout: 60_000 })
+await win.getByRole('button', { name: 'Render', exact: true }).click()
+await win.waitForFunction(() => document.querySelectorAll('button[title^="renders/"]').length === 3,
+  undefined, { timeout: 240_000 })
+
+// Export the project (PRD 47): every piece lands in exports/<date>/ and shows as Exported
+await win.getByRole('button', { name: 'Export', exact: true }).click()
+await win.waitForFunction(() => document.querySelectorAll('main').length &&
+    [...document.querySelectorAll('main span')].filter((s) => s.textContent === 'Exported').length === 3,
+  undefined, { timeout: 120_000 })
+await shot(win, '5e-project-exported')
+
+// Queue screen (PRD 46): stage tabs with counts; the Exported bucket lists every piece
+await win.getByRole('button', { name: 'Queue' }).click()
+await win.getByRole('tab', { name: /Exported 3/ }).click()
+await win.getByText('Show up before the feeling does.').first().waitFor()
+await win.waitForTimeout(300) // let the tab's 150ms bg transition finish so the shot shows the selected state
+await shot(win, '5f-queue')
+
+// Exports screen: the run is listed with its folder
+await win.getByRole('button', { name: 'Exports' }).click()
+await win.getByText(/exports.*2026-\d\d-\d\d|Discipline/).first().waitFor()
+await win.getByRole('button', { name: 'Open folder' }).waitFor()
+await shot(win, '5g-exports')
+await assertNoHorizontalOverflow(win, 'exports')
 await shot(win, '5c-project-rendered')
 await assertNoHorizontalOverflow(win, 'project-rendered')
 
@@ -234,7 +282,7 @@ await win.getByText('3 of 3 written').waitFor()
 await assertNoHorizontalOverflow(win, 'dashboard with data')
 await win.getByText('Discipline').click()
 await win.locator('blockquote').getByText(QUOTES[0]).waitFor()
-assert.equal(await win.locator('span[title^="renders/"]').count(), 3, 'renders survive restart')
+assert.equal(await win.locator('button[title^="renders/"]').count(), 3, 'renders survive restart')
 await win.getByRole('button', { name: 'Library' }).click()
 await win.getByText('Pexels · Video').first().waitFor()
 assert.equal(await win.getByText('Pexels · Video').count(), 3, 'assets survive restart')

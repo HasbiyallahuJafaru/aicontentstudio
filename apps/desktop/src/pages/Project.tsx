@@ -1,17 +1,25 @@
 import { useEffect, useState } from 'react'
-import { ArrowLeft, Play, Sparkle, Trash } from '@phosphor-icons/react'
+import { ArrowLeft, Export, Play, Sparkle, Trash } from '@phosphor-icons/react'
 import { call, formatDate, FORMATS, hasKey, label, PLATFORMS, useJob, useQuery, BackendError,
-  type Piece, type Project as P, type Render } from '../lib/studio'
+  type Asset, type Piece, type Project as P, type Render } from '../lib/studio'
+import { Preview } from '../components/Preview'
 import { Button, ErrorNote, cx } from '../components/ui'
 
 export function Project({ id, onBack, onSettings }: { id: string; onBack: () => void; onSettings: () => void }) {
   const { data: project, error: loadError, reload: reloadProject } = useQuery<P>('projects.get', { id })
   const { job, reload: reloadJob } = useJob(id)
   const running = job?.status === 'queued' || job?.status === 'running'
-  const { data: pieces } = useQuery<Piece[]>('pieces.list', { project_id: id }, job?.updated_at)
-  const { data: renders } = useQuery<Render[]>('renders.list', { project_id: id }, job?.updated_at)
+  const [rev, setRev] = useState(0)
+  const { data: pieces } = useQuery<Piece[]>(
+    'pieces.list', { project_id: id }, `${job?.updated_at ?? ''}|${rev}`)
+  const { data: renders } = useQuery<Render[]>(
+    'renders.list', { project_id: id }, `${job?.updated_at ?? ''}|${rev}`)
+  const { data: assets } = useQuery<Asset[]>('assets.list')
+  const [preview, setPreview] = useState<string>()
   const [keySet, setKeySet] = useState<boolean>()
   const [error, setError] = useState<BackendError>()
+
+  const refresh = () => setRev((r) => r + 1)  // piece-level changes (approve, regenerate) don't move any job timestamp
 
   useEffect(() => { hasKey('DEEPSEEK_API_KEY').then(setKeySet) }, [])
   useEffect(() => { if (job && !running) reloadProject() }, [job?.status])
@@ -29,6 +37,12 @@ export function Project({ id, onBack, onSettings }: { id: string; onBack: () => 
     if (running || !renderable) return
     setError(undefined)
     try { await call('jobs.start', { project_id: id, kind: 'render' }); reloadJob() } catch (e) { setError(e as BackendError) }
+  }
+
+  async function exportAll() {
+    if (running) return
+    setError(undefined)
+    try { await call('jobs.start', { project_id: id, kind: 'export' }); reloadJob() } catch (e) { setError(e as BackendError) }
   }
 
   async function remove() {
@@ -59,6 +73,11 @@ export function Project({ id, onBack, onSettings }: { id: string; onBack: () => 
           </div>
           <div className="flex shrink-0 items-center gap-2">
             <Button variant="ghost" onClick={remove} aria-label="Delete project"><Trash size={15} /></Button>
+            {!!renders?.length && (
+              <Button onClick={exportAll} disabled={running} title="Copy rendered pieces into an export folder">
+                <Export size={14} />Export
+              </Button>
+            )}
             <Button onClick={render} disabled={running || !renderable}
               title={renderable ? 'Narrate and render every piece' : 'Generate pieces with visuals first'}>
               <Play size={13} weight="fill" />Render
@@ -100,7 +119,10 @@ export function Project({ id, onBack, onSettings }: { id: string; onBack: () => 
       )}
 
       <ol className={cx('grid', (!!pieces?.length || running) && 'glass px-8 py-2')}>
-        {pieces?.map((p) => <PieceRow key={p.id} piece={p} renders={renders?.filter((r) => r.piece_id === p.id)} />)}
+        {pieces?.map((p) => (
+          <PieceRow key={p.id} piece={p} renders={renders?.filter((r) => r.piece_id === p.id)}
+            onPreview={() => setPreview(p.id)} />
+        ))}
         {running && (pieces?.length ?? 0) < b.quantity && job?.stage.startsWith('Writing') && (
           <li className="grid grid-cols-[56px_minmax(0,1fr)] gap-6 border-t border-line py-7 first:border-t-0" aria-hidden>
             <span className="tnum pt-1 text-xs text-ink-3">{String((pieces?.length ?? 0) + 1).padStart(3, '0')}</span>
@@ -111,11 +133,15 @@ export function Project({ id, onBack, onSettings }: { id: string; onBack: () => 
           </li>
         )}
       </ol>
+      {pieces?.length ? pieces.filter((p) => p.id === preview).map((p) => (
+        <Preview key={p.id} piece={p} renders={renders?.filter((r) => r.piece_id === p.id) ?? []} assets={assets ?? []}
+          onClose={() => setPreview(undefined)} onChanged={refresh} />
+      )) : null}
     </>
   )
 }
 
-function PieceRow({ piece: p, renders }: { piece: Piece; renders?: Render[] }) {
+function PieceRow({ piece: p, renders, onPreview }: { piece: Piece; renders?: Render[]; onPreview: () => void }) {
   const c = p.content
   if (p.status === 'failed') {
     return (
@@ -135,17 +161,24 @@ function PieceRow({ piece: p, renders }: { piece: Piece; renders?: Render[] }) {
         <div className="grid gap-2">
           <div className="flex items-center justify-between gap-4">
             <p className="text-xs text-ink-3">{label(p.angle)}</p>
-            {!!renders?.length && (
-              <div className="flex shrink-0 gap-1.5">
-                {renders.map((r) => (
-                  <span key={r.id} title={r.local_path}
-                    className="inline-flex items-center gap-1 rounded-full bg-accent/15 px-2.5 py-0.5 text-2xs font-medium text-accent">
-                    {r.kind === 'video' ? <Play size={8} weight="fill" /> : null}
-                    {label(r.kind)}{r.duration ? ` ${r.duration.toFixed(1)}s` : ''}
-                  </span>
-                ))}
-              </div>
-            )}
+            <div className="flex shrink-0 items-center gap-1.5">
+              {p.status !== 'written' && p.status !== 'rendering' && (
+                <span className={cx('rounded-full px-2.5 py-0.5 text-2xs font-medium',
+                  p.status === 'ready' ? 'bg-white/[0.07] text-ink-2' : 'bg-ok/15 text-ok')}>{label(p.status)}</span>
+              )}
+              {!!renders?.length && (
+                <>
+                  {renders.map((r) => (
+                    <button key={r.id} onClick={onPreview} title={r.local_path}
+                      className="inline-flex items-center gap-1 rounded-full bg-accent/15 px-2.5 py-0.5 text-2xs font-medium text-accent hover:bg-accent/25">
+                      {r.kind === 'video' ? <Play size={8} weight="fill" /> : null}
+                      {label(r.kind)}{r.duration ? ` ${r.duration.toFixed(1)}s` : ''}
+                    </button>
+                  ))}
+                  <Button variant="ghost" className="!px-2 !text-xs" onClick={onPreview}>Preview</Button>
+                </>
+              )}
+            </div>
           </div>
           <blockquote data-selectable className="max-w-[34ch] font-display text-[24px] leading-[1.25] font-semibold tracking-[-0.025em] text-balance">
             {c.quote.text}

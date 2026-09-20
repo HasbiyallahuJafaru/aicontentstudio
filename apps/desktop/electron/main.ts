@@ -76,6 +76,13 @@ app.whenReady().then(() => {
     return secrets.status()
   })
   ipcMain.handle('app:openDataDir', () => shell.openPath(dataDir))
+  // Only export folders may be opened by path (PRD §47 "open export folder"); nothing else from the renderer.
+  ipcMain.handle('app:openExportPath', (_e, p: string) => {
+    const root = join(dataDir, 'exports')
+    return typeof p === 'string' && resolve(p).startsWith(root + sep)
+      ? shell.openPath(resolve(p))
+      : Promise.resolve('Not allowed.')
+  })
   ipcMain.handle('app:openExternal', (_e, url: string) =>
     typeof url === 'string' && url.startsWith('https://') ? shell.openExternal(url) : Promise.resolve())
 

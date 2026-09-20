@@ -127,6 +127,16 @@ def validate_video(path: Path, want: dict, w: int, h: int) -> dict:
     return {"duration": float(d["format"]["duration"]), "fps": fps}
 
 
+def thumbnail(src: Path, out: Path, at: float = 0.5) -> Path:
+    """Grab one frame as the cover/thumbnail (PRD §47/§71). ffmpeg argv array, same controls as render_video."""
+    out.parent.mkdir(parents=True, exist_ok=True)
+    proc = subprocess.run(["ffmpeg", "-y", "-nostdin", "-nostats", "-hide_banner", "-ss", f"{at}", "-i", str(src),
+                           "-frames:v", "1", "-q:v", "3", str(out)], capture_output=True, timeout=60)
+    if proc.returncode != 0 or not out.exists():
+        raise UserError("Could not grab a cover frame for the export.", proc.stderr.decode("utf-8", "replace")[-400:])
+    return out
+
+
 def validate_image(path: Path) -> None:
     with Image.open(path) as img:
         img.verify()
