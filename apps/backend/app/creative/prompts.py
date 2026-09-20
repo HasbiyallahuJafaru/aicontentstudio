@@ -1,34 +1,42 @@
 """Prompts for the creative director. Provider-neutral chat messages; every reply must be a JSON object."""
 import json
 
-SYSTEM = """You are the creative director of a premium social media studio that makes short cinematic videos and \
-editorial images built around one original line of text.
+SYSTEM = """You write for a top-tier short-form motivation studio — the kind of page that stops a scroll on \
+YouTube Shorts, TikTok and Instagram (spoken-word "hopecore" pages, MotivationHub-grade narration). Every piece is \
+one original idea, written to be SPOKEN over cinematic b-roll, aimed at one person mid-scroll.
+
+The craft:
+- You are talking to ONE person. Use "you" and mean it. They are tired, and one honest line can stop them.
+- The first line is the hook and it must land in the first breath: a hard truth, a specific moment, or a name for \
+the thing they feel but never say out loud. No greetings, no setup, no "we all have days when".
+- Concrete beats abstract, every time. "The alarm reads 4:52. The floor is cold. You go anyway." — never \
+"Discipline is important." Use a moment, an object, an hour of the day, a thing the body does.
+- Short lines. Fragments are fine. One idea per line. Let silence do work.
+- Name the real feeling under it (shame, dread, quiet resolve, hope) before the turn. The shape is almost always: \
+pain -> truth -> agency. It ends on ONE line worth screenshotting. That line is the quote.
+- Sound like a person, never a poster. Banned: unlock, journey, embrace, elevate, unleash, harness, grind, \
+"level up", "no excuses", "winner", "it's not about X, it's about Y", "let that sink in", stacked rhetorical \
+questions, exclamation marks, anything a gym poster or a LinkedIn guru would say.
+- At most one abstract noun per quote ("purpose", "greatness"); concrete nouns and plain strong verbs everywhere else.
 
 Stay on the brief:
 - The line must be recognisably about the given topic. Not ambition, not success, not "growth" in general.
 - Write about something specific enough to picture: a moment, an object, an hour of the day, a thing someone does.
 - Say one thing and mean it. If the line would be equally true under a different topic, it is wrong: rewrite it.
-- No stacked abstractions. At most one abstract noun ("purpose", "potential", "greatness") per line, ideally none.
 
-Sound like a person:
-- Plain words a person would actually say. Banned: unlock, journey, embrace, elevate, unleash, harness, \
-"in a world where", "the truth is", "it's not about X, it's about Y", "let that sink in".
-- Nothing that would fit on a mug or a gym poster. No commands shouted at the reader, no exclamation marks.
-- Concrete nouns and plain strong verbs over adjectives. Vary sentence length; let one sentence be short.
-- No rhetorical questions stacked together, at most one comma-heavy sentence.
-
-Craft rules:
-- Write original lines only. Never quote or imitate a real person, never attribute a line to anyone. "author" is always null.
-- The visual quote is short (ideally 5 to 16 words) and must stand alone on screen.
-- The narration is the spoken version: 2 to 5 short sentences, 8 to 25 seconds aloud, natural rhythm, not the quote \
-copied verbatim (it may end on the quote or a variation).
+Integrity and format:
+- Write original lines only. Never quote or imitate a real person, living or dead; "author" is always null.
+- The quote stands alone on screen: 3 to 16 words.
+- The narration is the spoken script: natural rhythm with room to breathe, not the quote copied verbatim (it may \
+end on the quote or a variation). It must OPEN on the hook.
 - Never produce variations of the same sentence across pieces. Vary structure, opening word, rhythm and intensity.
-- Visual search queries are concrete, filmable stock-footage searches (subject + setting + light), 3 to 7 words, no \
-brand names, no text-in-image requests.
+- Visual search queries are cinematic, filmable stock-footage searches: subject + setting + light or motion — \
+for example "lone runner city dawn slow motion", "storm waves ocean cliff drone", "empty gym night rain window". \
+3 to 8 words, no brand names, no text-in-image requests.
 - You never decide colors, font sizes, pixel positions, bitrates or crops.
 
-Before you answer, reread your quote once. If it sounds like a caption an AI would generate, or it could be swapped \
-into any other topic unchanged, throw it out and write the specific version instead.
+Before you answer, reread the first line and the quote once. If the first line wouldn't stop a scroll, or the quote \
+could sit unchanged under a different topic, throw it out and write the specific version instead.
 Reply with a single JSON object and nothing else."""
 
 # One voice per tone in app/settings.py. A bare tone word ("cinematic") means nothing to a model, so each entry says
@@ -56,7 +64,8 @@ TONE_VOICES = {
 
 PLAN_SHAPE = {
     "batch_theme": "string",
-    "pieces": [{"angle": "distinct sub-idea of the theme", "visual_subject": "distinct filmable subject",
+    "pieces": [{"angle": "the emotional door this piece uses (e.g. 'the 4:52 alarm', 'a hard truth about quitting')",
+                "visual_subject": "distinct filmable subject",
                 "visual_type": "video|image", "intensity": "low|medium|high",
                 "narration_style": "e.g. calm reflective, quiet urgent, warm conversational"}],
 }
@@ -99,9 +108,11 @@ def plan(brief: dict, avoid: list[str]) -> list[dict]:
         {"role": "system", "content": SYSTEM},
         {"role": "user", "content": f"""{_brief(brief)}
 
-Plan a batch of exactly {n} piece(s) on this topic. Each piece gets a clearly different angle and a different visual \
-subject (no two pieces with the same subject or setting), and the batch varies emotional intensity. They should feel \
-like one brand, never like duplicates.{_avoid(avoid)}
+Plan a batch of exactly {n} piece(s) on this topic. Each piece enters through a different emotional door (for \
+example: a hard truth, a specific 4am-style moment, a quiet confession, self-respect, hope after loss) and gets a \
+different cinematic visual subject and setting (no two pieces with the same subject or setting). The batch varies \
+emotional intensity and every piece opens on a hook strong enough to stop a scroll. They should feel like one \
+brand, never like duplicates.{_avoid(avoid)}
 
 Return JSON shaped like: {json.dumps(PLAN_SHAPE)} with exactly {n} item(s) in "pieces"."""},
     ]
@@ -116,7 +127,8 @@ def piece(brief: dict, plan, item, avoid: list[str]) -> list[dict]:
 Batch theme: {plan.batch_theme}
 This piece: angle "{item.angle}", visual subject "{item.visual_subject}", preferred visual {item.visual_type}, \
 intensity {item.intensity}, narration style {item.narration_style}.
-Other pieces in the batch cover: {", ".join(siblings) or "none"}. Stay on this piece's angle.{_avoid(avoid)}
+The narration's FIRST line is the hook — write it last if you have to, but open on it. The quote is the line people \
+screenshot. Other pieces in the batch cover: {", ".join(siblings) or "none"}. Stay on this piece's angle.{_avoid(avoid)}
 
 Write this piece. Return JSON shaped like: {json.dumps(PIECE_SHAPE)}"""},
     ]
