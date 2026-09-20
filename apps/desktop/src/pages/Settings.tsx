@@ -222,7 +222,9 @@ export function Settings() {
       </Section>
 
       <Section title="Content defaults" description="Pre-filled every time you start a new project.">
-        <Field label="Topic">{(id) => <Input id={id} value={form.default_topic} onChange={(e) => set('default_topic', e.target.value)} />}</Field>
+        <Field label="Topic" hint="Pre-filled every time you start a new project. Can't be empty.">
+          {(id) => <Input id={id} value={form.default_topic} onChange={(e) => set('default_topic', e.target.value)} />}
+        </Field>
         <div className="grid grid-cols-3 gap-4">
           <Field label="Genre">
             {(id) => (

@@ -18,7 +18,7 @@ class Settings(BaseModel):
     ai_model: str = Field("deepseek-flash", min_length=1, max_length=64)
     ai_temperature: float = Field(1.0, ge=0, le=2)
     ai_max_tokens: int = Field(2000, ge=256, le=8192)
-    default_topic: str = Field("discipline", min_length=1, max_length=60)
+    default_topic: str = Field("", max_length=60)  # blank: the Create page starts empty
     default_tone: Genre = "hope"
 
     @field_validator("default_tone", mode="before")
@@ -29,7 +29,7 @@ class Settings(BaseModel):
             v = _LEGACY_TONES.get(v, v)
             return v if v in get_args(Genre) else "hope"
         return v
-    default_quantity: int = Field(6, ge=1, le=20)
+    default_quantity: int = Field(1, ge=1, le=20)
     # PRD §18: days a visually similar asset stays off limits after use. Same-asset reuse waits for the
     # pool to be exhausted regardless of this; the per-rule example values (7/3/3) collapse into one knob.
     asset_cooldown_days: int = Field(7, ge=0, le=365)
@@ -41,7 +41,7 @@ class Settings(BaseModel):
     # PRD §49 TTS: provider, voice, speed, volume. 'kokoro' = the quantized local neural voices (default;
     # needs `python -m app.tts download` once, see app/tts.py). 'windows' = SAPI voices (always there, offline).
     tts_provider: Literal["windows", "kokoro"] = "kokoro"
-    tts_voice: str = Field("", max_length=80)
+    tts_voice: str = Field("am_adam", max_length=80)
     tts_speed: float = Field(1.0, ge=0.5, le=2)
     tts_volume: float = Field(1.0, ge=0, le=1)
     # PRD §67 music: user-supplied licensed file only; never downloaded. Mixed quietly under the narration.
@@ -72,6 +72,9 @@ def get() -> dict:
 
 
 def update(**changes) -> dict:
+    from app.errors import UserError
+    if "default_topic" in changes and not str(changes["default_topic"]).strip():
+        raise UserError("The default topic can't be empty. Type a topic or put the old one back.")
     merged = Settings.model_validate(_load().model_dump() | changes)
     with connect() as conn:
         conn.execute("INSERT INTO settings (key, value) VALUES ('app', ?) "

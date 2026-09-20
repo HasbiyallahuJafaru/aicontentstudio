@@ -37,10 +37,14 @@ class Backend(unittest.TestCase):
             self.assertEqual(call("projects.create", brief=bad)["error"]["message"], "Some values are not valid.")
 
     def test_settings(self):
-        self.assertEqual(call("settings.get")["result"]["default_quantity"], 6)
+        self.assertEqual(call("settings.get")["result"]["default_quantity"], 1)
         self.assertEqual(call("settings.update", default_quantity=3)["result"]["default_quantity"], 3)
         self.assertIn("error", call("settings.update", ai_temperature=5))
         self.assertEqual(call("settings.get")["result"]["default_quantity"], 3)
+
+    def test_empty_default_topic_is_human(self):
+        reply = call("settings.update", default_topic="   ")
+        self.assertIn("topic can't be empty", reply["error"]["message"])
 
     def test_secrets_in_memory_only(self):
         self.assertEqual(call("secrets.load", keys={"PEXELS_API_KEY": "abc", "X": ""})["result"], {"loaded": ["PEXELS_API_KEY"]})

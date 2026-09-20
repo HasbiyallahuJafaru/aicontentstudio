@@ -5,6 +5,8 @@ import { call, FORMATS, GENRES, hasKey, label, PLATFORMS, TOPICS, useQuery, Back
 import { Button, Autocomplete, Choices, ErrorNote, Field, Input, PageHeader, Select, cx } from '../components/ui'
 
 const PRESETS = [1, 3, 6]
+// The write brief in three passes: what to make, how it sounds, how it looks. Only the first has required fields.
+const STEPS = ['Brief', 'Delivery', 'Look'] as const
 const ORIENTATIONS = [
   { value: '9:16', label: '9:16 — Shorts, Reels, TikTok' },
   { value: '16:9', label: '16:9 — landscape' },
@@ -19,6 +21,7 @@ export function Create({ onCreated }: { onCreated: (id: string) => void }) {
   const [brief, setBrief] = useState<Brief>()
   const [clip, setClip] = useState<ClipForm>({ source: '', n: null, orientation: '9:16', min_len: 30, max_len: 60, burn_captions: true, fps: 30 })
   const [custom, setCustom] = useState(false)
+  const [step, setStep] = useState(0)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<BackendError>()
   const [keySet, setKeySet] = useState<boolean>()
@@ -30,7 +33,7 @@ export function Create({ onCreated }: { onCreated: (id: string) => void }) {
     if (settings && !brief) {
       setBrief({
         topic: label(settings.default_topic), tone: settings.default_tone, mood: '', audience: '',
-        format: 'automatic', quantity: settings.default_quantity, platforms: ['youtube_shorts', 'instagram_reels', 'tiktok'],
+        format: 'video_image', quantity: settings.default_quantity, platforms: ['youtube_shorts', 'instagram_reels', 'tiktok'],
         voice: '', fps: 30, target_seconds: null, subtitles: false, look_filter: 'auto',
         blur_background: false, parallax: false,
       })
@@ -55,6 +58,8 @@ export function Create({ onCreated }: { onCreated: (id: string) => void }) {
   async function submit(e?: FormEvent) {
     e?.preventDefault()
     if (saving || (mode === 'write' ? !writeValid : !clipValid)) return
+    // Ctrl+Enter walks the wizard forward; only the last step actually creates the project.
+    if (mode === 'write' && step < STEPS.length - 1) { setStep(step + 1); return }
     setSaving(true)
     setError(undefined)
     try {
@@ -81,7 +86,7 @@ export function Create({ onCreated }: { onCreated: (id: string) => void }) {
             options={[{ value: 'write', label: 'Write content' }, { value: 'clip', label: 'Clip from video' }]} />
 
           {mode === 'write' ? <WriteForm brief={brief} setBrief={setBrief} custom={custom} setCustom={setCustom}
-            keySet={keySet} error={error} saving={saving} /> : (
+            keySet={keySet} error={error} saving={saving} step={step} setStep={setStep} /> : (
             <>
               <Field label="Video" hint="A YouTube or other link, or a path to a file on this computer.">
                 {(id) => (
@@ -152,111 +157,160 @@ export function Create({ onCreated }: { onCreated: (id: string) => void }) {
   )
 }
 
-/** The write-content brief form, unchanged from the social flow. */
-function WriteForm({ brief, setBrief, custom, setCustom, keySet, error, saving }: {
+/** Walks back to an earlier step. Steps ahead stay locked until their turn, so the bar never lies about progress. */
+function StepBar({ step, setStep }: { step: number; setStep: (n: number) => void }) {
+  return (
+    <div className="flex items-center gap-1">
+      {STEPS.map((label, i) => (
+        <button key={label} type="button" disabled={i > step} onClick={() => setStep(i)}
+          aria-current={i === step ? 'step' : undefined}
+          className={cx('grid flex-1 gap-2 rounded-field pt-1 text-left text-[13px] transition-colors duration-200',
+            'disabled:cursor-default', i === step ? 'font-medium text-ink' : i < step ? 'text-ink-2 hover:text-ink' : 'text-ink-3')}>
+          <span className={cx('h-[2px] rounded-full transition-colors duration-300',
+            i === step ? 'bg-accent' : i < step ? 'bg-line-strong' : 'bg-line')} />
+          {label}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+/** The write-content brief, split across STEPS so no single screen is a wall of controls. */
+function WriteForm({ brief, setBrief, custom, setCustom, keySet, error, saving, step, setStep }: {
   brief: Brief; setBrief: (b: Brief) => void; custom: boolean; setCustom: (v: boolean) => void
-  keySet?: boolean; error?: BackendError; saving: boolean
+  keySet?: boolean; error?: BackendError; saving: boolean; step: number; setStep: (n: number) => void
 }) {
   const { data: voices } = useQuery<VoiceList>('tts.voices')
   const set = <K extends keyof Brief>(k: K, v: Brief[K]) => setBrief({ ...brief, [k]: v })
   const valid = brief.topic.trim() && brief.platforms.length && brief.quantity >= 1 && brief.quantity <= 20
+  // Step 1 only owns the topic and quantity; platforms move to step 2, so Next must not wait on them.
+  const canLeaveStep = step === 0 ? !!brief.topic.trim() && brief.quantity >= 1 && brief.quantity <= 20 : !!valid
+  const last = step === STEPS.length - 1
   const voiceOptions = [
     { value: '', label: 'Studio default (Settings)' },
-    ...(voices?.kokoro ?? []).map((v) => ({ value: `kokoro:${v}`, label: `Kokoro · ${v}` })),
-    ...(voices?.windows ?? []).map((v) => ({ value: `windows:${v}`, label: `Windows · ${v}` })),
+    ...(voices?.kokoro ?? []).map((v) => ({ value: `kokoro:${v}`, label: `Kokoro \u00b7 ${v}` })),
+    ...(voices?.windows ?? []).map((v) => ({ value: `windows:${v}`, label: `Windows \u00b7 ${v}` })),
   ]
   return (
     <div className="grid gap-7">
-      <Field label="Topic" hint="Pick a theme or type your own.">
-        {(id) => (
-          <Autocomplete id={id} value={brief.topic} suggestions={TOPICS} maxLength={60} autoFocus
-            onChange={(v) => set('topic', v)} />
+      <StepBar step={step} setStep={setStep} />
+
+      {/* key={step} remounts the panel, which replays the entry animation on every move. */}
+      <div key={step} className="anim-page grid gap-7">
+        {step === 0 && (
+          <>
+            <Field label="Topic" hint="Pick a theme or type your own.">
+              {(id) => (
+                <Autocomplete id={id} value={brief.topic} suggestions={TOPICS} maxLength={60} autoFocus
+                  onChange={(v) => set('topic', v)} />
+              )}
+            </Field>
+
+            <Field label="Genre" hint="The format and voice, modelled on the top-performing motivational pages.">
+              {(id) => (
+                <Select id={id} value={brief.tone} onChange={(v) => set('tone', v as Brief['tone'])}
+                  options={GENRES} />
+              )}
+            </Field>
+
+            <div className="grid gap-2">
+              <Choices legend="Quantity" value={custom ? -1 : brief.quantity}
+                options={[...PRESETS.map((n) => ({ value: n, label: String(n) })), { value: -1, label: 'Custom' }]}
+                onChange={(v: number) => { setCustom(v === -1); if (v !== -1) set('quantity', v) }} />
+              {custom && (
+                <Input type="number" aria-label="Custom quantity" min={1} max={20} value={brief.quantity} className="w-24 tnum"
+                  onChange={(e) => set('quantity', Math.max(1, Math.min(20, Number(e.target.value) || 1)))} />
+              )}
+            </div>
+
+            <details className="group">
+              <summary className="flex cursor-pointer list-none items-center gap-1.5 text-[13px] text-ink-2 hover:text-ink">
+                <CaretRight size={12} weight="bold" className="transition-transform duration-150 group-open:rotate-90" />
+                Advanced
+              </summary>
+              <div className="grid gap-5 pt-5">
+                <Field label="Mood" hint="Optional, for example quiet determination.">
+                  {(id) => <Input id={id} value={brief.mood} maxLength={80} onChange={(e) => set('mood', e.target.value)} />}
+                </Field>
+                <Field label="Audience" hint="Optional, for example young professionals.">
+                  {(id) => <Input id={id} value={brief.audience} maxLength={80} onChange={(e) => set('audience', e.target.value)} />}
+                </Field>
+              </div>
+            </details>
+          </>
         )}
-      </Field>
 
-      <Field label="Genre" hint="The format and voice, modelled on the top-performing motivational pages.">
-        {(id) => (
-          <Select id={id} value={brief.tone} onChange={(v) => set('tone', v as Brief['tone'])}
-            options={GENRES} />
+        {step === 1 && (
+          <>
+            <Choices legend="Output" value={brief.format} onChange={(v) => set('format', v)} options={FORMATS} />
+
+            <Choices legend="Platforms" multiple value={brief.platforms} onChange={(v) => set('platforms', v)} options={PLATFORMS} />
+            {!brief.platforms.length && <p className="-mt-5 text-xs text-danger">Choose at least one platform.</p>}
+
+            <Field label="Narration voice" hint="Kokoro voices are local neural voices. Empty uses the Settings default.">
+              {(id) => (
+                <Select id={id} value={brief.voice} onChange={(v) => set('voice', v)} options={voiceOptions} />
+              )}
+            </Field>
+
+            <Choices legend="Video length" value={brief.target_seconds ?? -1}
+              options={[{ value: -1, label: 'Auto' }, { value: 15, label: '~15s' }, { value: 30, label: '~30s' },
+                { value: 45, label: '~45s' }, { value: 60, label: '~60s' }]}
+              onChange={(v: number) => set('target_seconds', v === -1 ? null : v)} />
+          </>
         )}
-      </Field>
 
-      <Choices legend="Output" value={brief.format} onChange={(v) => set('format', v)} options={FORMATS} />
+        {step === 2 && (
+          <>
+            <Choices legend="Subtitles" value={brief.subtitles ? 'on' : 'off'}
+              options={[{ value: 'off', label: 'Off' }, { value: 'on', label: 'On' }]}
+              onChange={(v) => set('subtitles', v === 'on')} />
 
-      <div className="grid gap-2">
-        <Choices legend="Quantity" value={custom ? -1 : brief.quantity}
-          options={[...PRESETS.map((n) => ({ value: n, label: String(n) })), { value: -1, label: 'Custom' }]}
-          onChange={(v: number) => { setCustom(v === -1); if (v !== -1) set('quantity', v) }} />
-        {custom && (
-          <Input type="number" aria-label="Custom quantity" min={1} max={20} value={brief.quantity} className="w-24 tnum"
-            onChange={(e) => set('quantity', Math.max(1, Math.min(20, Number(e.target.value) || 1)))} />
+            <Choices legend="Frame rate" value={brief.fps}
+              options={[{ value: 30, label: '30 fps' }, { value: 60, label: '60 fps' }]}
+              onChange={(v: number) => set('fps', v)} />
+
+            <Field label="Look">
+              {(id) => (
+                <Select id={id} value={brief.look_filter} onChange={(v) => set('look_filter', v as Brief['look_filter'])}
+                  options={[
+                    { value: 'auto', label: 'Auto (matches the genre)' },
+                    { value: 'none', label: 'Natural (no filter)' }, { value: 'warm', label: 'Warm' },
+                    { value: 'cool', label: 'Cool' }, { value: 'mono', label: 'Mono' },
+                    { value: 'vivid', label: 'Vivid' }]} />
+              )}
+            </Field>
+
+            <div className="grid grid-cols-2 gap-4">
+              <Choices legend="Blur background" value={brief.blur_background ? 'on' : 'off'}
+                options={[{ value: 'off', label: 'Off' }, { value: 'on', label: 'On' }]}
+                onChange={(v) => set('blur_background', v === 'on')} />
+              <Choices legend="Parallax move" value={brief.parallax ? 'on' : 'off'}
+                options={[{ value: 'off', label: 'Off' }, { value: 'on', label: 'On' }]}
+                onChange={(v) => set('parallax', v === 'on')} />
+            </div>
+          </>
         )}
       </div>
-
-      <Choices legend="Platforms" multiple value={brief.platforms} onChange={(v) => set('platforms', v)} options={PLATFORMS} />
-      {!brief.platforms.length && <p className="-mt-5 text-xs text-danger">Choose at least one platform.</p>}
-
-      <Field label="Narration voice" hint="Kokoro voices are local neural voices. Empty uses the Settings default.">
-        {(id) => (
-          <Select id={id} value={brief.voice} onChange={(v) => set('voice', v)} options={voiceOptions} />
-        )}
-      </Field>
-
-      <Choices legend="Video length" value={brief.target_seconds ?? -1}
-        options={[{ value: -1, label: 'Auto' }, { value: 15, label: '~15s' }, { value: 30, label: '~30s' },
-          { value: 45, label: '~45s' }, { value: 60, label: '~60s' }]}
-        onChange={(v: number) => set('target_seconds', v === -1 ? null : v)} />
-
-      <Choices legend="Subtitles" value={brief.subtitles ? 'on' : 'off'}
-        options={[{ value: 'off', label: 'Off' }, { value: 'on', label: 'On' }]}
-        onChange={(v) => set('subtitles', v === 'on')} />
-
-      <Choices legend="Frame rate" value={brief.fps}
-        options={[{ value: 30, label: '30 fps' }, { value: 60, label: '60 fps' }]}
-        onChange={(v: number) => set('fps', v)} />
-
-      <Field label="Look">
-        {(id) => (
-          <Select id={id} value={brief.look_filter} onChange={(v) => set('look_filter', v as Brief['look_filter'])}
-            options={[
-              { value: 'auto', label: 'Auto (matches the genre)' },
-              { value: 'none', label: 'Natural (no filter)' }, { value: 'warm', label: 'Warm' },
-              { value: 'cool', label: 'Cool' }, { value: 'mono', label: 'Mono' },
-              { value: 'vivid', label: 'Vivid' }]} />
-        )}
-      </Field>
-
-      <div className="grid grid-cols-2 gap-4">
-        <Choices legend="Blur background" value={brief.blur_background ? 'on' : 'off'}
-          options={[{ value: 'off', label: 'Off' }, { value: 'on', label: 'On' }]}
-          onChange={(v) => set('blur_background', v === 'on')} />
-        <Choices legend="Parallax move" value={brief.parallax ? 'on' : 'off'}
-          options={[{ value: 'off', label: 'Off' }, { value: 'on', label: 'On' }]}
-          onChange={(v) => set('parallax', v === 'on')} />
-      </div>
-
-      <details className="group">
-        <summary className="flex cursor-pointer list-none items-center gap-1.5 text-[13px] text-ink-2 hover:text-ink">
-          <CaretRight size={12} weight="bold" className="transition-transform duration-150 group-open:rotate-90" />
-          Advanced
-        </summary>
-        <div className="grid gap-5 pt-5">
-          <Field label="Mood" hint="Optional, for example quiet determination.">
-            {(id) => <Input id={id} value={brief.mood} maxLength={80} onChange={(e) => set('mood', e.target.value)} />}
-          </Field>
-          <Field label="Audience" hint="Optional, for example young professionals.">
-            {(id) => <Input id={id} value={brief.audience} maxLength={80} onChange={(e) => set('audience', e.target.value)} />}
-          </Field>
-        </div>
-      </details>
 
       {error && <ErrorNote error={error} />}
 
       <div className="grid gap-3 border-t border-line pt-6">
-        <div><Button variant="primary" type="submit" disabled={!valid || saving} kbd="Ctrl Enter">
-          {saving ? 'Starting' : keySet ? 'Create and generate' : 'Save as draft'}</Button></div>
-        <p className="text-xs text-ink-3">{keySet ? 'DeepSeek plans the batch, then writes each piece. You can cancel at any time.'
-          : 'Add your DeepSeek API key in Settings to generate. The brief is saved as a draft until then.'}</p>
+        <div className="flex items-center gap-2">
+          {step > 0 && <Button type="button" onClick={() => setStep(step - 1)}>Back</Button>}
+          {last ? (
+            <Button variant="primary" type="submit" disabled={!valid || saving} kbd="Ctrl Enter">
+              {saving ? 'Starting' : keySet ? 'Create and generate' : 'Save as draft'}</Button>
+          ) : (
+            <Button variant="primary" type="button" disabled={!canLeaveStep} onClick={() => setStep(step + 1)} kbd="Ctrl Enter">
+              Next</Button>
+          )}
+        </div>
+        <p className="text-xs text-ink-3">
+          {!last ? `${STEPS[step + 1]} next. Everything here has a working default, so you can skip ahead.`
+            : keySet ? 'DeepSeek plans the batch, then writes each piece. You can cancel at any time.'
+              : 'Add your DeepSeek API key in Settings to generate. The brief is saved as a draft until then.'}
+        </p>
       </div>
     </div>
   )

@@ -6,6 +6,8 @@ import { createBackend, type BackendStatus } from './backend'
 import { createSecrets, type SecretName } from './secrets'
 
 const dev = !app.isPackaged
+// The app mark (Aperture in accent orange). out/main -> apps/desktop/resources in dev and in the asar when packaged.
+const appIcon = join(__dirname, '../../resources/icon.ico')
 const dataDir = process.env.ACS_DATA_DIR || (dev ? resolve(app.getAppPath(), '../../data') : join(app.getPath('userData'), 'data'))
 const mediaDir = join(dataDir, 'media')
 const secrets = createSecrets(join(app.getPath('userData'), 'secrets.json'))
@@ -32,6 +34,7 @@ function createWindow() {
     show: false,
     backgroundColor: '#111112',
     title: 'AI Social Content Studio',
+    icon: appIcon,
     titleBarStyle: 'hidden',
     titleBarOverlay: { color: '#111112', symbolColor: '#a1a1a6', height: 44 },
     webPreferences: { preload: join(__dirname, '../preload/preload.js'), contextIsolation: true, sandbox: true },
@@ -44,6 +47,8 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
+  // Without this Windows groups and labels the taskbar entry as generic Electron, ignoring the window icon.
+  app.setAppUserModelId('xyz.hasbiyallahu.aisocialcontentstudio')
   Menu.setApplicationMenu(null)
   protocol.handle('media', (req) => {
     // media:///thumbs/x.bmp and media://thumbs/x.bmp are the same URL once parsed; take host + path.
