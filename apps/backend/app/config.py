@@ -9,6 +9,10 @@ DATA_DIR = Path(os.environ.get("ACS_DATA_DIR") or REPO_ROOT / "data")
 DB_PATH = DATA_DIR / "app.db"
 MEDIA_DIR = DATA_DIR / "media"
 
+# A packaged install ships its own ffmpeg and passes these; on a dev machine they fall back to PATH.
+FFMPEG = os.environ.get("ACS_FFMPEG") or "ffmpeg"
+FFPROBE = os.environ.get("ACS_FFPROBE") or "ffprobe"
+
 # API keys, pushed by Electron main via "secrets.load". Dev fallback: <repo>/.env.
 SECRETS: dict[str, str] = {}
 

@@ -79,6 +79,7 @@ app.whenReady().then(() => {
   backend = createBackend({
     backendDir: dev ? resolve(app.getAppPath(), '../backend') : join(process.resourcesPath, 'backend'),
     dataDir,
+    ffmpegDir: dev ? undefined : join(process.resourcesPath, 'ffmpeg'),
     dev,
     onStatus: (s) => broadcast('backend:status', (status = s)),
     onEvent: (event, data) => broadcast('backend:event', event, data),

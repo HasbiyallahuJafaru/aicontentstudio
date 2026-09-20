@@ -5,6 +5,8 @@
     "setup": "cd apps/backend && python -m venv .venv && .venv\\Scripts\\python -m pip install -r requirements.txt && cd ../desktop && npm install",
     "dev": "npm --prefix apps/desktop run dev",
     "build": "npm --prefix apps/desktop run build",
-    "test": "cd apps/backend && .venv\\Scripts\\python -m unittest && cd ../desktop && npm run typecheck && npm run build && npm run smoke"
+    "test": "cd apps/backend && .venv\\Scripts\\python -m unittest && cd ../desktop && npm run typecheck && npm run build && npm run smoke",
+    "package": "cd apps/backend && .venv\\Scripts\\pyinstaller backend.spec --noconfirm && cd ../desktop && npm run package",
+    "smoke:packaged": "npm --prefix apps/desktop run smoke:packaged"
   }
 }

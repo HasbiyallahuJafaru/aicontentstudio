@@ -99,7 +99,7 @@ def esc(text: str) -> str:
 
 
 def _probe(path: Path) -> dict:
-    proc = subprocess.run(["ffprobe", "-v", "quiet", "-print_format", "json", "-show_format", "-show_streams",
+    proc = subprocess.run([config.FFPROBE, "-v", "quiet", "-print_format", "json", "-show_format", "-show_streams",
                            str(path)], capture_output=True, text=True, timeout=60)
     if proc.returncode != 0:
         raise UserError("The rendered file could not be read back.", proc.stderr[-500:])
@@ -109,7 +109,7 @@ def _probe(path: Path) -> dict:
 def open_luma(path: Path) -> float:
     """Average brightness of the first frame, 0..1. The hook lives in the first seconds; opening on black
     throws them away, so a render that starts dark is a defect, not a style."""
-    proc = subprocess.run(["ffmpeg", "-nostdin", "-v", "error", "-i", str(path), "-frames:v", "1",
+    proc = subprocess.run([config.FFMPEG, "-nostdin", "-v", "error", "-i", str(path), "-frames:v", "1",
                            "-vf", "scale=32:32,format=gray", "-f", "rawvideo", "-"],
                           capture_output=True, stdin=subprocess.DEVNULL, timeout=60)
     return sum(proc.stdout) / len(proc.stdout) / 255 if proc.stdout else 1.0
@@ -145,7 +145,7 @@ def thumbnail(src: Path, out: Path, at: float = 0.5) -> Path:
     out.parent.mkdir(parents=True, exist_ok=True)
     proc = None
     for seek in (at, 0):
-        proc = subprocess.run(["ffmpeg", "-y", "-nostdin", "-nostats", "-hide_banner", "-ss", f"{seek}",
+        proc = subprocess.run([config.FFMPEG, "-y", "-nostdin", "-nostats", "-hide_banner", "-ss", f"{seek}",
                                "-i", str(src), "-frames:v", "1", "-q:v", "3", str(out)],
                               capture_output=True, timeout=60)
         if proc.returncode == 0 and out.exists():
@@ -196,7 +196,7 @@ class FFmpegRenderer:
             shots = [{"src": str(src), "seek": seek, "length": duration, "still": still, "motion": motion,
                       "blur": blur_background}]
 
-        args = ["ffmpeg", "-y", "-nostdin", "-nostats", "-progress", "pipe:1", "-hide_banner"]
+        args = [config.FFMPEG, "-y", "-nostdin", "-nostats", "-progress", "pipe:1", "-hide_banner"]
         chain = []
         for i, shot in enumerate(shots):
             length = max(shot["length"], 0.4)

@@ -88,7 +88,7 @@ def render_project(project_id: str, report, piece_ids: list[str] | None = None) 
                                      Path(s["music_path"]) if s["music_path"] else None, s["music_volume"],
                                      s["render_width"], s["render_height"])
     engine = tts.get_tts()
-    if shutil.which("ffmpeg") is None:
+    if shutil.which(config.FFMPEG) is None and not Path(config.FFMPEG).exists():
         raise UserError("FFmpeg is not installed or not on PATH.", "Install ffmpeg and restart the app.")
 
     # the brief's narration voice ("engine:voice") overrides the Settings default for this project

@@ -10,6 +10,7 @@ export type Reply = { result?: unknown; error?: { message: string; detail?: stri
 type Options = {
   backendDir: string
   dataDir: string
+  ffmpegDir?: string
   dev: boolean
   onStatus: (s: BackendStatus) => void
   onEvent: (event: string, data: unknown) => void
@@ -26,16 +27,25 @@ export function createBackend(o: Options) {
   const logFile = join(o.dataDir, 'logs', 'backend.log')
   mkdirSync(join(o.dataDir, 'logs'), { recursive: true })
 
-  // ponytail: packaged builds need a frozen backend (PyInstaller) under resources/; wired in the packaging phase.
+  // A packaged install ships the PyInstaller backend next to its data; a dev checkout runs the venv.
+  const frozen = join(o.backendDir, 'backend.exe')
   const venvPython = join(o.backendDir, '.venv', 'Scripts', 'python.exe')
-  const python = existsSync(venvPython) ? venvPython : 'python'
+  const [command, args] = existsSync(frozen)
+    ? [frozen, [] as string[]]
+    : [existsSync(venvPython) ? venvPython : 'python', ['main.py']]
+
+  // Bundled ffmpeg when we ship one, PATH otherwise. The backend reads these in app/config.py.
+  const ff = (name: string) => join(o.ffmpegDir ?? '', name + '.exe')
+  const ffmpegEnv = o.ffmpegDir && existsSync(ff('ffmpeg')) && existsSync(ff('ffprobe'))
+    ? { ACS_FFMPEG: ff('ffmpeg'), ACS_FFPROBE: ff('ffprobe') }
+    : {}
 
   function start() {
     stderrTail = []
     o.onStatus({ state: 'starting' })
-    const proc = spawn(python, ['main.py'], {
+    const proc = spawn(command, args, {
       cwd: o.backendDir,
-      env: { ...process.env, ACS_DATA_DIR: o.dataDir, PYTHONUNBUFFERED: '1', PYTHONIOENCODING: 'utf-8' },
+      env: { ...process.env, ACS_DATA_DIR: o.dataDir, PYTHONUNBUFFERED: '1', PYTHONIOENCODING: 'utf-8', ...ffmpegEnv },
       windowsHide: true,
     })
     child = proc

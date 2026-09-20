@@ -9,3 +9,5 @@ data/
 graphify-out/
 .impeccable/
 build/
+release/
+apps/desktop/resources/ffmpeg/

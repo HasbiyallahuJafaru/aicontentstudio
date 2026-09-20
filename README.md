@@ -58,7 +58,7 @@ The full spec, including the reference research and the ffmpeg capability audit,
 | 5 | TTS, audio mixing, FFmpeg video and image renderers | Done |
 | 6 | Preview, per-part regeneration, queue, export | Done |
 | 7 | Branding, long-video clipper, Buffer and Metricool publishing, genres, director-cut renders | Done |
-| 8 | Packaging and installer | In flight |
+| 8 | Packaging and installer | Done |
 
 Everything is verified end to end against local fake servers (`apps/desktop/scripts/smoke.mjs`) plus 135 backend
 tests. Real-key runs against DeepSeek, Pexels, Groq and Buffer are the user's own verification rounds and are
@@ -89,7 +89,19 @@ npm run dev       # Electron + Vite HMR + Python auto-restart
 npm test          # backend unittest + typecheck + build + end-to-end smoke (fake servers, no paid calls)
 ```
 
-Behind a TLS-inspecting proxy, set `NODE_OPTIONS=--use-system-ca` before any network command.
+Behind a TLS-inspecting proxy, set `NODE_OPTIONS=--use-system-ca` before any network command. electron-builder
+downloads its toolchain on the first package, so it needs that too.
+
+To build the Windows installer:
+
+```bash
+npm run package          # freezes the backend, bundles ffmpeg, writes apps/desktop/release/*.exe
+npm run smoke:packaged   # launches the built app and checks the frozen backend comes up
+```
+
+The installer is per-user, lets you choose the folder, and leaves your data behind on uninstall. It ships its own
+ffmpeg, so an installed copy needs nothing else on the machine. It is large (around 310 MB) because a frozen
+Python runtime and a static ffmpeg are both in the box.
 
 ## Keys
 

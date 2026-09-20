@@ -11,6 +11,7 @@ warnings.filterwarnings("ignore")
 datas = [
     ("assets/fonts", "assets/fonts"),                  # Sora for drawtext (OFL)
     ("app/clipper/assets", "app/clipper/assets"),      # YuNet face model + Montserrat captions
+    ("app/migrations", "app/migrations"),              # schema: without these the first run has no tables
 ]
 
 a = Analysis(

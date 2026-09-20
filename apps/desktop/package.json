@@ -9,7 +9,10 @@
     "start": "node scripts/electron-vite.mjs preview",
     "build": "electron-vite build",
     "typecheck": "tsc --noEmit",
-    "smoke": "node scripts/smoke.mjs"
+    "smoke": "node scripts/smoke.mjs",
+    "fetch:ffmpeg": "node scripts/fetch-ffmpeg.mjs",
+    "package": "npm run fetch:ffmpeg && npm run build && electron-builder --win nsis",
+    "smoke:packaged": "node scripts/smoke-packaged.mjs"
   },
   "dependencies": {
     "@fontsource-variable/geist": "^5.3.0",
@@ -36,5 +39,47 @@
     "electron@44.4.3": true,
     "esbuild@0.25.12": true,
     "esbuild@0.28.2": true
-  }
+  },
+  "build": {
+    "appId": "xyz.hasbiyallahu.aisocialcontentstudio",
+    "productName": "AI Social Content Studio",
+    "copyright": "Hasbiyallahu Jafaru",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "out/**/*",
+      "resources/icon.ico"
+    ],
+    "extraResources": [
+      {
+        "from": "../backend/dist/backend",
+        "to": "backend"
+      },
+      {
+        "from": "resources/ffmpeg",
+        "to": "ffmpeg"
+      }
+    ],
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "icon": "resources/icon.ico",
+      "artifactName": "${productName} Setup ${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "shortcutName": "AI Social Content Studio",
+      "deleteAppDataOnUninstall": false
+    }
+  },
+  "description": "Turn a brief or a long video into finished, platform-ready short-form content. Local only.",
+  "author": {
+    "name": "Hasbiyallahu Jafaru",
+    "url": "https://hasbiyallahu.xyz"
+  },
+  "homepage": "https://github.com/HasbiyallahuJafaru/aicontentstudio"
 }

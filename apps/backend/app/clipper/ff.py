@@ -4,13 +4,14 @@ inherited Electron stdin pipe and can hang forever after finishing its encode), 
 import subprocess
 import tempfile
 
+from app import config
 from app.errors import UserError
 
 
 def ffmpeg(*args, cwd=None, timeout: int = 3600) -> None:
     with tempfile.TemporaryFile() as errf:
         try:
-            proc = subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-nostdin", *args],
+            proc = subprocess.run([config.FFMPEG, "-hide_banner", "-loglevel", "error", "-y", "-nostdin", *args],
                                   cwd=cwd, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=errf,
                                   timeout=timeout)
         except subprocess.TimeoutExpired:
@@ -22,7 +23,8 @@ def ffmpeg(*args, cwd=None, timeout: int = 3600) -> None:
 
 
 def duration_of(media) -> float:
-    proc = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(media)],
+    proc = subprocess.run([config.FFPROBE, "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0",
+                           str(media)],
                           capture_output=True, text=True, stdin=subprocess.DEVNULL, timeout=60)
     if proc.returncode != 0:
         raise UserError("This video file could not be read.", proc.stderr[-300:])
