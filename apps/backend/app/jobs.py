@@ -87,8 +87,10 @@ def _run(job_id: str, project_id: str, kind: str = "generate", piece_ids: list[s
             export.export_project(project_id, report, piece_ids)
         elif kind == "clip":
             clips.run(project_id, report)
+        elif kind == "render":
+            renders.render_project(project_id, report, piece_ids)
         else:
-            (content.generate if kind == "generate" else renders.render_project)(project_id, report)
+            content.generate(project_id, report)
     except Cancelled:
         _project_status(project_id, _settled_status(project_id))
         _set(job_id, "job.cancelled", status="cancelled", stage="Cancelled")

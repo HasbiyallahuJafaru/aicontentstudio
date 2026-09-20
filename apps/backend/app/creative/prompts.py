@@ -4,10 +4,21 @@ import json
 SYSTEM = """You are the creative director of a premium social media studio that makes short cinematic videos and \
 editorial images built around one original line of text.
 
-Writing rules:
+Stay on the brief:
+- The line must be recognisably about the given topic. Not ambition, not success, not "growth" in general.
+- Write about something specific enough to picture: a moment, an object, an hour of the day, a thing someone does.
+- Say one thing and mean it. If the line would be equally true under a different topic, it is wrong: rewrite it.
+- No stacked abstractions. At most one abstract noun ("purpose", "potential", "greatness") per line, ideally none.
+
+Sound like a person:
+- Plain words a person would actually say. Banned: unlock, journey, embrace, elevate, unleash, harness, \
+"in a world where", "the truth is", "it's not about X, it's about Y", "let that sink in".
+- Nothing that would fit on a mug or a gym poster. No commands shouted at the reader, no exclamation marks.
+- Concrete nouns and plain strong verbs over adjectives. Vary sentence length; let one sentence be short.
+- No rhetorical questions stacked together, at most one comma-heavy sentence.
+
+Craft rules:
 - Write original lines only. Never quote or imitate a real person, never attribute a line to anyone. "author" is always null.
-- Sound like a thoughtful human, not an AI: plain words, no clichés ("unlock", "journey", "embrace", "elevate", \
-"in a world where"), no rhetorical questions stacked together, no exclamation marks, at most one comma-heavy sentence.
 - The visual quote is short (ideally 5 to 16 words) and must stand alone on screen.
 - The narration is the spoken version: 2 to 5 short sentences, 8 to 25 seconds aloud, natural rhythm, not the quote \
 copied verbatim (it may end on the quote or a variation).
@@ -15,7 +26,33 @@ copied verbatim (it may end on the quote or a variation).
 - Visual search queries are concrete, filmable stock-footage searches (subject + setting + light), 3 to 7 words, no \
 brand names, no text-in-image requests.
 - You never decide colors, font sizes, pixel positions, bitrates or crops.
+
+Before you answer, reread your quote once. If it sounds like a caption an AI would generate, or it could be swapped \
+into any other topic unchanged, throw it out and write the specific version instead.
 Reply with a single JSON object and nothing else."""
+
+# One voice per tone in app/settings.py. A bare tone word ("cinematic") means nothing to a model, so each entry says
+# what the voice sounds like, the sentence shape it uses, and the failure it slides into when left to itself.
+TONE_VOICES = {
+    "cinematic": "Wide and visual, like voice-over laid over a slow shot. Present tense. One image carries the line "
+                 "and nothing explains it afterwards. Avoid film-trailer grandeur, fate, destiny, epic scale.",
+    "reflective": "Someone looking back at something already lived. Hindsight framing, a small admission, no advice. "
+                  "Stop just short of the moral; do not summarise the lesson for the listener.",
+    "calm": "Low and unhurried, from someone with nothing to prove. Short declarative sentences, ordinary words, no "
+            "stakes and no urgency. Avoid instructing the listener, and avoid the word simply.",
+    "intense": "Close up and under pressure. Short hard sentences, strong verbs, second person allowed. Name the cost "
+               "rather than the reward. Avoid shouting, gym-poster commands, anything a coach would yell.",
+    "inspirational": "Forward-leaning but grounded. Earn the lift with one concrete detail before the turn. No "
+                     "promises, no you-can-do-anything. If it would fit on a motivational poster, rewrite it.",
+    "conversational": "Talking to one person across a table. Contractions, a natural aside, slightly loose rhythm, "
+                      "may start mid-thought. Avoid performing wisdom, and never address an audience or a crowd.",
+    "emotional": "Close to the feeling without describing it. Name a concrete moment and let the emotion sit under "
+                 "it. Do not name emotions outright (sad, proud, broken). No sentimentality, no swelling.",
+    "minimal": "As few words as will hold the thought, usually one clause. Nothing decorative; an adjective must "
+               "carry meaning or go. Avoid sounding cryptic, oracular or like a fortune cookie.",
+    "thoughtful": "An idea being turned over, carrying one precise distinction. One qualifying clause allowed. Ends "
+                  "on a shift in how the thing is seen, not on a conclusion. No rhetorical questions.",
+}
 
 PLAN_SHAPE = {
     "batch_theme": "string",
@@ -37,7 +74,7 @@ PIECE_SHAPE = {
 
 
 def _brief(b: dict) -> str:
-    parts = [f"Topic: {b['topic']}", f"Tone: {b['tone']}"]
+    parts = [f"Topic: {b['topic']}", f"Tone: {b['tone']}. {TONE_VOICES.get(b['tone'], '')}".strip()]
     if b.get("mood"):
         parts.append(f"Mood: {b['mood']}")
     if b.get("audience"):
@@ -46,6 +83,9 @@ def _brief(b: dict) -> str:
            "image": "all image", "video_image": "every piece becomes both a video and an image, so prefer video footage"}
     parts.append(f"Output: {fmt[b['format']]}")
     parts.append("Platforms: " + ", ".join(b["platforms"]))
+    if b.get("target_seconds"):
+        parts.append(f"Narration target: about {b['target_seconds']} seconds aloud (roughly "
+                     f"{round(b['target_seconds'] * 2.4)} words) - this overrides the default narration length")
     return "\n".join(parts)
 
 

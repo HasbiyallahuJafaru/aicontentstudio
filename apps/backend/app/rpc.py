@@ -30,6 +30,7 @@ METHODS = {
     "projects.create": projects.create,
     "projects.list": projects.list_,
     "projects.get": projects.get,
+    "projects.set_voice": projects.set_voice,
     "projects.delete": projects.delete,
     "pieces.list": content.pieces,
     "pieces.recent": content.recent,

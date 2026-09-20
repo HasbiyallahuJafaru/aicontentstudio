@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { ArrowLeft, Export, Play, Sparkle, Trash } from '@phosphor-icons/react'
 import { call, formatDate, FORMATS, hasKey, label, PLATFORMS, useJob, useQuery, BackendError,
   type Asset, type Piece, type Project as P, type Render } from '../lib/studio'
@@ -21,6 +21,12 @@ export function Project({ id, onBack, onSettings }: { id: string; onBack: () => 
   const [error, setError] = useState<BackendError>()
 
   const refresh = () => setRev((r) => r + 1)  // piece-level changes (approve, regenerate) don't move any job timestamp
+
+  // bring the finished pieces into view when a job completes (they render below the progress bar)
+  const listRef = useRef<HTMLOListElement>(null)
+  useEffect(() => {
+    if (job?.status === 'completed') listRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }, [job?.status])
 
   useEffect(() => { hasKey('DEEPSEEK_API_KEY').then(setKeySet) }, [])
   useEffect(() => { if (job && !running) reloadProject() }, [job?.status])
@@ -120,7 +126,7 @@ export function Project({ id, onBack, onSettings }: { id: string; onBack: () => 
         </section>
       )}
 
-      <ol className={cx('grid', (!!pieces?.length || running) && 'glass px-8 py-2')}>
+      <ol ref={listRef} className={cx('grid', (!!pieces?.length || running) && 'glass px-8 py-2')}>
         {pieces?.map((p) => (
           <PieceRow key={p.id} piece={p} renders={renders?.filter((r) => r.piece_id === p.id)}
             onPreview={() => setPreview(p.id)} />
@@ -137,7 +143,7 @@ export function Project({ id, onBack, onSettings }: { id: string; onBack: () => 
       </ol>
       {pieces?.length ? pieces.filter((p) => p.id === preview).map((p) => (
         <Preview key={p.id} piece={p} renders={renders?.filter((r) => r.piece_id === p.id) ?? []} assets={assets ?? []}
-          onClose={() => setPreview(undefined)} onChanged={refresh} />
+          voice={b.voice} onClose={() => setPreview(undefined)} onChanged={refresh} />
       )) : null}
     </>
   )

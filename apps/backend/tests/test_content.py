@@ -4,6 +4,7 @@ import os
 import tempfile
 import time
 import unittest
+from typing import get_args
 from unittest import mock
 
 os.environ.setdefault("ACS_DATA_DIR", tempfile.mkdtemp())
@@ -166,6 +167,26 @@ class DeepSeekClient(unittest.TestCase):
         m = deepseek([(200, json.dumps(plan_json(2)))], [])
         with self.assertRaisesRegex(UserError, "wrong number"):
             m.plan_batch(BRIEF, [])
+
+
+class ToneVoices(unittest.TestCase):
+    """The tone knob only does something if every tone carries a voice into the prompt."""
+
+    def test_every_tone_has_a_voice(self):
+        from app.creative import prompts
+        from app.settings import Tone
+        self.assertEqual(set(get_args(Tone)), set(prompts.TONE_VOICES))
+
+    def test_voice_reaches_both_prompts(self):
+        from app.creative import prompts
+        from app.settings import Tone
+        for tone in get_args(Tone):
+            brief = {**BRIEF, "tone": tone}
+            plan_msg = prompts.plan(brief, [])[1]["content"]
+            self.assertIn(prompts.TONE_VOICES[tone], plan_msg, tone)
+            item = BatchPlan.model_validate(plan_json(3)).pieces[0]
+            piece_msg = prompts.piece(brief, BatchPlan.model_validate(plan_json(3)), item, [])[1]["content"]
+            self.assertIn(prompts.TONE_VOICES[tone], piece_msg, tone)
 
 
 if __name__ == "__main__":

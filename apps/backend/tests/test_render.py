@@ -123,6 +123,20 @@ class Renderers(unittest.TestCase):
                                           palette=PAL, src_fps=0, src_duration=0, still=True, progress=None)
         self.assertAlmostEqual(info["fps"], 60.0, delta=1.0)
 
+    def test_render_video_with_look_blur_parallax_and_subtitles(self):
+        """The Create page's look effects + subtitles: exercises the whole filter graph syntax."""
+        from app.clipper.captions import captions as ass_captions
+        subs = config.MEDIA_DIR / "fixtures" / "subs.ass"
+        subs.write_text(ass_captions([{"word": "Hello", "start": 0.0, "end": 1.0},
+                                      {"word": "world.", "start": 1.0, "end": 1.8}], 0.0, 2.0, self.w, self.h),
+                        encoding="utf-8")
+        out = config.MEDIA_DIR / "renders" / "test" / "003-video.mp4"
+        info = self.renderer.render_video(src=self.src, narration=self.narration, out=out,
+                                          subject_position="center", src_fps=30, src_duration=14.0,
+                                          still=False, progress=None, out_fps=60, look="warm",
+                                          blur_background=True, parallax=True, subtitles=subs)
+        self.assertAlmostEqual(info["fps"], 60.0, delta=1.0)
+
     def test_render_image_output(self):
         out = config.MEDIA_DIR / "renders" / "test" / "001-image.jpg"
         self.renderer.render_image(src=self.still, out=out, quote="Show up before the feeling does.",

@@ -11,7 +11,8 @@ export const studio = window.studio
 export type Tone = (typeof TONES)[number]
 export type Format = 'automatic' | 'video' | 'image' | 'video_image'
 export type Platform = 'youtube_shorts' | 'instagram_reels' | 'instagram_feed' | 'tiktok'
-export type Brief = { kind?: never; topic: string; tone: Tone; mood: string; audience: string; format: Format; quantity: number; platforms: Platform[]; voice: string; fps: number }
+export type Look = 'none' | 'warm' | 'cool' | 'mono' | 'vivid'
+export type Brief = { kind?: never; topic: string; tone: Tone; mood: string; audience: string; format: Format; quantity: number; platforms: Platform[]; voice: string; fps: number; target_seconds: number | null; subtitles: boolean; look_filter: Look; blur_background: boolean; parallax: boolean }
 export type ClipBrief = {
   kind: 'clip'; source: string; n: number | null; min_len: number; max_len: number
   orientation: '9:16' | '16:9' | '1:1'; burn_captions: boolean; fps: number

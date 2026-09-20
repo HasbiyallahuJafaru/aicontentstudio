@@ -31,7 +31,8 @@ export function Create({ onCreated }: { onCreated: (id: string) => void }) {
       setBrief({
         topic: label(settings.default_topic), tone: settings.default_tone, mood: '', audience: '',
         format: 'automatic', quantity: settings.default_quantity, platforms: ['youtube_shorts', 'instagram_reels', 'tiktok'],
-        voice: '', fps: 30,
+        voice: '', fps: 30, target_seconds: null, subtitles: false, look_filter: 'none',
+        blur_background: false, parallax: false,
       })
       setCustom(!PRESETS.includes(settings.default_quantity))
     }
@@ -201,9 +202,37 @@ function WriteForm({ brief, setBrief, custom, setCustom, keySet, error, saving }
         )}
       </Field>
 
+      <Choices legend="Video length" value={brief.target_seconds ?? -1}
+        options={[{ value: -1, label: 'Auto' }, { value: 15, label: '~15s' }, { value: 30, label: '~30s' },
+          { value: 45, label: '~45s' }, { value: 60, label: '~60s' }]}
+        onChange={(v: number) => set('target_seconds', v === -1 ? null : v)} />
+
+      <Choices legend="Subtitles" value={brief.subtitles ? 'on' : 'off'}
+        options={[{ value: 'off', label: 'Off' }, { value: 'on', label: 'On' }]}
+        onChange={(v) => set('subtitles', v === 'on')} />
+
       <Choices legend="Frame rate" value={brief.fps}
         options={[{ value: 30, label: '30 fps' }, { value: 60, label: '60 fps' }]}
         onChange={(v: number) => set('fps', v)} />
+
+      <Field label="Look">
+        {(id) => (
+          <Select id={id} value={brief.look_filter} onChange={(v) => set('look_filter', v as Brief['look_filter'])}
+            options={[
+              { value: 'none', label: 'Natural (no filter)' }, { value: 'warm', label: 'Warm' },
+              { value: 'cool', label: 'Cool' }, { value: 'mono', label: 'Mono' },
+              { value: 'vivid', label: 'Vivid' }]} />
+        )}
+      </Field>
+
+      <div className="grid grid-cols-2 gap-4">
+        <Choices legend="Blur background" value={brief.blur_background ? 'on' : 'off'}
+          options={[{ value: 'off', label: 'Off' }, { value: 'on', label: 'On' }]}
+          onChange={(v) => set('blur_background', v === 'on')} />
+        <Choices legend="Parallax move" value={brief.parallax ? 'on' : 'off'}
+          options={[{ value: 'off', label: 'Off' }, { value: 'on', label: 'On' }]}
+          onChange={(v) => set('parallax', v === 'on')} />
+      </div>
 
       <details className="group">
         <summary className="flex cursor-pointer list-none items-center gap-1.5 text-[13px] text-ink-2 hover:text-ink">

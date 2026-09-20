@@ -1,6 +1,6 @@
 // Clip project workspace: the review list for a clipped video (scored moments, karaoke-captioned shorts)
 // with approve/reject, a preview modal and export — riding the same job system as the other kinds.
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { ArrowLeft, Check, Export, PaperPlaneTilt, Play, Trash, X } from '@phosphor-icons/react'
 import { call, formatDate, hasKey, label, mediaUrl, useJob, useQuery, BackendError,
   type BufferChannel, type Clip, type Project as P } from '../lib/studio'
@@ -44,6 +44,12 @@ export function ClipWorkspace({ project, onBack, onSettings }: { project: P; onB
     setError(undefined)
     try { await call('clips.review', { id, status }); setRev((r) => r + 1) } catch (e) { setError(e as BackendError) }
   }
+
+  // bring the finished clips into view when the job completes
+  const listRef = useRef<HTMLOListElement>(null)
+  useEffect(() => {
+    if (job?.status === 'completed') listRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }, [job?.status])
 
   return (
     <>
@@ -100,7 +106,7 @@ export function ClipWorkspace({ project, onBack, onSettings }: { project: P; onB
       )}
 
       {!!clips?.length && (
-        <ol className="glass px-8 py-2">
+        <ol ref={listRef} className="glass px-8 py-2">
           {clips.map((c) => (
             <ClipRow key={c.id} clip={c} onPreview={() => setPreview(c.id)} onPublish={() => setPublishing(c)}
               onReview={(status) => review(c.id, status)} busy={running} />

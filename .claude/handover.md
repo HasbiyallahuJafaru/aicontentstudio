@@ -256,6 +256,22 @@ so no OAuth dance needed there. Package: `apps/backend/app/publish/`:
      `publish.metricool_call` is a raw passthrough — the UI dialog only covers Buffer).
 3. M8 (refinement + packaging: electron-builder NSIS + PyInstaller-frozen backend, bundled ffmpeg).
 
+## User feedback round 2 (2026-09-20, implemented)
+- **Video length control**: `brief.target_seconds` (Auto/~15/~30/~45/~60s) -> prompts.py writes narration to the
+  target ("Narration target: about N seconds..."); render stays narration-driven.
+- **Post-completion swaps**: Preview modal already redoes quote/narration/visual/design per piece; ADDED a
+  **Narration voice** select in the modal -> `projects.set_voice` updates the brief and `jobs.start kind=render`
+  now accepts `piece_ids` (renders.render_project filters) so only that piece re-renders.
+- **Subtitle toggle** (social briefs, default off): `brief.subtitles` -> renders.py synthesizes word timings from
+  the narration audio length (ponytail: proportional, not forced-aligned) and burns the clip-style karaoke ASS
+  (Montserrat) via render_video(subtitles=). Real word-level alignment would need forced alignment later.
+- **Look effects at creation**: `brief.look_filter` (none/warm/cool/mono/vivid -> colorbalance/eq/hue),
+  `blur_background` (split + boxblur bg + sharp centred overlay), `parallax` (zoompan push-in on video pieces;
+  stills always push in). All optional; default = clean natural render.
+- **Auto-scroll**: Project + Clip pages scroll the finished list into view when the job completes.
+- Watch out: ffmpeg filter graphs for the new effects are covered by a real render test in test_render.py
+  (graph syntax mistakes fail there, not in a user render).
+
 ## Feature backlog / product direction (user-supplied 2026-09-20)
 
 Ideas and requirements to revisit in future phases. Items 2 and 3 have base integrations from Phase C; the rest

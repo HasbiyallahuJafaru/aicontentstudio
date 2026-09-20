@@ -23,6 +23,11 @@ class CreativeBrief(BaseModel):
     platforms: list[Platform] = Field(min_length=1)
     voice: str = Field("", max_length=120)  # "engine:voice" from the Create picker; empty = Settings default
     fps: Literal[30, 60] = 30
+    target_seconds: int | None = Field(None, ge=10, le=180)  # narration length target; None = writer's default
+    subtitles: bool = False                   # burn spoken-word subtitles into rendered videos
+    look_filter: Literal["none", "warm", "cool", "mono", "vivid"] = "none"
+    blur_background: bool = False             # blurred full-bleed background, sharp centred footage
+    parallax: bool = False                    # slow push-in on video pieces (stills always push in)
 
 
 class ClipBrief(BaseModel):
@@ -66,6 +71,18 @@ def _create_clip(b: ClipBrief) -> dict:
         conn.execute("INSERT INTO projects (id, name, brief) VALUES (?, ?, ?)",
                      (pid, name[:80], b.model_dump_json()))
     return get(pid)
+
+
+def set_voice(project_id: str, voice: str) -> dict:
+    """Swaps the project's narration voice after the fact (Preview modal); takes effect on the next render."""
+    p = get(project_id)
+    if p["brief"].get("kind") == "clip":
+        raise UserError("Clip projects use the source video's own audio.")
+    p["brief"]["voice"] = (voice or "").strip()[:120]
+    with connect() as conn:
+        conn.execute("UPDATE projects SET brief = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ?",
+                     (json.dumps(p["brief"], ensure_ascii=False), project_id))
+    return get(project_id)
 
 
 def list_(limit: int = 200) -> list[dict]:

@@ -35,8 +35,9 @@ def _wanted_kinds(brief: dict, piece: dict) -> list[str]:
     return sorted(set(kinds), key=lambda k: k != "video")
 
 
-def render_project(project_id: str, report) -> None:
-    pieces = [p for p in content.pieces(project_id) if p["status"] != "failed"]
+def render_project(project_id: str, report, piece_ids: list[str] | None = None) -> None:
+    pieces = [p for p in content.pieces(project_id) if p["status"] != "failed"
+              and (not piece_ids or p["id"] in piece_ids)]
     if not pieces:
         raise UserError("Nothing to render yet. Generate content first.")
     brief = projects.get(project_id)["brief"]
@@ -72,12 +73,16 @@ def render_project(project_id: str, report) -> None:
                 try:
                     if kind == "video":
                         # clean video: no scrim, no quote text burned in (user decision 2026-09-20)
+                        subs = _subtitles_ass(piece, content_data["narration"]["text"], narration.duration,
+                                              renderer.w, renderer.h) if brief["subtitles"] else None
                         info = renderer.render_video(src=config.MEDIA_DIR / asset["local_path"],
                                                      narration=narration.path, out=full_out,
                                                      subject_position=asset["subject_position"] or "center",
                                                      src_fps=asset["fps"], src_duration=asset["duration"],
                                                      still=asset["asset_type"] == "image", progress=None,
-                                                     out_fps=brief["fps"])
+                                                     out_fps=brief["fps"], look=brief["look_filter"],
+                                                     blur_background=brief["blur_background"],
+                                                     parallax=brief["parallax"], subtitles=subs)
                         duration, fps, w, h = info["duration"], info["fps"], renderer.w, renderer.h
                     else:
                         renderer.render_image(src=config.MEDIA_DIR / asset["local_path"], out=full_out,
@@ -102,6 +107,25 @@ def render_project(project_id: str, report) -> None:
                 conn.execute("UPDATE content_pieces SET status = 'written', content = ? WHERE id = ?",
                              (json.dumps(content_data, ensure_ascii=False), piece["id"]))
     report("Done", 1.0)
+
+
+def _subtitles_ass(piece: dict, text: str, duration: float, w: int, h: int) -> Path:
+    """Burn-ready ASS for the narration: word timings estimated from the audio length, weighted by word length
+    (ponytail: real per-word timestamps need forced alignment; Whisper gives them only for clip projects)."""
+    from app.clipper.captions import captions
+    words = []
+    tokens = [w for w in text.split() if w]
+    total = sum(len(w) + 1 for w in tokens) or 1
+    t = 0.0
+    for w in tokens:
+        span = duration * (len(w) + 1) / total
+        words.append({"word": w, "start": round(t, 3), "end": round(min(t + span * 0.9, duration), 3)})
+        t += span
+    ass = captions(words, 0.0, duration, w, h)
+    path = config.MEDIA_DIR / "tmp" / f"{piece['id']}-subs.ass"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(ass, encoding="utf-8")
+    return path
 
 
 def list_(project_id: str) -> list[dict]:

@@ -136,12 +136,13 @@ function useDismiss(open: boolean, ref: React.RefObject<HTMLElement | null>, clo
 }
 
 /** Branded dropdown (replaces the unreadable native select popup): keyboard aware, closes on outside click. */
-export function Select<T extends string>({ id, value, options, onChange, className }: {
+export function Select<T extends string>({ id, value, options, onChange, className, disabled }: {
   id?: string
   value: T
   options: { value: T; label: string }[]
   onChange: (v: T) => void
   className?: string
+  disabled?: boolean
 }) {
   const [open, setOpen] = useState(false)
   const [active, setActive] = useState(0)
@@ -169,7 +170,7 @@ export function Select<T extends string>({ id, value, options, onChange, classNa
 
   return (
     <div ref={ref} className={cx('relative', className)}>
-      <button type="button" id={id} aria-haspopup="listbox" aria-expanded={open}
+      <button type="button" id={id} aria-haspopup="listbox" aria-expanded={open} disabled={disabled}
         onClick={toggle} onKeyDown={onKeyDown}
         className={cx('flex h-10 w-full items-center justify-between gap-2 rounded-field border bg-black/20 px-3.5 text-left text-[13px] text-ink',
           'transition-colors duration-150 focus:outline-none',

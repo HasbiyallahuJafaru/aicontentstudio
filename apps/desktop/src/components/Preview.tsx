@@ -2,19 +2,21 @@
 // before/after look at the design, and per-component regeneration (§43) with approval.
 import { useEffect, useState } from 'react'
 import { ArrowClockwise, Check, Export, X } from '@phosphor-icons/react'
-import { call, label, mediaUrl, type Asset, type Piece, type Render } from '../lib/studio'
-import { Button, ErrorNote, cx } from './ui'
+import { call, label, mediaUrl, useQuery, type Asset, type Piece, type Render, type VoiceList } from '../lib/studio'
+import { Button, ErrorNote, Select, cx } from './ui'
 
 const SCOPES = ['quote', 'narration', 'visual', 'design'] as const
 type Scope = (typeof SCOPES)[number]
 
-export function Preview({ piece, renders, assets, onClose, onChanged }: {
+export function Preview({ piece, renders, assets, voice, onClose, onChanged }: {
   piece: Piece
   renders: Render[]
   assets: Asset[]
+  voice?: string
   onClose: () => void
   onChanged: () => void
 }) {
+  const { data: voices } = useQuery<VoiceList>('tts.voices')
   const video = renders.find((r) => r.kind === 'video')
   const image = renders.find((r) => r.kind === 'image')
   const thumb = assets.find((a) => a.id === piece.content.asset?.id)?.thumb_path
@@ -93,14 +95,30 @@ export function Preview({ piece, renders, assets, onClose, onChanged }: {
         {error && <ErrorNote error={error} />}
 
         <div className="flex flex-wrap items-end justify-between gap-4">
-          <div className="grid gap-1.5">
-            <p className="text-[13px] font-medium text-ink">Redo one part</p>
-            <div className="flex flex-wrap gap-1.5">
-              {SCOPES.map((s) => (
-                <Button key={s} variant="ghost" disabled={busy !== null} onClick={() => regenerate(s)}>
-                  <ArrowClockwise size={13} />{busy === s ? 'Redoing…' : label(s)}
-                </Button>
-              ))}
+          <div className="grid gap-3">
+            <div className="grid gap-1.5">
+              <p className="text-[13px] font-medium text-ink">Redo one part</p>
+              <div className="flex flex-wrap gap-1.5">
+                {SCOPES.map((s) => (
+                  <Button key={s} variant="ghost" disabled={busy !== null} onClick={() => regenerate(s)}>
+                    <ArrowClockwise size={13} />{busy === s ? 'Redoing…' : label(s)}
+                  </Button>
+                ))}
+              </div>
+            </div>
+            <div className="grid gap-1">
+              <p className="text-[13px] font-medium text-ink">Narration voice</p>
+              <Select value={voice ?? ''} disabled={busy !== null}
+                onChange={(v) => run('voice', async () => {
+                  await call('projects.set_voice', { project_id: piece.project_id, voice: v })
+                  await call('jobs.start', { project_id: piece.project_id, kind: 'render', piece_ids: [piece.id] })
+                })}
+                options={[
+                  { value: '', label: 'Studio default (Settings)' },
+                  ...(voices?.kokoro ?? []).map((v) => ({ value: `kokoro:${v}`, label: `Kokoro · ${v}` })),
+                  ...(voices?.windows ?? []).map((v) => ({ value: `windows:${v}`, label: `Windows · ${v}` })),
+                ]} />
+              <p className="text-2xs text-ink-3">Swapping re-renders this piece's video with the new voice.</p>
             </div>
           </div>
           <div className="flex items-center gap-2">

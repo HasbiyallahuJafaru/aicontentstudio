@@ -22,6 +22,11 @@ IMAGE_W, IMAGE_H = 1080, 1350
 MARGIN = 96
 SIZES = (96, 84, 72, 64, 56)  # §25: size follows quote length and line count
 STALL_SECS = 180  # no ffmpeg progress for this long = wedged; real renders emit progress ~2x/sec
+# color presets for the Create page's Look picker (appended to the visual filter chain)
+LOOKS = {"none": "", "warm": ",colorbalance=rm=.07:bm=-.07,eq=saturation=1.08",
+         "cool": ",colorbalance=rm=-.06:bm=.07", "mono": ",hue=s=0",
+         "vivid": ",eq=saturation=1.32:contrast=1.05"}
+SUBTITLES_FONTS = Path(__file__).resolve().parents[1] / "app" / "clipper" / "assets" / "fonts"
 
 
 def _font(size: int, weight: int = 600) -> ImageFont.FreeTypeFont:
@@ -157,9 +162,13 @@ class FFmpegRenderer:
 
     def render_video(self, *, src: Path, narration: Path, out: Path, subject_position: str, src_fps: float,
                      src_duration: float, still: bool, progress, out_fps: float | None = None,
-                     scrim_png: Path | None = None, quote: str | None = None, palette: dict | None = None) -> dict:
+                     scrim_png: Path | None = None, quote: str | None = None, palette: dict | None = None,
+                     look: str = "none", blur_background: bool = False, parallax: bool = False,
+                     subtitles: Path | None = None) -> dict:
         """Renders the narration over the visual. `scrim_png`/`quote`/`palette` are optional: omit them for a
-        clean video with no text overlay (the Create page's videos). `out_fps` forces 30/60 output."""
+        clean video with no text overlay. `out_fps` forces 30/60 output. `look` is a color preset;
+        `blur_background` puts sharp centred footage over a blurred full-bleed copy; `parallax` adds a slow
+        push-in on video pieces (stills always push in); `subtitles` burns an .ass file."""
         from app.tts import AudioResult
         audio = AudioResult(narration)
         duration = round(audio.duration + 0.6, 3)
@@ -167,14 +176,25 @@ class FFmpegRenderer:
         fps = out_fps or (60.0 if still else (src_fps or 30.0))
 
         args = ["ffmpeg", "-y", "-nostdin", "-nostats", "-progress", "pipe:1", "-hide_banner"]
+        frames = round(duration * fps)
+        look_frag = LOOKS.get(look, "")
+        push = (f",zoompan=z='min(1+0.05*on/{frames:g},1.05)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'"
+                f":d=1:s={self.w}x{self.h}:fps={fps:g}") if (parallax and not still) else ""
         if still:  # §66: slow push-in on stills, at the output frame rate
-            frames = round(duration * fps)
             vf = (f"scale={self.w}:{self.h}:force_original_aspect_ratio=increase,crop={self.w}:{self.h},"
                   f"zoompan=z='min(1+0.06*on/{frames},1.06)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'"
-                  f":d=1:s={self.w}x{self.h}:fps={fps:g}")
+                  f":d=1:s={self.w}x{self.h}:fps={fps:g}{look_frag}")
             args += ["-loop", "1", "-i", str(src)]
+        elif blur_background:
+            vf = (f"split=2[bgsrc][fgsrc];"
+                  f"[bgsrc]scale={self.w}:{self.h}:force_original_aspect_ratio=increase,crop={self.w}:{self.h},"
+                  f"boxblur=24:2[bgb];"
+                  f"[fgsrc]scale={self.w}:{self.h}:force_original_aspect_ratio=decrease{push}[fg];"
+                  f"[bgb][fg]overlay=(W-w)/2:(H-h)/2{look_frag},fps={fps:g}")
+            args += ["-i", str(src)]
         else:
-            vf = f"scale={self.w}:{self.h}:force_original_aspect_ratio=increase,crop={self.w}:{self.h}"
+            vf = (f"scale={self.w}:{self.h}:force_original_aspect_ratio=increase,crop={self.w}:{self.h}"
+                  f"{push}{look_frag},fps={fps:g}")
             if src_duration > duration + 2:  # §65 ponytail: take the middle of the clip; motion-scored
                 args += ["-ss", f"{round((src_duration - duration) / 2, 3)}"]  # segment scoring needs M5 frame work
             elif src_duration < duration + 1:
@@ -187,8 +207,13 @@ class FFmpegRenderer:
             narr_idx = 2
         args += ["-i", str(narration)]
 
-        chain = [f"[0:v]{vf},fps={fps:g}[base]"]
+        chain = [f"[0:v]{vf}[base]"]
         prev = "base"
+        if subtitles is not None:  # burned karaoke-style subtitles (Montserrat, same styling as clips)
+            sub_file = esc(str(subtitles).replace("\\", "/"))
+            fonts_dir = esc(str(SUBTITLES_FONTS).replace("\\", "/"))
+            chain.append(f"[{prev}]ass='{sub_file}':fontsdir='{fonts_dir}'[sub]")
+            prev = "sub"
         if scrim_png is not None:
             chain += ["[1:v]format=rgba[scr]", "[base][scr]overlay=0:0[o0]"]
             prev = "o0"
