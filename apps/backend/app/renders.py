@@ -115,7 +115,13 @@ def render_project(project_id: str, report, piece_ids: list[str] | None = None) 
                                                      shots=_shots_for(asset, narration.duration + 0.6))
                         duration, fps, w, h = info["duration"], info["fps"], renderer.w, renderer.h
                     else:
-                        renderer.render_image(src=config.MEDIA_DIR / asset["local_path"], out=full_out,
+                        image_src = config.MEDIA_DIR / asset["local_path"]
+                        if asset["asset_type"] == "video":
+                            # a video asset can't feed PIL: grab a representative frame and render the 4:5 from it
+                            image_src = config.MEDIA_DIR / "tmp" / f"{piece['id']}-frame.jpg"
+                            render.thumbnail(config.MEDIA_DIR / asset["local_path"], image_src,
+                                             at=max((asset["duration"] or 0) / 2, 0.5))
+                        renderer.render_image(src=image_src, out=full_out,
                                               quote=content_data["quote"]["text"],
                                               subject_position=asset["subject_position"] or "center",
                                               palette=content_data["palette"])

@@ -11,7 +11,7 @@ import tempfile
 import threading
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, UnidentifiedImageError
 
 from app import config
 from app.errors import UserError
@@ -133,13 +133,18 @@ def validate_video(path: Path, want: dict, w: int, h: int) -> dict:
 
 
 def thumbnail(src: Path, out: Path, at: float = 0.5) -> Path:
-    """Grab one frame as the cover/thumbnail (PRD §47/§71). ffmpeg argv array, same controls as render_video."""
+    """Grab one frame as the cover/thumbnail (PRD §47/§71). ffmpeg argv array, same controls as render_video.
+    If `at` sits past the end of a shorter-than-reported file, it retries once from 0."""
     out.parent.mkdir(parents=True, exist_ok=True)
-    proc = subprocess.run(["ffmpeg", "-y", "-nostdin", "-nostats", "-hide_banner", "-ss", f"{at}", "-i", str(src),
-                           "-frames:v", "1", "-q:v", "3", str(out)], capture_output=True, timeout=60)
-    if proc.returncode != 0 or not out.exists():
-        raise UserError("Could not grab a cover frame for the export.", proc.stderr.decode("utf-8", "replace")[-400:])
-    return out
+    proc = None
+    for seek in (at, 0):
+        proc = subprocess.run(["ffmpeg", "-y", "-nostdin", "-nostats", "-hide_banner", "-ss", f"{seek}",
+                               "-i", str(src), "-frames:v", "1", "-q:v", "3", str(out)],
+                              capture_output=True, timeout=60)
+        if proc.returncode == 0 and out.exists():
+            return out
+    raise UserError("Could not grab a cover frame for the export.",
+                    proc.stderr.decode("utf-8", "replace")[-400:])
 
 
 def validate_image(path: Path) -> None:
@@ -299,7 +304,12 @@ class FFmpegRenderer:
         return validate_video(out, {"fps": fps, "duration": duration}, self.w, self.h)
 
     def render_image(self, *, src: Path, out: Path, quote: str, subject_position: str, palette: dict) -> None:
-        with Image.open(src) as img:
+        try:
+            img = Image.open(src)
+        except UnidentifiedImageError as e:
+            # videos must be frame-grabbed before they get here (renders.py); anything else is bad source data
+            raise UserError("This visual isn't an image the studio can crop.", f"{src} ({e})") from e
+        with img:
             img = img.convert("RGB")
             scale = max(IMAGE_H / img.height, IMAGE_W / img.width)
             rw, rh = round(img.width * scale), round(img.height * scale)

@@ -216,5 +216,47 @@ class RenderJob(unittest.TestCase):
         self.assertNotIn("render_error", pieces[0]["content"])
 
 
+    def test_video_asset_renders_image_for_instagram_feed(self):
+        """A video-preferred piece targeted at instagram_feed still gets a 4:5 image (frame-grabbed from the
+        video, never PIL-opened). Regression for UnidentifiedImageError on assets/*.mp4."""
+        p = projects.create({**BRIEF, "quantity": 1, "format": "video", "platforms": ["tiktok", "instagram_feed"]})
+        with database.connect() as conn:
+            conn.execute("DELETE FROM asset_usage")
+        make_thumbs("b1")
+        run_job_with([FakeProvider2([cand("b1")])], FakeModel(["Hold the line you told nobody about."]), p["id"])
+        piece = content.pieces(p["id"])[0]
+        with database.connect() as conn:
+            row = conn.execute("SELECT local_path FROM assets WHERE id = ?",
+                               (piece["content"]["asset"]["id"],)).fetchone()
+            make_source_video(str(config.MEDIA_DIR / row["local_path"]))
+
+        settings.update(render_width=540, render_height=960)
+
+        class FakeTTS(tts.TTSProvider):
+            name = "fake"
+            n = 0
+
+            async def generate(self, text, voice, speed):
+                FakeTTS.n += 1
+                path = config.MEDIA_DIR / "audio" / f"fake-fg-{FakeTTS.n}.wav"
+                path.parent.mkdir(parents=True, exist_ok=True)
+                tone_wav(path, 1.0)
+                return tts.AudioResult(path)
+
+        with mock.patch.object(renders.tts, "get_tts", lambda: FakeTTS()), mock.patch.object(jobs, "emit"):
+            job = jobs.start(p["id"], kind="render")
+            for _ in range(400):
+                job = jobs.get(job["id"])
+                if job["status"] not in ("queued", "running"):
+                    break
+                time.sleep(0.05)
+        self.assertEqual(job["status"], "completed", job["error"])
+        kinds = sorted(r["kind"] for r in renders.list_(p["id"]))
+        self.assertEqual(kinds, ["image", "video"])
+        image = config.MEDIA_DIR / next(r["local_path"] for r in renders.list_(p["id"]) if r["kind"] == "image")
+        with Image.open(image) as check:
+            self.assertEqual((check.format, check.size), ("JPEG", (render.IMAGE_W, render.IMAGE_H)))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -181,12 +181,16 @@ await win.getByRole('button', { name: 'Library' }).click()
 await win.getByText('No assets yet').waitFor()
 await shot(win, '3-library-empty')
 
-// Create → generate (pieces + visuals)
+// Create → generate (pieces + visuals): walk the Brief → Delivery → Look wizard, then create
 await win.keyboard.press('Control+N')
-await win.getByRole('button', { name: /Create and generate/ }).waitFor()
+await win.getByLabel('Topic').fill('discipline')
 await win.getByLabel('Genre').click()
 await win.getByText('Hard Truth — speech edit', { exact: true }).click()
-await win.keyboard.press('Control+Enter')
+await win.getByRole('button', { name: 'Next' }).click() // Brief -> Delivery
+await win.getByLabel('Narration voice').waitFor()
+await win.getByRole('button', { name: 'Next' }).click() // Delivery -> Look
+await win.getByLabel('Look').waitFor()
+await win.keyboard.press('Control+Enter') // Look -> create + generate
 await win.getByText(/Writing piece \d of 3|Planning 3 angles/).waitFor({ timeout: 15_000 })
 await shot(win, '4-generating')
 await win.locator('blockquote').getByText(QUOTES[2]).waitFor({ timeout: 30_000 })
@@ -219,7 +223,7 @@ await win.getByRole('button', { name: 'Render', exact: true }).click()
 const chips = () => win.locator('button[title^="renders/"]')
 try {
   await chips().first().waitFor({ timeout: 240_000 })
-  await win.waitForFunction(() => document.querySelectorAll('button[title^="renders/"]').length === 3,
+  await win.waitForFunction(() => document.querySelectorAll('button[title^="renders/"]').length === 6,
     undefined, { timeout: 240_000 })
 } catch (e) {
   await shot(win, 'debug-render-timeout')
@@ -249,10 +253,10 @@ await win.getByRole('button', { name: 'Approve', exact: true }).click()
 await win.getByText('Approved', { exact: true }).first().waitFor()
 await win.getByRole('button', { name: 'Preview' }).first().click()
 await win.getByRole('button', { name: 'Narration' }).click()
-await win.waitForFunction(() => document.querySelectorAll('button[title^="renders/"]').length === 2,
+await win.waitForFunction(() => document.querySelectorAll('button[title^="renders/"]').length === 4,
   undefined, { timeout: 60_000 })
 await win.getByRole('button', { name: 'Render', exact: true }).click()
-await win.waitForFunction(() => document.querySelectorAll('button[title^="renders/"]').length === 3,
+await win.waitForFunction(() => document.querySelectorAll('button[title^="renders/"]').length === 6,
   undefined, { timeout: 240_000 })
 
 // Export the project (PRD 47): every piece lands in exports/<date>/ and shows as Exported
@@ -306,7 +310,7 @@ await win.getByText('3 of 3 written').waitFor()
 await assertNoHorizontalOverflow(win, 'dashboard with data')
 await win.getByText('Discipline').click()
 await win.locator('blockquote').getByText(QUOTES[0]).waitFor()
-assert.equal(await win.locator('button[title^="renders/"]').count(), 3, 'renders survive restart')
+assert.equal(await win.locator('button[title^="renders/"]').count(), 6, 'renders survive restart')
 await win.getByRole('button', { name: 'Library' }).click()
 await win.getByText('Pexels · Video').first().waitFor()
 assert.equal(await win.getByText('Pexels · Video').count(), 3, 'assets survive restart')
@@ -354,6 +358,8 @@ await win.getByText('Exported', { exact: true }).waitFor({ timeout: 120_000 })
 await shot(win, '8d-clip-exported')
 
 await win.keyboard.press('Control+N')
+await win.keyboard.press('Control+Enter') // Brief -> Delivery, where the quantity lives
+await win.getByRole('radio', { name: '3', exact: true }).waitFor()
 assert.equal(await win.getByRole('radio', { name: '3', exact: true }).isChecked(), true, 'settings survive restart')
 await app.close()
 fake.close()

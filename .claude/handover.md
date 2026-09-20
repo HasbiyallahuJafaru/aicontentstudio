@@ -1,9 +1,10 @@
 # Handover
 
-Last updated: 2026-09-20 (Milestone 7 complete — ClipperAi engine, publishing, CLI, genre system, director-cut
-renders — all committed and pushed to `main` through `c658b74`. Full `npm test` green: 113 backend tests, tsc,
-build, extended smoke. Next: real-key verification rounds, then M8 packaging). Read this first in a new chat,
-then `.claude/CLAUDE.md` rules (product direction lives there too). Update this file after every phase.
+Last updated: 2026-09-20 (Milestone 7 complete + user feedback rounds 1-3 + crash fixes — everything committed
+and pushed to `main` through the "director-cut renders" commit. Full `npm test` green: 115 backend tests, tsc,
+build, smoke synced to the wizard Create flow and video_image defaults. Next: real-key verification rounds,
+then M8 packaging). Read this first in a new chat, then `.claude/CLAUDE.md` rules (product direction lives
+there too). Update this file after every phase.
 
 ## Where things stand
 
@@ -18,8 +19,8 @@ then `.claude/CLAUDE.md` rules (product direction lives there too). Update this 
 | Splash + root README | Done. Pushed: b73d254 + 84a95ff |
 | Milestone 5: TTS, audio mixing, FFmpeg renderers, render UI | Done. Pushed: b815a50 |
 | Milestone 6: preview, regeneration, queue, export | Done. Pushed: 8f78c3c |
-| **Milestone 7 (redefined)**: branding + ClipperAi engine + Buffer/Metricool publishing + genres + director-cut renders | **Done, verified with fakes, pushed** (`fae7ea0` M7, `509edd6`+`ed08bf3` feedback 1, `d694d4d` feedback 2, `0803393` genres, `c658b74` director-cut). Real-key rounds pending. |
-| M8: refinement, packaging | **In flight**: `backend.spec` freezes the backend (232 MB one-folder, unverified); electron-builder installed; NSIS config + backend.ts packaged branch pending. |
+| **Milestone 7 (redefined)**: branding + ClipperAi engine + Buffer/Metricool publishing + genres + director-cut renders | **Done, verified with fakes, pushed** (`fae7ea0` M7, then feedback rounds: `509edd6`/`ed08bf3`/`d694d4d`, `0803393` genres, `c658b74` director-cut, `b8701f0` blank topic, `b38fb3b` fullscreen). Real-key rounds pending. |
+| M8: refinement, packaging | **In flight**: `backend.spec` freezes the backend (232 MB one-folder, unverified); electron-builder installed; NSIS config + backend.ts packaged branch pending. User added the app icon (`resources/icon.ico` + make-icon scripts) and AppUserModelId already wired in main.ts. |
 
 Git: `main` on https://github.com/HasbiyallahuJafaru/aicontentstudio. Commit/push only when the user asks.
 
@@ -109,7 +110,8 @@ Kokoro int8 verified live (real wav generated). Multi-shot/blur/parallax/subtitl
 extraction. Real-loopback Buffer OAuth verified in tests.
 **Not verified (needs the user's keys / real network):** real DeepSeek output quality per genre (no key on this
 machine — repo has no `.env`); real Pexels/Unsplash; real YouTube clip through yt-dlp + Groq; Buffer connect +
-publish against the real API; Metricool `schedule_post` schema + UI mapping; `npm run dev` HMR; packaged build.
+publish against the real API; Metricool `schedule_post` schema + UI mapping; `npm run dev` HMR; packaged build;
+Kokoro narration quality by ear (engine verified live, samples not judged).
 
 ## How to run
 ```bash
@@ -118,6 +120,23 @@ npm run dev       # Electron + Vite HMR + Python auto-restart
 npm test          # backend unittest (113) + typecheck + build + smoke
 graphify update . # refresh the code map after changes
 ```
+
+## User feedback rounds 4-5 + fixes (2026-09-20, implemented)
+- **Crash fix 1**: a DeepSeek reply with an over-long angle/visual_subject (94 chars vs the 80 cap) failed the
+  whole plan. Model-authored strings are now **trimmed to their caps** in schemas.py, not rejected.
+- **Crash fix 2**: `backend.call()` wrote into a backend stdin that had already ended ->
+  ERR_STREAM_WRITE_AFTER_END dialog. call() now guards closed streams and answers with an error reply.
+- **Blank default topic** is the shipped default (user's migrations 009/010: blank topic, quantity 1, kokoro
+  am_adam voice, hopecore genre; legacy values map forward). A guard that still rejected blank topics was removed.
+- **Maximize = fullscreen**: `win.on('maximize')` -> setFullScreen; F11 toggles; Esc exits. Verified with a
+  playwright check (maximize() flips isFullScreen, window covers the display).
+- **UnidentifiedImageError fix**: a video asset targeted at instagram_feed (image render) handed the .mp4 to
+  PIL. renders.py now **frame-grabs video assets** (`render.thumbnail` at mid-duration, retry-from-0 if the seek
+  is past EOF) and renders the 4:5 from that frame; render_image raises a human UserError for non-images.
+- **Create page is a 3-step wizard** (user redesign): Brief -> Delivery -> Look; Ctrl+Enter walks forward and
+  submits on the last step (window-level listener). Defaults: blank topic, video_image format, hopecore genre.
+- **Smoke synced**: walks the wizard (topic fill, genre select, Ctrl+Enter with per-step waits), expects
+  video_image renders (6 chips, 4 after narration redo), restart assertions updated.
 
 ## Feature backlog / product direction (user-supplied 2026-09-20)
 
