@@ -42,6 +42,20 @@ function createWindow() {
   win.once('ready-to-show', () => win.show())
   win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
   win.webContents.on('will-navigate', (e) => e.preventDefault())
+
+  // Maximize (WCO button or double-click on the bar) means fullscreen: the user expects the app to fill the
+  // screen. F11 toggles fullscreen; Escape leaves it. In fullscreen the overlay controls are hidden, so these
+  // keys are the only way back out.
+  win.on('maximize', () => { if (!win.isFullScreen()) win.setFullScreen(true) })
+  win.webContents.on('before-input-event', (_e, input) => {
+    if (input.type !== 'keyDown') return
+    if (input.key === 'F11') {
+      win.setFullScreen(!win.isFullScreen())
+      _e.preventDefault()
+    } else if (input.key === 'Escape' && win.isFullScreen()) {
+      win.setFullScreen(false)
+    }
+  })
   if (dev && process.env.ELECTRON_RENDERER_URL) win.loadURL(process.env.ELECTRON_RENDERER_URL)
   else win.loadFile(join(__dirname, '../renderer/index.html'))
 }
