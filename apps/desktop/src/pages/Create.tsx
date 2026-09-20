@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { CaretRight, Scissors } from '@phosphor-icons/react'
-import { call, FORMATS, hasKey, label, PLATFORMS, TONES, TOPICS, useQuery, BackendError,
+import { call, FORMATS, GENRES, hasKey, label, PLATFORMS, TOPICS, useQuery, BackendError,
   type Brief, type Project, type Settings, type VoiceList } from '../lib/studio'
 import { Button, Autocomplete, Choices, ErrorNote, Field, Input, PageHeader, Select, cx } from '../components/ui'
 
@@ -174,10 +174,10 @@ function WriteForm({ brief, setBrief, custom, setCustom, keySet, error, saving }
         )}
       </Field>
 
-      <Field label="Tone">
+      <Field label="Genre" hint="The format and voice, modelled on the top-performing motivational pages.">
         {(id) => (
           <Select id={id} value={brief.tone} onChange={(v) => set('tone', v as Brief['tone'])}
-            options={TONES.map((t) => ({ value: t, label: label(t) }))} />
+            options={GENRES} />
         )}
       </Field>
 

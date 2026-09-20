@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 
 from app.database import connect
 from app.errors import UserError
-from app.settings import Tone
+from app.settings import Genre as Tone
 
 Platform = Literal["youtube_shorts", "instagram_reels", "instagram_feed", "tiktok"]
 

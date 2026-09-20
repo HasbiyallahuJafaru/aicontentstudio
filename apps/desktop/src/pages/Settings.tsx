@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Check, FolderOpen, Plug, PlugsConnected } from '@phosphor-icons/react'
-import { call, studio, label, TONES, useQuery, BackendError, type SecretName, type Settings as S } from '../lib/studio'
+import { call, studio, GENRES, useQuery, BackendError, type SecretName, type Settings as S } from '../lib/studio'
 import { Button, ErrorNote, Field, Input, PageHeader, Select } from '../components/ui'
 
 const KEYS: { name: SecretName; label: string }[] = [
@@ -224,10 +224,10 @@ export function Settings() {
       <Section title="Content defaults" description="Pre-filled every time you start a new project.">
         <Field label="Topic">{(id) => <Input id={id} value={form.default_topic} onChange={(e) => set('default_topic', e.target.value)} />}</Field>
         <div className="grid grid-cols-3 gap-4">
-          <Field label="Tone">
+          <Field label="Genre">
             {(id) => (
               <Select id={id} value={form.default_tone} onChange={(v) => set('default_tone', v as S['default_tone'])}
-                options={TONES.map((t) => ({ value: t, label: label(t) }))} />
+                options={GENRES} />
             )}
           </Field>
           <Field label="Quantity" hint="1 to 20 pieces.">

@@ -16,7 +16,7 @@ from app.creative import model as creative  # noqa: E402
 from app.creative.schemas import BatchPlan, PieceContent  # noqa: E402
 from app.errors import UserError  # noqa: E402
 
-BRIEF = {"topic": "discipline", "tone": "cinematic", "format": "automatic", "quantity": 3, "platforms": ["tiktok"]}
+BRIEF = {"topic": "discipline", "tone": "speech", "format": "automatic", "quantity": 3, "platforms": ["tiktok"]}
 SUBJECTS = ["mountain runner at dawn", "empty city street at night", "ocean waves in fog"]
 
 
@@ -170,23 +170,23 @@ class DeepSeekClient(unittest.TestCase):
 
 
 class ToneVoices(unittest.TestCase):
-    """The tone knob only does something if every tone carries a voice into the prompt."""
+    """The genre knob only does something if every genre carries a voice into the prompt."""
 
-    def test_every_tone_has_a_voice(self):
+    def test_every_genre_has_a_voice(self):
         from app.creative import prompts
-        from app.settings import Tone
-        self.assertEqual(set(get_args(Tone)), set(prompts.TONE_VOICES))
+        from app.settings import Genre
+        self.assertEqual(set(get_args(Genre)), set(prompts.GENRES))
 
     def test_voice_reaches_both_prompts(self):
         from app.creative import prompts
-        from app.settings import Tone
-        for tone in get_args(Tone):
-            brief = {**BRIEF, "tone": tone}
+        from app.settings import Genre
+        for genre in get_args(Genre):
+            brief = {**BRIEF, "tone": genre}
             plan_msg = prompts.plan(brief, [])[1]["content"]
-            self.assertIn(prompts.TONE_VOICES[tone], plan_msg, tone)
+            self.assertIn(prompts.GENRES[genre]["voice"], plan_msg, genre)
             item = BatchPlan.model_validate(plan_json(3)).pieces[0]
             piece_msg = prompts.piece(brief, BatchPlan.model_validate(plan_json(3)), item, [])[1]["content"]
-            self.assertIn(prompts.TONE_VOICES[tone], piece_msg, tone)
+            self.assertIn(prompts.GENRES[genre]["voice"], piece_msg, genre)
 
 
 if __name__ == "__main__":

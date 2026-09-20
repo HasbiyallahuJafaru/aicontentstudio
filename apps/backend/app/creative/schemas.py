@@ -38,7 +38,7 @@ class BatchPlan(BaseModel):
 
 class Quote(BaseModel):
     text: Text = Field(min_length=8, max_length=180)
-    author: None = None  # original lines only: never attributed to a real or invented person
+    author: str | None = None  # null for original lines; the real public-domain source for attributed genres
 
 
 class Narration(BaseModel):

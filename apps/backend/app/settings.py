@@ -1,12 +1,17 @@
 """Non-secret settings. API keys live in Electron main (OS-encrypted), never here."""
-from typing import Literal
+from typing import Literal, get_args
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from app.database import connect
 
-Tone = Literal["cinematic", "reflective", "calm", "intense", "inspirational",
-               "conversational", "emotional", "minimal", "thoughtful"]
+# Genres modelled on the top-performing motivational formats (researched 2026-09-20): hopecore spoken word,
+# hard-truth speech edits, stoicism, historical voices, book wisdom, cinematic minimal. Each carries its own
+# voice spec in app/creative/prompts.py.
+Genre = Literal["hope", "speech", "stoic", "history", "books", "cinema"]
+_LEGACY_TONES = {"cinematic": "cinema", "reflective": "hope", "calm": "stoic", "intense": "speech",
+                 "inspirational": "hope", "conversational": "hope", "emotional": "hope",
+                 "minimal": "stoic", "thoughtful": "books"}
 
 
 class Settings(BaseModel):
@@ -14,7 +19,16 @@ class Settings(BaseModel):
     ai_temperature: float = Field(1.0, ge=0, le=2)
     ai_max_tokens: int = Field(2000, ge=256, le=8192)
     default_topic: str = Field("discipline", min_length=1, max_length=60)
-    default_tone: Tone = "cinematic"
+    default_tone: Genre = "hope"
+
+    @field_validator("default_tone", mode="before")
+    @classmethod
+    def _map_legacy_tone(cls, v):
+        """Settings rows written before the tone->genre swap store old tone names; map them forward."""
+        if isinstance(v, str):
+            v = _LEGACY_TONES.get(v, v)
+            return v if v in get_args(Genre) else "hope"
+        return v
     default_quantity: int = Field(6, ge=1, le=20)
     # PRD §18: days a visually similar asset stays off limits after use. Same-asset reuse waits for the
     # pool to be exhausted regardless of this; the per-rule example values (7/3/3) collapse into one knob.

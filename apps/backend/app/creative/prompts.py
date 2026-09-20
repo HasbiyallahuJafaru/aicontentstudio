@@ -25,7 +25,8 @@ Stay on the brief:
 - Say one thing and mean it. If the line would be equally true under a different topic, it is wrong: rewrite it.
 
 Integrity and format:
-- Write original lines only. Never quote or imitate a real person, living or dead; "author" is always null.
+- Write original lines only. Never imitate a living person; "author" stays null unless the brief's genre uses
+  real public-domain quotes, in which case follow its attribution rules exactly.
 - The quote stands alone on screen: 3 to 16 words.
 - The narration is the spoken script: natural rhythm with room to breathe, not the quote copied verbatim (it may \
 end on the quote or a variation). It must OPEN on the hook.
@@ -39,27 +40,33 @@ Before you answer, reread the first line and the quote once. If the first line w
 could sit unchanged under a different topic, throw it out and write the specific version instead.
 Reply with a single JSON object and nothing else."""
 
-# One voice per tone in app/settings.py. A bare tone word ("cinematic") means nothing to a model, so each entry says
-# what the voice sounds like, the sentence shape it uses, and the failure it slides into when left to itself.
-TONE_VOICES = {
-    "cinematic": "Wide and visual, like voice-over laid over a slow shot. Present tense. One image carries the line "
-                 "and nothing explains it afterwards. Avoid film-trailer grandeur, fate, destiny, epic scale.",
-    "reflective": "Someone looking back at something already lived. Hindsight framing, a small admission, no advice. "
-                  "Stop just short of the moral; do not summarise the lesson for the listener.",
-    "calm": "Low and unhurried, from someone with nothing to prove. Short declarative sentences, ordinary words, no "
-            "stakes and no urgency. Avoid instructing the listener, and avoid the word simply.",
-    "intense": "Close up and under pressure. Short hard sentences, strong verbs, second person allowed. Name the cost "
-               "rather than the reward. Avoid shouting, gym-poster commands, anything a coach would yell.",
-    "inspirational": "Forward-leaning but grounded. Earn the lift with one concrete detail before the turn. No "
-                     "promises, no you-can-do-anything. If it would fit on a motivational poster, rewrite it.",
-    "conversational": "Talking to one person across a table. Contractions, a natural aside, slightly loose rhythm, "
-                      "may start mid-thought. Avoid performing wisdom, and never address an audience or a crowd.",
-    "emotional": "Close to the feeling without describing it. Name a concrete moment and let the emotion sit under "
-                 "it. Do not name emotions outright (sad, proud, broken). No sentimentality, no swelling.",
-    "minimal": "As few words as will hold the thought, usually one clause. Nothing decorative; an adjective must "
-               "carry meaning or go. Avoid sounding cryptic, oracular or like a fortune cookie.",
-    "thoughtful": "An idea being turned over, carrying one precise distinction. One qualifying clause allowed. Ends "
-                  "on a shift in how the thing is seen, not on a conclusion. No rhetorical questions.",
+# Each genre is a top-performing motivational format (researched 2026-09-20). "voice" is what the writing sounds
+# like; "attributed" genres quote REAL documented public-domain sources and name the author instead of writing
+# original lines.
+GENRES = {
+    "hope": {"label": "Hope — spoken word", "attributed": False,
+             "voice": "Hopecore spoken word: gentle, vulnerable, unhurried. Name the quiet battles nobody sees "
+                      "(the door you closed, the call you didn't make, the mirror you avoided) and answer them "
+                      "with earned hope, never toxic positivity. It reads like a letter to the listener's 2am self."},
+    "speech": {"label": "Hard Truth — speech edit", "attributed": False,
+               "voice": "Hard-truth speech edit, Goggins/Jocko energy: second person, present tense, high stakes. "
+                        "Short hard sentences that escalate; name the excuse, name the cost; end by calling them "
+                        "to hold the line. Attack what they're accepting, never who they are."},
+    "stoic": {"label": "Stoic Wisdom", "attributed": False,
+              "voice": "Stoic journal voice, Marcus Aurelius at night: calm, eternal, unimpressed by noise. "
+                       "Control versus not-control, mortality as a tool, duty over feeling. Plain declaratives, "
+                       "nothing trendy, no self-help vocabulary."},
+    "history": {"label": "Historical Voices", "attributed": True,
+                "voice": "Historical voices: documented words from public-domain figures — Marcus Aurelius, Seneca, "
+                         "Epictetus, Lincoln, Theodore Roosevelt, Lao Tzu. The narration sets the moment the line "
+                         "came from and translates it into the listener's ordinary day."},
+    "books": {"label": "Book Wisdom", "attributed": True,
+              "voice": "Book wisdom: documented lines from public-domain classics — Meditations, Seneca's Letters, "
+                       "As a Man Thinketh, Walden, The Art of War. The narration bridges the classic idea into the "
+                       "listener's real, ordinary life and lands on why it still cuts."},
+    "cinema": {"label": "Cinematic Minimal", "attributed": False,
+               "voice": "Cinematic minimal, Mateusz M style: the visuals carry it. Very few words, spaced out, each "
+                        "one an image. No advice at all — atmosphere and one turning line, then silence."},
 }
 
 PLAN_SHAPE = {
@@ -83,7 +90,14 @@ PIECE_SHAPE = {
 
 
 def _brief(b: dict) -> str:
-    parts = [f"Topic: {b['topic']}", f"Tone: {b['tone']}. {TONE_VOICES.get(b['tone'], '')}".strip()]
+    genre = GENRES.get(b["tone"], GENRES["hope"])
+    parts = [f"Topic: {b['topic']}", f"Genre: {genre['label']}. {genre['voice']}"]
+    if genre["attributed"]:
+        parts.append(
+            "Attribution: this genre quotes REAL, documented, public-domain lines. quote.text must be the actual "
+            "documented line (never invented, never paraphrased) and author = the source's name (for example "
+            "'Marcus Aurelius', 'Seneca', 'James Allen, As a Man Thinketh'). Nothing published after 1929. The "
+            "narration is your own words: set the moment, deliver the line, land why it still cuts today.")
     if b.get("mood"):
         parts.append(f"Mood: {b['mood']}")
     if b.get("audience"):

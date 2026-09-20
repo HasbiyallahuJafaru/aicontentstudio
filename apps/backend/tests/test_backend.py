@@ -12,7 +12,7 @@ os.environ["ACS_DATA_DIR"] = TMP
 
 from app import config, database, rpc  # noqa: E402
 
-BRIEF = {"topic": "discipline", "tone": "cinematic", "quantity": 6, "platforms": ["tiktok", "instagram_reels"]}
+BRIEF = {"topic": "discipline", "tone": "speech", "quantity": 6, "platforms": ["tiktok", "instagram_reels"]}
 
 
 def call(method, **params):

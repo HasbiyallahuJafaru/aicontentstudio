@@ -8,7 +8,15 @@ declare global {
 
 export const studio = window.studio
 
-export type Tone = (typeof TONES)[number]
+export type Tone = string
+export const GENRES: { value: string; label: string }[] = [
+  { value: 'hope', label: 'Hope — spoken word (hopecore)' },
+  { value: 'speech', label: 'Hard Truth — speech edit' },
+  { value: 'stoic', label: 'Stoic Wisdom' },
+  { value: 'history', label: 'Historical Voices' },
+  { value: 'books', label: 'Book Wisdom' },
+  { value: 'cinema', label: 'Cinematic Minimal' },
+]
 export type Format = 'automatic' | 'video' | 'image' | 'video_image'
 export type Platform = 'youtube_shorts' | 'instagram_reels' | 'instagram_feed' | 'tiktok'
 export type Look = 'none' | 'warm' | 'cool' | 'mono' | 'vivid'
@@ -81,8 +89,6 @@ export type SecretName = 'DEEPSEEK_API_KEY' | 'PEXELS_API_KEY' | 'UNSPLASH_ACCES
 
 export const TOPICS = ['Motivation', 'Discipline', 'Personal growth', 'Mindset', 'Productivity', 'Relationships',
   'Reflection', 'Confidence', 'Success', 'Resilience']
-export const TONES = ['cinematic', 'reflective', 'calm', 'intense', 'inspirational', 'conversational', 'emotional',
-  'minimal', 'thoughtful'] as const
 export const FORMATS: { value: Format; label: string }[] = [
   { value: 'automatic', label: 'Automatic' }, { value: 'video', label: 'Video' },
   { value: 'image', label: 'Image' }, { value: 'video_image', label: 'Video + image' },
