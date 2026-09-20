@@ -11,8 +11,24 @@ export const studio = window.studio
 export type Tone = (typeof TONES)[number]
 export type Format = 'automatic' | 'video' | 'image' | 'video_image'
 export type Platform = 'youtube_shorts' | 'instagram_reels' | 'instagram_feed' | 'tiktok'
-export type Brief = { topic: string; tone: Tone; mood: string; audience: string; format: Format; quantity: number; platforms: Platform[] }
-export type Project = { id: string; name: string; status: string; brief: Brief; created_at: string; updated_at: string; pieces_written?: number }
+export type Brief = { kind?: never; topic: string; tone: Tone; mood: string; audience: string; format: Format; quantity: number; platforms: Platform[] }
+export type ClipBrief = {
+  kind: 'clip'; source: string; n: number | null; min_len: number; max_len: number
+  orientation: '9:16' | '16:9' | '1:1'; burn_captions: boolean
+}
+export type Project = { id: string; name: string; status: string; brief: Brief | ClipBrief; created_at: string; updated_at: string; pieces_written?: number }
+export type Clip = {
+  id: string; project_id: string; idx: number; start_at: number; end_at: number; score: number
+  reason: string; hook: string; title: string; description: string; hashtags: string[]
+  posts: Record<string, string>; status: 'ready' | 'approved' | 'rejected' | 'exported'
+  video_path: string; cover_path: string; created_at: string
+}
+export type BufferChannel = { id: string; service: string; name: string; displayName: string; usable: boolean }
+export type Publication = {
+  id: string; project_id: string; clip_idx: number; provider: string; channel_id: string; service: string
+  channel_name: string; status: string; due_at: string | null; sent_at: string | null
+  external_link: string | null; error: string | null; created_at: string
+}
 export type Job = {
   id: string; project_id: string; status: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled'
   stage: string; progress: number; error: { message: string; detail?: string } | null; updated_at: string
@@ -43,6 +59,8 @@ export type Settings = {
   tts_provider: 'windows' | 'kokoro'; tts_voice: string; tts_speed: number; tts_volume: number
   music_path: string; music_volume: number
   render_crf: number; render_audio_bitrate: string; render_width: number; render_height: number
+  buffer_client_id: string
+  publish_host_endpoint: string; publish_host_bucket: string; publish_host_public_url: string; publish_host_region: string
 }
 export type Render = {
   id: string; piece_id: string; kind: 'video' | 'image'; local_path: string
@@ -57,7 +75,7 @@ export type QueueData = {
 export type ExportRun = { id: string; project_id: string; dir: string; path: string; pieces: number
   created_at: string; project: string }
 export type BackendStatus = { state: 'starting' | 'ready' | 'crashed' | 'stopped'; message?: string; detail?: string }
-export type SecretName = 'DEEPSEEK_API_KEY' | 'PEXELS_API_KEY' | 'UNSPLASH_ACCESS_KEY'
+export type SecretName = 'DEEPSEEK_API_KEY' | 'PEXELS_API_KEY' | 'UNSPLASH_ACCESS_KEY' | 'GROQ_API_KEY' | 'METRICOOL_API_KEY'
 
 export const TOPICS = ['Motivation', 'Discipline', 'Personal growth', 'Mindset', 'Productivity', 'Relationships',
   'Reflection', 'Confidence', 'Success', 'Resilience']

@@ -14,6 +14,14 @@ TTS, FFmpeg render, per-platform metadata) and exports them for Metricool. Local
 - "Created by" footer (interactive SVG logos for website/LinkedIn/GitHub) goes on every Shell page, and the splash
   gets Instagram+GitHub icons lower-left — see handover Milestone 7 Phase A.
 
+## Product direction (user priority)
+North star: turn raw long-form content into polished, platform-ready short-form content with as little manual
+editing as possible. Clip quality bar: premium modern Shorts, never "AI-generated looking" — priority order:
+story > hook > pacing > clarity > visual quality > audio quality > platform-safe composition > brand consistency.
+Backlog + integration statuses (IP routing research, Metricool/Buffer open items, quality roadmap) live in
+`.claude/handover.md` under "Feature backlog / product direction". Publishing integrations must stay OAuth-based
+and store the minimum credentials (never a social-media credential store); the app stays local and free.
+
 ## Save tokens (user priority)
 Don't read `Prd.txt` or big files end to end. Look things up with graphify, then read only the lines it points to:
 ```bash

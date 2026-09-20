@@ -7,7 +7,7 @@ import logging
 import threading
 import uuid
 
-from app import content, export, renders
+from app import clips, content, export, renders
 from app.database import connect
 from app.errors import UserError
 from app.events import emit
@@ -52,7 +52,7 @@ def _project_status(project_id: str, status: str) -> None:
 
 
 def start(project_id: str, kind: str = "generate", piece_ids: list[str] | None = None) -> dict:
-    if kind not in ("generate", "render", "export"):
+    if kind not in ("generate", "render", "export", "clip"):
         raise UserError("Unknown job kind.", kind)
     running = latest(project_id)
     if running and running["status"] in ("queued", "running"):
@@ -62,7 +62,7 @@ def start(project_id: str, kind: str = "generate", piece_ids: list[str] | None =
         if conn.execute("SELECT 1 FROM projects WHERE id = ?", (project_id,)).fetchone() is None:
             raise UserError("This project no longer exists.", f"project id {project_id}")
         conn.execute("INSERT INTO generation_jobs (id, project_id, kind) VALUES (?, ?, ?)", (job_id, project_id, kind))
-    if kind == "generate":  # render/export ride the same job system but don't change the project's own stage
+    if kind in ("generate", "clip"):  # render/export ride the same job system but don't change the project's own stage
         _project_status(project_id, "generating")
     threading.Thread(target=_run, args=(job_id, project_id, kind, piece_ids), daemon=True,
                      name=f"job-{job_id}").start()
@@ -80,15 +80,17 @@ def _run(job_id: str, project_id: str, kind: str = "generate", piece_ids: list[s
             raise Cancelled
         _set(job_id, "job.progress", stage=stage, progress=round(progress, 3))
 
-    stage = {"generate": "Generating", "render": "Rendering", "export": "Exporting"}[kind]
+    stage = {"generate": "Generating", "render": "Rendering", "export": "Exporting", "clip": "Clipping"}[kind]
     _set(job_id, "job.started", status="running", stage=stage)
     try:
         if kind == "export":
             export.export_project(project_id, report, piece_ids)
+        elif kind == "clip":
+            clips.run(project_id, report)
         else:
             (content.generate if kind == "generate" else renders.render_project)(project_id, report)
     except Cancelled:
-        _project_status(project_id, "draft" if not content.pieces(project_id) else "ready")
+        _project_status(project_id, _settled_status(project_id))
         _set(job_id, "job.cancelled", status="cancelled", stage="Cancelled")
     except UserError as e:
         _project_status(project_id, "failed")
@@ -105,10 +107,19 @@ def _run(job_id: str, project_id: str, kind: str = "generate", piece_ids: list[s
         _cancelled.discard(job_id)
 
 
+def _settled_status(project_id: str) -> str:
+    """After a cancel: 'ready' when anything usable exists, else back to 'draft'."""
+    with connect() as conn:
+        has = (conn.execute("SELECT 1 FROM content_pieces WHERE project_id = ? LIMIT 1", (project_id,)).fetchone()
+               or conn.execute("SELECT 1 FROM clips WHERE project_id = ? LIMIT 1", (project_id,)).fetchone())
+    return "ready" if has else "draft"
+
+
 def recover() -> None:
     """On startup: jobs that were running when the app closed can't resume; mark them failed, honestly."""
     err = json.dumps({"message": "Generation stopped because the app closed. Generate again to retry.", "detail": ""})
     with connect() as conn:
         conn.execute("UPDATE generation_jobs SET status = 'failed', error = ? WHERE status IN ('queued','running')", (err,))
         conn.execute("UPDATE projects SET status = CASE WHEN EXISTS (SELECT 1 FROM content_pieces c WHERE c.project_id = "
-                     "projects.id) THEN 'ready' ELSE 'failed' END WHERE status = 'generating'")
+                     "projects.id) OR EXISTS (SELECT 1 FROM clips k WHERE k.project_id = projects.id) "
+                     "THEN 'ready' ELSE 'failed' END WHERE status = 'generating'")

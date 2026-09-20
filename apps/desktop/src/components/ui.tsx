@@ -31,7 +31,7 @@ export function Button({ variant = 'secondary', kbd, className, children, ...res
 export function Field({ label, hint, error, children }: { label: string; hint?: ReactNode; error?: string; children: (id: string) => ReactNode }) {
   const id = useId()
   return (
-    <div className="grid gap-1.5">
+    <div className="grid content-start gap-1.5">
       <label htmlFor={id} className="text-[13px] font-medium text-ink">{label}</label>
       {children(id)}
       {error ? <p className="text-xs text-danger">{error}</p> : hint && <p className="text-xs text-ink-3">{hint}</p>}
@@ -122,25 +122,16 @@ export function PageHeader({ title, children }: { title: string; children?: Reac
 }
 
 /** Shared dropdown popup look: black background, white text, rounded, airier spacing.
- * Anchored directly under its field; any page scroll closes the popup (scrolls inside it don't). */
-const POPUP_CLS = 'absolute left-0 right-0 top-full z-50 mt-1.5 grid max-h-[320px] gap-1.5 overflow-y-auto rounded-field bg-black p-1.5 shadow-[inset_0_0_0_1px_rgb(255_244_232/0.1),0_24px_48px_-16px_rgb(0_0_0/0.85)]'
+ * Anchored absolutely to its field, so it travels with the field on scroll and resize. */
+const POPUP_CLS = 'absolute left-0 right-0 top-full z-50 mt-1.5 grid max-h-[70vh] gap-1.5 overflow-y-auto rounded-field bg-black p-1.5 shadow-[inset_0_0_0_1px_rgb(255_244_232/0.1),0_24px_48px_-16px_rgb(0_0_0/0.85)]'
 const OPTION_CLS = 'flex w-full items-center justify-between gap-2 rounded-[10px] px-3.5 py-2.5 text-left text-[13px] text-ink transition-colors duration-100 hover:bg-white/[0.08]'
 
 function useDismiss(open: boolean, ref: React.RefObject<HTMLElement | null>, close: () => void) {
   useEffect(() => {
     if (!open) return
     const onDoc = (e: MouseEvent) => { if (!ref.current?.contains(e.target as Node)) close() }
-    // capture: inner containers (the main panel) scroll without bubbling; scrolling inside the popup is fine
-    const onScroll = (e: Event) => { if (!ref.current?.contains(e.target as Node)) close() }
-    const onResize = () => close()
     document.addEventListener('mousedown', onDoc)
-    window.addEventListener('scroll', onScroll, true)
-    window.addEventListener('resize', onResize)
-    return () => {
-      document.removeEventListener('mousedown', onDoc)
-      window.removeEventListener('scroll', onScroll, true)
-      window.removeEventListener('resize', onResize)
-    }
+    return () => document.removeEventListener('mousedown', onDoc)
   }, [open, ref, close])
 }
 

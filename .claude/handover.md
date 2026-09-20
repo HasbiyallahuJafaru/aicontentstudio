@@ -1,7 +1,8 @@
 # Handover
 
-Last updated: 2026-09-20 (Milestone 7 Phase A complete + committed; next: Phase B engine merge). Read this first in
-a new chat, then `.claude/CLAUDE.md` rules. Update it after every phase.
+Last updated: 2026-09-20 (Milestone 7 Phase C — Buffer + Metricool publishing + CLI — implemented, backend 108
+tests green; full npm test verify in progress; nothing committed). Read this first in a new chat, then
+`.claude/CLAUDE.md` rules. Update it after every phase.
 
 ## Where things stand
 
@@ -16,7 +17,7 @@ a new chat, then `.claude/CLAUDE.md` rules. Update it after every phase.
 | Splash + root README (user request) | Done. Pushed: b73d254 + 84a95ff. |
 | Milestone 5: TTS, audio mixing, FFmpeg renderers, render UI | Done, verified, pushed: b815a50. |
 | **Milestone 6**: preview, regeneration, queue, export | **Done, verified, pushed: 8f78c3c.** |
-| **Milestone 7 (redefined)**: developer branding + ClipperAi engine merge + Buffer/Metricool publishing | **Phase A (branding + rail animation) done and committed. Phase B/C not started — build next.** |
+| **Milestone 7 (redefined)**: developer branding + ClipperAi engine merge + Buffer/Metricool publishing | **Phase A + B + C implemented (B verified with fakes; C backend-verified with fakes; real-key rounds pending). Nothing committed.** |
 | M8 (was M7): refinement, packaging | Not started |
 
 Git: `main` on https://github.com/HasbiyallahuJafaru/aicontentstudio. Commit/push only when the user asks.
@@ -163,26 +164,121 @@ UI: "Clip from video" on Create (link or file), clip review list reusing the Pre
 export reuse. Tests: `tests/test_clipper_port.py`, porting the assertion patterns from ClipperAi's
 `test_clipper.py` but with testsrc2 fixtures (no network downloads) like our test_render does.
 
-**Phase C — publishing integrations ("connect to other apps for upload via CLI or API"):**
-1. Buffer via API: adapt ClipperAi's `publishing.py` (Buffer GraphQL: channels, post now, schedule, calendar
-   spread, unschedule) + `oauth.py` to the desktop (loopback/redirect design needed — decide in-chat).
-2. Metricool via MCP: the desktop backend acts as an MCP CLIENT talking to Metricool's MCP server (new work —
-   research Metricool's MCP endpoint/auth in-chat; no existing code to port).
-3. A small CLI entry (`python -m app.cli`) so uploads/exports can be driven from the terminal/other tools.
+**Phase B — ClipperAi engine merge (implemented 2026-09-20, uncommitted):**
+- **Engine** `apps/backend/app/clipper/` (ported from ClipperAi's `clipper.py`, 1 file → 7 modules):
+  - `ff.py`: the ffmpeg/ffprobe discipline every clip subprocess goes through — argv arrays, `-nostdin` +
+    `stdin=DEVNULL` (the Electron stdin-inheritance hang), stderr → temp file (the stderr-PIPE exit-1 bug),
+    hard timeout. `duration_of()` via ffprobe.
+  - `acquire.py`: local file passes through (work dir = sha256[:16] of the file = transcript cache key); links
+    download with yt-dlp (H.264/AAC sort, retries, per-percent progress, `YTDLP_PROXY` env escape hatch); bot-check
+    DownloadError → human UserError.
+  - `transcribe.py`: Groq Whisper `whisper-large-v3-turbo` via **httpx multipart** (NO openai SDK — same cert-store
+    pattern as DeepSeek), 600s FLAC chunks +10s overlap, `stitch()` de-dupes the seam, bounded retries on
+    429/5xx. `ACS_GROQ_URL` env override (smoke fake). New secret `GROQ_API_KEY` (Electron allowlist + Settings).
+  - `select.py`: PASS1 (moments) / PASS2 (picks + copy) prompts, LIMITS, `fits()` word-boundary trim, Posts/Pick/
+    Moment/Clip pydantic models, `parse_moments`/`parse_picks` (never trust model output), `snap()` to sentence
+    boundaries. Both passes use the user's configured `ai_model` via `DeepSeekModel._chat` (ClipperAi used two
+    hardcoded models; we kept ONE settings knob), max_tokens 64000, 3 parse attempts.
+  - `crop.py`: YuNet face tracking (`assets/models/face_detection_yunet_2026may.onnx`, MIT) at 4 fps, `shots()`
+    deadzone segmentation, `crop_filter()` dynamic 9:16/16:9/1:1 crop, centered fallback when no face.
+  - `captions.py`: karaoke ASS (Montserrat ExtraBold in `assets/fonts/`, OFL.txt included), word highlight,
+    orientation-aware PlayRes.
+  - `render_clip.py`: clip render + cover frame at 1s, on `ff.ffmpeg`; ORIENTATIONS 9:16/16:9/1:1.
+- **Wiring**: migration **007** `clips` table (project, idx, start_at/end_at, score, hook, title, description,
+  hashtags/posts json, status ready|approved|rejected|exported, video_path/cover_path). Clip projects are normal
+  project rows whose brief validates as `ClipBrief` (kind 'clip', source URL-or-path, n, min/max_len, orientation,
+  burn_captions) — no separate entity. `app/clips.py` orchestrates: acquire → title→project name → transcript cache
+  (`media/clipwork/<key>/transcript.json`) → find_clips → snap+render each clip into `media/clips/<pid>/`, rows in
+  DB. Job kind `'clip'` in jobs.py (project status flips generating→ready; cancel/recover account for clips);
+  RPC `clips.list|clips.review`; export branches for clip projects (per-clip folder: clip.mp4, cover.jpg,
+  captions.ass, caption.txt, metadata.json incl. per-platform posts).
+- **UI**: Create gains a "Write content / Clip from video" mode toggle (Choices); clip form = source input,
+  orientation Select, Auto/3/5/10 count, Burned/Clean captions, Advanced min/max length; right panel is a pipeline
+  explainer. Project page branches clip projects to `components/Clips.tsx` ClipWorkspace: job progress bar,
+  Groq+DeepSeek key notes, clip rows (cover, title, score pill, duration, approve/reject/restore), preview modal
+  (native video, hook/description/reason, per-platform post copy), Export + "Clip again". ProjectList rows show
+  clip-specific state lines. Settings gains the Groq key field.
+- **Tests**: `tests/test_clipper_port.py` (21) — ported ClipperAi's assertion patterns: snap, parse_moments/picks,
+  stitch, standalone-chunk regression (fake `_post` measuring chunk durations), post caps, exact ASS lines,
+  shot segmentation, real-ffmpeg burn/no-burn pixel diff + all three orientations, and a full clip job through
+  jobs.start with fakes at the Groq/DeepSeek seams + export folder assertions + per-minute-count cap. Smoke gains
+  a fake Groq server (`ACS_GROQ_URL`), clip branches in the fake DeepSeek, and a full UI clip flow (local 12s
+  fixture → review → approve → export) with screenshots.
 
-After all three: the original M7 (refinement + packaging) still stands, plus real-key verification round.
+**Phase C — publishing integrations (implemented 2026-09-20, uncommitted):**
+Research first (2026-09-20): **Buffer's API has no upload endpoint** (developers.buffer.com hosting-media guide:
+"the Buffer API doesn't accept a file upload") — every published video must already sit at a stable public https
+URL, so publishing requires the user's own S3-compatible bucket (Cloudflare R2 works). **Metricool's MCP** is
+`https://ai.metricool.com/mcp`; header auth `X-Mc-Auth: <API key>` (Account Settings > API) works — n8n uses it —
+so no OAuth dance needed there. Package: `apps/backend/app/publish/`:
+- `store.py`: credentials the Python side owns (Buffer OAuth tokens, host keys, pending OAuth states) in the
+  `credentials` table (migration **008**, which also adds `publications`), encrypted with Windows **DPAPI via
+  ctypes** (the primitive safeStorage wraps; ponytail: plaintext off-Windows dev only).
+- `oauth.py`: Buffer OAuth 2 Authorization Code + PKCE with a **public client** (no secret; the user registers
+  their own OAuth app at developers.buffer.com, adds `http://127.0.0.1:8787/callback` as redirect, pastes the
+  client id in Settings). A loopback `HTTPServer` on 8787 catches the browser reply, exchanges the code, stores
+  tokens; single-use refresh tokens rotate atomically on refresh; failed refresh removes the connection.
+- `host.py`: SigV4 PUT (~40 lines, hand-rolled — no boto3) of each published clip to the user's bucket under an
+  unguessable name; returns the public URL. Settings: endpoint/bucket/public URL/region (settings row) + keys
+  (credentials store).
+- `buffer.py`: GraphQL port of ClipperAi's publishing (createPost/post/deletePost, channels with `usable`
+  filter, post_input per-network copy incl. YouTube title/category and reel thumbnails) cut down for one local
+  user: **no workspace keys, no local queue/worker** (Buffer holds scheduled posts itself), 30-day horizon,
+  per-(project, clip, channel) duplicate guard, `publications` status refresh on read (once a minute), unschedule
+  (sent posts refuse: delete on the network).
+- `metricool.py`: minimal stdlib **MCP client** (streamable HTTP: initialize -> notifications/initialized ->
+  tools/list -> tools/call; JSON or SSE replies; Mcp-Session-Id + MCP-Protocol-Version handled) with X-Mc-Auth.
+  `status()` = tools/list as the connection check.
+- RPC: 12 `publish.*` methods (buffer connection/channels/publish/calendar/publications/remove, host
+  status/save, metricool status/call). Settings gain `buffer_client_id` + host fields; secrets gain
+  **METRICOOL_API_KEY**. UI: Settings "Publishing" section (Buffer connect flow with polling, host config,
+  Metricool check) and a Publish dialog on approved clips (channel picker, post now / datetime-local schedule).
+- `app/cli.py`: `python -m app.cli` — projects | clips | export | channels | publish (with `--at`) | metricool
+  (`tools` or a tool name + `--args`). Uses the app's data dir; keys from repo `.env` like dev.
+- Tests: `tests/test_publish.py` (13) — fake Buffer GraphQL + fake auth.buffer.com + fake S3 host + fake MCP
+  server (all local ThreadingHTTPServers; HTTP/1.1 + Content-Length required or httpx's pool chokes); the OAuth
+  test drives the REAL loopback listener; SigV4 verified against an independently computed signature; OAuth token
+  endpoints are form-encoded (the fake must parse both).
 
-## Resume here (new chat — Milestone 7 Phase B)
+**After Phase C: the original M8 (refinement + packaging) still stands, plus real-key verification rounds.**
 
-1. `git log --oneline -1` → main should be at the "Phase A branding" commit or later; read this file +
-   DECISIONS.md, then `npm test` once to confirm a green base.
-2. Read ClipperAi's `apps/backend/clipper.py` and `test_clipper.py` fully, then port per the Phase B table:
-   add deps (`yt-dlp`, `opencv-python`) to requirements, `GROQ_API_KEY` to the secrets allowlist + Settings,
-   migration 007, then engine slices in order acquire → transcribe → select → crop → captions → render_clip,
-   each landing with tests in `tests/test_clipper_port.py` before moving to the next slice.
-3. Wire the job kind + RPC + UI ("Clip from video" flow and clip review). Full `npm test` + smoke extension.
-4. Phase C publishing (Buffer API adaptation, Metricool MCP client, `python -m app.cli`).
-5. Then M8 (refinement + packaging: electron-builder NSIS + PyInstaller-frozen backend, bundled ffmpeg).
+## Resume here (new chat — real-key verification, then M8)
+
+1. `git log --oneline -1` + read this file + DECISIONS.md, then `npm test` once to confirm a green base.
+2. Real-key verification round (nothing is committed yet — commit after this):
+   - Clips (Phase B): real Groq + DeepSeek -> clip a real YouTube link end to end; yt-dlp bot-check on the live
+     network; transcript cache hit on re-run; face-crop + caption quality on real footage.
+   - Buffer (Phase C): register the user's OAuth app (public/PKCE) at developers.buffer.com with redirect
+     `http://127.0.0.1:8787/callback`, paste client id in Settings, connect, add an R2 bucket, publish one clip
+     now and one scheduled; verify Buffer actually fetches the video from the bucket URL.
+   - Metricool (Phase C): paste the API key, Check connection, then use `python -m app.cli metricool tools` to
+     see the real tool schemas and wire a proper "post via Metricool" mapping for schedule_post (today the RPC
+     `publish.metricool_call` is a raw passthrough — the UI dialog only covers Buffer).
+3. M8 (refinement + packaging: electron-builder NSIS + PyInstaller-frozen backend, bundled ffmpeg).
+
+## Feature backlog / product direction (user-supplied 2026-09-20)
+
+Ideas and requirements to revisit in future phases. Items 2 and 3 have base integrations from Phase C; the rest
+is open. North star: **turn raw long-form content into polished, platform-ready short-form content with as
+little manual editing as possible** — every feature should improve content quality, automation, publishing,
+platform compatibility, user control, speed, reliability, cost efficiency, or professional appearance.
+
+1. **IP detection / YouTube-compatible network routing** (backlog / research): detect the app's public IP,
+   explore network configurations compatible with YouTube access (regional testing, download reliability);
+   proxy/VPN support only if legitimate; never hard-code IP ranges; stay inside YouTube's ToS.
+2. **Metricool** (integration, partially done): still open — inspect the real `schedule_post` MCP tool schema
+   with a real key and build a proper "post via Metricool" UI mapping (today: raw passthrough via
+   `publish.metricool_call` + CLI).
+3. **Buffer** (integration, partially done): still open — real-key verification end to end (OAuth app
+   registration with redirect `http://127.0.0.1:8787/callback`, R2 bucket, publish now + scheduled, confirm
+   Buffer fetches the video from the bucket). Architectural principle that already holds: the app must not
+   become the user's social-media credential store — OAuth only, DPAPI-encrypted tokens, retain the minimum.
+4. **Premium short-form quality** (core product direction, continuous): clips must feel like premium modern
+   Shorts, not automated clips — smart selection, strong hooks, dead-space removal, natural pacing, word-level
+   karaoke captions inside platform safe areas, subject-tracked reframing with smooth movement, clean audio
+   (noise reduction, balancing, music ducking), sparing transitions, professional typography. Priority order:
+   story > hook > pacing > clarity > visual quality > audio quality > platform-safe composition > brand
+   consistency. Never optimize for "looks AI generated."
 
 ## Open decisions / notes
 - Rail shows Dashboard, Create, Projects, Library, Queue, Exports (Queue/Exports landed with M6).
@@ -190,7 +286,13 @@ After all three: the original M7 (refinement + packaging) still stands, plus rea
 - Scoring weights are backend settings (`asset_weights`); user-facing knob is `asset_cooldown_days`.
 - `video_image` renders both outputs per piece; instagram_feed targeting also renders the 4:5 image (M6).
 - Palette text colour and brand clamps are hardcoded defaults (§24); per-user brand settings can come later.
-- Kokoro is wired but optional; default TTS is Windows SAPI. `python -m app.tts download` fetches models.
-- M7 open questions to settle in-chat: Buffer OAuth redirect/loopback design on a desktop app (ClipperAi used a
-  web callback); which Metricool MCP server endpoint + auth; whether clip projects are a new project `kind` or a
-  parallel entity; Groq key joins the secrets allowlist (DEEPSEEK/PEXELS/UNSPLASH today).
+- TTS swapped 2026-09-20: default is now **Kokoro** (82M int8 quantized, `kokoro-v1.0.int8.onnx` from the
+  kokoro-onnx GitHub releases; `python -m app.tts download` fetches it + voices.bin; verified live). Windows SAPI
+  stays as the zero-dep fallback. kokoro-onnx >= 0.6 flipped `create()` to sync — the code accepts both APIs.
+  Existing settings rows keep their stored provider; the kokoro default applies to fresh installs.
+- Clip open decisions to settle in-chat (Phase C): whether clip export should ALSO drive publishing directly from
+  the clip's per-platform posts; whether rejected clips should be deletable on disk to reclaim space.
+- ClipperAi's two-model selection (flash scan / pro picks) collapsed into the single `ai_model` setting — revisit
+  if pass-2 copy quality disappoints with a cheap model.
+- Smoke flakiness note: running heavy ffmpeg work in parallel with the smoke once killed the app window mid-run
+  ("Target page... has been closed"); rerunning it alone passed. Run smoke standalone.

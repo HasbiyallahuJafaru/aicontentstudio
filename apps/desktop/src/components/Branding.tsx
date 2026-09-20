@@ -1,6 +1,8 @@
 // Developer branding (PRD): interactive SVG logos for the website, LinkedIn and GitHub.
 // Shared by the splash (lower-left corner) and the "created by" footer on every Shell page.
+import { useEffect, useState } from 'react'
 import { studio } from '../lib/studio'
+import { cx } from './ui'
 
 export const LINKS = [
   { id: 'website', label: 'Website', url: 'https://hasbiyallahu.xyz',
@@ -24,14 +26,29 @@ export const LINKS = [
     ) },
 ] as const
 
+/** Icons take turns in the spotlight: the focused one sits at full size, the rest shrink back.
+ * Pauses while the pointer is over the strip, and never auto-plays under reduced motion. */
 export function SocialLinks({ size = 18 }: { size?: number }) {
+  const [focus, setFocus] = useState(0)
+  const [paused, setPaused] = useState(false)
+  useEffect(() => {
+    if (paused || matchMedia('(prefers-reduced-motion: reduce)').matches) return
+    const t = setInterval(() => setFocus((i) => (i + 1) % LINKS.length), 3000)
+    return () => clearInterval(t)
+  }, [paused])
+
   return (
-    <div className="flex items-center gap-1.5">
-      {LINKS.map((l) => (
+    <div className="flex items-center gap-1.5"
+      onMouseEnter={() => setPaused(true)} onMouseLeave={() => setPaused(false)}>
+      {LINKS.map((l, i) => (
         <a key={l.id} href={l.url} aria-label={l.label}
           onClick={(e) => { e.preventDefault(); studio.openExternal(l.url) }}
-          className="no-drag group relative grid size-9 place-items-center rounded-2xl text-ink-3 transition-[color,background-color,transform] duration-150 hover:bg-white/[0.08] hover:text-ink active:scale-95">
-          <span style={{ width: size, height: size }} className="block [&>svg]:size-full">{l.icon}</span>
+          className={cx('no-drag group relative grid size-9 place-items-center rounded-2xl',
+            'transition-[color,background-color,transform] duration-500 hover:bg-white/[0.08] hover:text-ink active:scale-95',
+            i === focus ? 'text-ink' : 'text-ink-3')}>
+          <span style={{ width: size, height: size, scale: i === focus ? 1 : 0.68 }}
+            className={cx('block transition-[scale] duration-500 ease-out-expo [&>svg]:size-full',
+              i === focus && 'anim-vibrate')}>{l.icon}</span>
           <span aria-hidden
             className="pointer-events-none absolute -top-9 left-1/2 -translate-x-1/2 translate-y-1 whitespace-nowrap rounded-field bg-black/90 px-2.5 py-1 text-2xs font-medium text-ink opacity-0 shadow-[inset_0_0_0_1px_rgb(255_244_232/0.12),0_8px_24px_-8px_rgb(0_0_0/0.8)] transition-all duration-150 group-hover:translate-y-0 group-hover:opacity-100">
             {l.label}

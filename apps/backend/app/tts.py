@@ -14,8 +14,9 @@ from pathlib import Path
 from app import config
 from app.errors import UserError
 
-MODELS_URL = "https://huggingface.co/Kokoro-82M/kokoro-v1.0.onnx/resolve/main"
-MODEL_FILES = {"kokoro-v1.0.onnx": 327, "voices.bin": 26}  # name: MB, for the download command
+MODELS_URL = "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.1"
+MODEL_FILES = {"kokoro-v1.0.int8.onnx": 92, "voices-v1.0.bin": 26}  # download name: MB, for the download command
+LOCAL_NAMES = {"voices-v1.0.bin": "voices.bin"}  # keep the old local name so existing installs stay valid
 
 
 class AudioResult:
@@ -57,7 +58,7 @@ class WindowsTTS(TTSProvider):
 
 
 class KokoroTTS(TTSProvider):
-    """Local neural TTS via kokoro-onnx. 82M params, CPU-friendly, Apache-2.0."""
+    """Local neural TTS via kokoro-onnx. Kokoro-82M quantized to int8 (~92 MB, CPU-friendly), Apache-2.0."""
     name = "kokoro"
 
     def __init__(self):
@@ -71,8 +72,12 @@ class KokoroTTS(TTSProvider):
                             "Run: python -m app.tts download  (in apps/backend, with the venv active)")
 
     @staticmethod
-    def model_path(name: str = "kokoro-v1.0.onnx") -> Path:
-        return config.DATA_DIR / "models" / name
+    def model_path(name: str = "kokoro-v1.0.int8.onnx") -> Path:
+        models = config.DATA_DIR / "models"
+        legacy = models / "kokoro-v1.0.onnx"  # the fp32 download some earlier installs still have
+        if name == "kokoro-v1.0.int8.onnx" and not (models / name).exists() and legacy.exists():
+            return legacy
+        return models / name
 
     async def generate(self, text, voice, speed):
         import kokoro_onnx
@@ -80,7 +85,8 @@ class KokoroTTS(TTSProvider):
         kokoro = kokoro_onnx.Kokoro(str(self.model_path()), str(self.model_path("voices.bin")))
         out = config.MEDIA_DIR / "audio" / f"narration-{uuid.uuid4().hex[:12]}.wav"
         out.parent.mkdir(parents=True, exist_ok=True)
-        samples, rate = await kokoro.create(text, voice=voice or "af_heart", speed=speed, lang="en-us")
+        result = kokoro.create(text, voice=voice or "af_heart", speed=speed, lang="en-us")
+        samples, rate = await result if asyncio.iscoroutine(result) else result  # api flipped sync in 0.6
         soundfile.write(out, samples, rate)
         return AudioResult(out)
 
@@ -92,18 +98,18 @@ def get_tts() -> TTSProvider:
 
 
 def download_models() -> None:
-    """python -m app.tts download: fetch the Kokoro onnx model + voices into the data dir."""
+    """python -m app.tts download: fetch the quantized Kokoro onnx model + voices into the data dir."""
     import urllib.request
     target = config.DATA_DIR / "models"
     target.mkdir(parents=True, exist_ok=True)
     for name, mb in MODEL_FILES.items():
-        dest = target / name
+        dest = target / LOCAL_NAMES.get(name, name)
         if dest.exists():
-            print(f"{name}: already present")
+            print(f"{dest.name}: already present")
             continue
         print(f"downloading {name} (~{mb} MB)...")
         urllib.request.urlretrieve(f"{MODELS_URL}/{name}", dest)
-    print("done:", json.dumps({n: str(target / n) for n in MODEL_FILES}))
+    print("done:", json.dumps({n: str(target / LOCAL_NAMES.get(n, n)) for n in MODEL_FILES}))
 
 
 if __name__ == "__main__":

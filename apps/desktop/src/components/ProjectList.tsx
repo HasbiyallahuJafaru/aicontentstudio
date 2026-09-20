@@ -2,8 +2,10 @@ import { FORMATS, formatDate, label, type Project } from '../lib/studio'
 import { cx } from './ui'
 
 const state = (p: Project) =>
-  p.status === 'draft' ? 'Draft' : p.status === 'generating' ? 'Generating' : p.status === 'failed' ? 'Failed'
-    : `${p.pieces_written ?? 0} of ${p.brief.quantity} written`
+  p.status === 'draft' ? 'Draft'
+    : p.status === 'generating' ? (p.brief.kind === 'clip' ? 'Clipping' : 'Generating')
+    : p.status === 'failed' ? 'Failed'
+    : p.brief.kind === 'clip' ? 'Clips ready' : `${p.pieces_written ?? 0} of ${p.brief.quantity} written`
 
 const formatLabel = (f: string) => FORMATS.find((x) => x.value === f)?.label ?? f
 
@@ -29,7 +31,9 @@ export function ProjectList({ projects, selected, onSelect, onDelete }: {
             <span className="min-w-0">
               <span className="block truncate text-[13px] font-medium text-ink">{p.name}</span>
               <span className="block truncate text-xs text-ink-3">
-                {label(p.brief.tone)}, {formatLabel(p.brief.format).toLowerCase()}, {p.brief.quantity} {p.brief.quantity === 1 ? 'piece' : 'pieces'}
+                {p.brief.kind === 'clip'
+                  ? <>Clip from video · {p.brief.source.replace(/^https?:\/\//, '')} · {p.brief.orientation}</>
+                  : <>{label(p.brief.tone)}, {formatLabel(p.brief.format).toLowerCase()}, {p.brief.quantity} {p.brief.quantity === 1 ? 'piece' : 'pieces'}</>}
               </span>
             </span>
             <span className="tnum grid justify-items-end text-xs">

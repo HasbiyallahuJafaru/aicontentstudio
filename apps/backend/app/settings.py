@@ -24,9 +24,9 @@ class Settings(BaseModel):
     asset_weights: dict[str, float] = Field(
         default_factory=lambda: {"relevance": 0.30, "visual_quality": 0.20, "composition": 0.15, "brand": 0.15,
                                  "color": 0.10, "novelty": 0.05, "motion": 0.05})
-    # PRD §49 TTS: provider, voice, speed, volume. 'windows' = SAPI voices (always there, offline);
-    # 'kokoro' = local neural voices (needs `python -m app.tts download`, see app/tts.py).
-    tts_provider: Literal["windows", "kokoro"] = "windows"
+    # PRD §49 TTS: provider, voice, speed, volume. 'kokoro' = the quantized local neural voices (default;
+    # needs `python -m app.tts download` once, see app/tts.py). 'windows' = SAPI voices (always there, offline).
+    tts_provider: Literal["windows", "kokoro"] = "kokoro"
     tts_voice: str = Field("", max_length=80)
     tts_speed: float = Field(1.0, ge=0.5, le=2)
     tts_volume: float = Field(1.0, ge=0, le=1)
@@ -38,6 +38,13 @@ class Settings(BaseModel):
     render_audio_bitrate: str = Field("192k", pattern=r"^\d+k$")
     render_width: int = Field(1080, ge=360, le=2160)
     render_height: int = Field(1920, ge=640, le=3840)
+    # Milestone 7 Phase C: publishing. Buffer's public OAuth client id (no secret — PKCE), and the user's own
+    # S3-compatible host for the videos Buffer publishes from (its keys live in the credentials table).
+    buffer_client_id: str = Field("", max_length=120)
+    publish_host_endpoint: str = Field("", max_length=300)
+    publish_host_bucket: str = Field("", max_length=200)
+    publish_host_public_url: str = Field("", max_length=300)
+    publish_host_region: str = Field("auto", max_length=40)
 
 
 def _load() -> Settings:

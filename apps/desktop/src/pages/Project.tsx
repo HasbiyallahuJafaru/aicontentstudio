@@ -3,6 +3,7 @@ import { ArrowLeft, Export, Play, Sparkle, Trash } from '@phosphor-icons/react'
 import { call, formatDate, FORMATS, hasKey, label, PLATFORMS, useJob, useQuery, BackendError,
   type Asset, type Piece, type Project as P, type Render } from '../lib/studio'
 import { Preview } from '../components/Preview'
+import { ClipWorkspace } from '../components/Clips'
 import { Button, ErrorNote, cx } from '../components/ui'
 
 export function Project({ id, onBack, onSettings }: { id: string; onBack: () => void; onSettings: () => void }) {
@@ -58,6 +59,7 @@ export function Project({ id, onBack, onSettings }: { id: string; onBack: () => 
 
   if (loadError) return <ErrorNote error={loadError} action={<Button onClick={onBack}>Back to projects</Button>} />
   if (!project) return null
+  if (project.brief.kind === 'clip') return <ClipWorkspace project={project} onBack={onBack} onSettings={onSettings} />
   const b = project.brief
   const meta = [label(b.tone), FORMATS.find((f) => f.value === b.format)!.label, `${b.quantity} ${b.quantity === 1 ? 'piece' : 'pieces'}`,
     b.platforms.map((p) => PLATFORMS.find((x) => x.value === p)!.label).join(', '), formatDate(project.created_at)]

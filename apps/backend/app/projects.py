@@ -1,6 +1,7 @@
 """Projects: one creative brief (topic, tone, format, quantity, platforms). Content pieces attach in Milestone 2."""
 import json
 import uuid
+from pathlib import Path
 from typing import Literal
 
 from pydantic import BaseModel, Field
@@ -22,17 +23,45 @@ class CreativeBrief(BaseModel):
     platforms: list[Platform] = Field(min_length=1)
 
 
+class ClipBrief(BaseModel):
+    """A clip project cuts one long video into captioned shorts instead of writing content."""
+    kind: Literal["clip"] = "clip"
+    source: str = Field(min_length=1, max_length=500)  # http(s) URL or a local file path
+    n: int | None = Field(None, ge=1, le=30)  # None = about one clip per minute of source
+    min_len: float = Field(30, ge=5, le=600)
+    max_len: float = Field(60, ge=10, le=900)
+    orientation: Literal["9:16", "16:9", "1:1"] = "9:16"
+    burn_captions: bool = True
+
+
 def _row(r) -> dict:
     return {**dict(r), "brief": json.loads(r["brief"])}
 
 
 def create(brief: dict) -> dict:
+    brief = brief or {}
+    if brief.get("kind") == "clip":
+        return _create_clip(ClipBrief.model_validate(brief))
     b = CreativeBrief.model_validate(brief)
     b.topic = b.topic.strip()
     pid = uuid.uuid4().hex[:12]
     with connect() as conn:
         conn.execute("INSERT INTO projects (id, name, brief) VALUES (?, ?, ?)",
                      (pid, b.topic[:1].upper() + b.topic[1:], b.model_dump_json()))
+    return get(pid)
+
+
+def _create_clip(b: ClipBrief) -> dict:
+    source = b.source.strip()
+    b.source = source
+    is_url = source.startswith(("http://", "https://"))
+    if not is_url and not Path(source).is_file():
+        raise UserError("Enter a video URL or a file path that exists on this computer.", source)
+    name = source.rstrip("/").rsplit("/", 1)[-1] if is_url else Path(source).stem
+    pid = uuid.uuid4().hex[:12]
+    with connect() as conn:
+        conn.execute("INSERT INTO projects (id, name, brief) VALUES (?, ?, ?)",
+                     (pid, name[:80], b.model_dump_json()))
     return get(pid)
 
 

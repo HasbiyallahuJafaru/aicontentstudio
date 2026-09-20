@@ -2,7 +2,8 @@
 import { safeStorage } from 'electron'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 
-export const SECRET_NAMES = ['DEEPSEEK_API_KEY', 'PEXELS_API_KEY', 'UNSPLASH_ACCESS_KEY'] as const
+export const SECRET_NAMES = ['DEEPSEEK_API_KEY', 'PEXELS_API_KEY', 'UNSPLASH_ACCESS_KEY', 'GROQ_API_KEY',
+  'METRICOOL_API_KEY'] as const
 export type SecretName = (typeof SECRET_NAMES)[number]
 
 export function createSecrets(file: string) {

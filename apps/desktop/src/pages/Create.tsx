@@ -1,19 +1,30 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import { CaretRight } from '@phosphor-icons/react'
-import { call, FORMATS, hasKey, label, PLATFORMS, TONES, TOPICS, useQuery, BackendError, type Brief, type Project, type Settings } from '../lib/studio'
-import { Button, Autocomplete, Choices, ErrorNote, Field, Input, PageHeader, cx } from '../components/ui'
+import { CaretRight, Scissors } from '@phosphor-icons/react'
+import { call, FORMATS, hasKey, label, PLATFORMS, TONES, TOPICS, useQuery, BackendError,
+  type Brief, type Project, type Settings } from '../lib/studio'
+import { Button, Autocomplete, Choices, ErrorNote, Field, Input, PageHeader, Select, cx } from '../components/ui'
 
 const PRESETS = [1, 3, 6]
+const ORIENTATIONS = [
+  { value: '9:16', label: '9:16 — Shorts, Reels, TikTok' },
+  { value: '16:9', label: '16:9 — landscape' },
+  { value: '1:1', label: '1:1 — square' },
+]
+
+type ClipForm = { source: string; n: number | null; orientation: '9:16' | '16:9' | '1:1'; min_len: number; max_len: number; burn_captions: boolean }
 
 export function Create({ onCreated }: { onCreated: (id: string) => void }) {
   const { data: settings } = useQuery<Settings>('settings.get')
+  const [mode, setMode] = useState<'write' | 'clip'>('write')
   const [brief, setBrief] = useState<Brief>()
+  const [clip, setClip] = useState<ClipForm>({ source: '', n: null, orientation: '9:16', min_len: 30, max_len: 60, burn_captions: true })
   const [custom, setCustom] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<BackendError>()
   const [keySet, setKeySet] = useState<boolean>()
+  const [groqSet, setGroqSet] = useState<boolean>()
 
-  useEffect(() => { hasKey('DEEPSEEK_API_KEY').then(setKeySet) }, [])
+  useEffect(() => { hasKey('DEEPSEEK_API_KEY').then(setKeySet); hasKey('GROQ_API_KEY').then(setGroqSet) }, [])
 
   useEffect(() => {
     if (settings && !brief) {
@@ -26,18 +37,22 @@ export function Create({ onCreated }: { onCreated: (id: string) => void }) {
   }, [settings, brief])
 
   if (!brief) return <PageHeader title="New project" />
-  const set = <K extends keyof Brief>(k: K, v: Brief[K]) => setBrief({ ...brief, [k]: v })
-  const valid = brief.topic.trim() && brief.platforms.length && brief.quantity >= 1 && brief.quantity <= 20
+
+  const writeValid = !!brief.topic.trim() && !!brief.platforms.length && brief.quantity >= 1 && brief.quantity <= 20
+  const clipValid = clip.source.trim().length > 1
 
   async function submit(e?: FormEvent) {
     e?.preventDefault()
-    if (!valid || saving) return
+    if (saving || (mode === 'write' ? !writeValid : !clipValid)) return
     setSaving(true)
     setError(undefined)
     try {
-      const p = await call<Project>('projects.create', { brief: { ...brief, topic: brief!.topic.trim().toLowerCase() } })
-      // A failed start still opens the project; its page shows the job error or the Generate button.
-      if (keySet) await call('jobs.start', { project_id: p.id }).catch(() => {})
+      const p = await call<Project>('projects.create', mode === 'clip'
+        ? { brief: { ...clip, kind: 'clip', source: clip.source.trim() } }
+        : { brief: { ...brief!, topic: brief!.topic.trim().toLowerCase() } })
+      // A failed start still opens the project; its page shows the job error or the action button.
+      if (mode === 'clip') await call('jobs.start', { project_id: p.id, kind: 'clip' }).catch(() => {})
+      else if (keySet) await call('jobs.start', { project_id: p.id }).catch(() => {})
       onCreated(p.id)
     } catch (err) {
       setError(err as BackendError)
@@ -45,63 +60,175 @@ export function Create({ onCreated }: { onCreated: (id: string) => void }) {
     }
   }
 
+  const clipSourceOk = clipValid
   return (
     <form onSubmit={submit} onKeyDown={(e) => (e.ctrlKey || e.metaKey) && e.key === 'Enter' && submit()}>
       <PageHeader title="New project" />
       <div className="grid grid-cols-[440px_minmax(0,1fr)] gap-5 max-[1180px]:grid-cols-[380px_minmax(0,1fr)]">
         <div className="glass grid content-start gap-7 p-8">
-          <Field label="Topic" hint="Pick a theme or type your own.">
-            {(id) => (
-              <Autocomplete id={id} value={brief.topic} suggestions={TOPICS} maxLength={60} autoFocus
-                onChange={(v) => set('topic', v)} />
-            )}
-          </Field>
+          <Choices legend="What do you want to make?" value={mode} onChange={(v) => setMode(v as typeof mode)}
+            options={[{ value: 'write', label: 'Write content' }, { value: 'clip', label: 'Clip from video' }]} />
 
-          <Choices legend="Tone" value={brief.tone} onChange={(v) => set('tone', v)}
-            options={TONES.map((t) => ({ value: t, label: label(t) }))} />
-
-          <Choices legend="Output" value={brief.format} onChange={(v) => set('format', v)} options={FORMATS} />
-
-          <div className="grid gap-2">
-            <Choices legend="Quantity" value={custom ? -1 : brief.quantity}
-              options={[...PRESETS.map((n) => ({ value: n, label: String(n) })), { value: -1, label: 'Custom' }]}
-              onChange={(v: number) => { setCustom(v === -1); if (v !== -1) set('quantity', v) }} />
-            {custom && (
-              <Input type="number" aria-label="Custom quantity" min={1} max={20} value={brief.quantity} className="w-24 tnum"
-                onChange={(e) => set('quantity', Math.max(1, Math.min(20, Number(e.target.value) || 1)))} />
-            )}
-          </div>
-
-          <Choices legend="Platforms" multiple value={brief.platforms} onChange={(v) => set('platforms', v)} options={PLATFORMS} />
-          {!brief.platforms.length && <p className="-mt-5 text-xs text-danger">Choose at least one platform.</p>}
-
-          <details className="group">
-            <summary className="flex cursor-pointer list-none items-center gap-1.5 text-[13px] text-ink-2 hover:text-ink">
-              <CaretRight size={12} weight="bold" className="transition-transform duration-150 group-open:rotate-90" />
-              Advanced
-            </summary>
-            <div className="grid gap-5 pt-5">
-              <Field label="Mood" hint="Optional, for example quiet determination.">
-                {(id) => <Input id={id} value={brief.mood} maxLength={80} onChange={(e) => set('mood', e.target.value)} />}
+          {mode === 'write' ? <WriteForm brief={brief} setBrief={setBrief} custom={custom} setCustom={setCustom}
+            keySet={keySet} error={error} saving={saving} /> : (
+            <>
+              <Field label="Video" hint="A YouTube or other link, or a path to a file on this computer.">
+                {(id) => (
+                  <Input id={id} value={clip.source} spellCheck={false} autoFocus
+                    placeholder="https://… or C:\videos\talk.mp4" onChange={(e) => setClip({ ...clip, source: e.target.value })} />
+                )}
               </Field>
-              <Field label="Audience" hint="Optional, for example young professionals.">
-                {(id) => <Input id={id} value={brief.audience} maxLength={80} onChange={(e) => set('audience', e.target.value)} />}
+
+              <Field label="Orientation">
+                {(id) => (
+                  <Select id={id} value={clip.orientation} options={ORIENTATIONS}
+                    onChange={(v) => setClip({ ...clip, orientation: v as ClipForm['orientation'] })} />
+                )}
               </Field>
-            </div>
-          </details>
 
-          {error && <ErrorNote error={error} />}
+              <div className="grid gap-2">
+                <Choices legend="How many clips" value={clip.n ?? -1}
+                  options={[{ value: -1, label: 'Auto' }, { value: 3, label: '3' }, { value: 5, label: '5' }, { value: 10, label: '10' }]}
+                  onChange={(v: number) => setClip({ ...clip, n: v === -1 ? null : v })} />
+                <p className="text-xs text-ink-3">Auto picks about one clip per minute of video, judging by what's said.</p>
+              </div>
 
-          <div className="grid gap-3 border-t border-line pt-6">
-            <div><Button variant="primary" type="submit" disabled={!valid || saving} kbd="Ctrl Enter">{saving ? 'Starting' : keySet ? 'Create and generate' : 'Save as draft'}</Button></div>
-            <p className="text-xs text-ink-3">{keySet ? 'DeepSeek plans the batch, then writes each piece. You can cancel at any time.'
-              : 'Add your DeepSeek API key in Settings to generate. The brief is saved as a draft until then.'}</p>
-          </div>
+              <Choices legend="Captions" value={clip.burn_captions ? 'burn' : 'clean'}
+                options={[{ value: 'burn', label: 'Burned in' }, { value: 'clean', label: 'Clean video' }]}
+                onChange={(v) => setClip({ ...clip, burn_captions: v === 'burn' })} />
+
+              <details className="group">
+                <summary className="flex cursor-pointer list-none items-center gap-1.5 text-[13px] text-ink-2 hover:text-ink">
+                  <CaretRight size={12} weight="bold" className="transition-transform duration-150 group-open:rotate-90" />
+                  Advanced
+                </summary>
+                <div className="grid grid-cols-2 gap-4 pt-5">
+                  <Field label="Shortest (s)" hint="Aim for clips at least this long.">
+                    {(id) => <Input id={id} type="number" min={5} max={600} className="tnum" value={clip.min_len}
+                      onChange={(e) => setClip({ ...clip, min_len: Math.max(5, Math.min(600, Number(e.target.value) || 30)) })} />}
+                  </Field>
+                  <Field label="Longest (s)" hint="Aim for clips at most this long.">
+                    {(id) => <Input id={id} type="number" min={10} max={900} className="tnum" value={clip.max_len}
+                      onChange={(e) => setClip({ ...clip, max_len: Math.max(10, Math.min(900, Number(e.target.value) || 60)) })} />}
+                  </Field>
+                </div>
+              </details>
+
+              {error && <ErrorNote error={error} />}
+
+              <div className="grid gap-3 border-t border-line pt-6">
+                <div><Button variant="primary" type="submit" disabled={!clipSourceOk || saving} kbd="Ctrl Enter">
+                  <Scissors size={14} />{saving ? 'Starting' : 'Clip this video'}</Button></div>
+                <p className="text-xs text-ink-3">
+                  {groqSet && keySet
+                    ? 'Groq transcribes the video, DeepSeek picks the moments. You can cancel at any time.'
+                    : 'Add a Groq API key (transcription) and a DeepSeek API key (selection) in Settings to clip.'}
+                </p>
+              </div>
+            </>
+          )}
         </div>
 
-        <BatchPreview brief={brief} />
+        {mode === 'write'
+          ? <BatchPreview brief={brief} />
+          : <ClipPreviewPanel form={clip} groqSet={!!groqSet} deepseekSet={!!keySet} />}
       </div>
     </form>
+  )
+}
+
+/** The write-content brief form, unchanged from the social flow. */
+function WriteForm({ brief, setBrief, custom, setCustom, keySet, error, saving }: {
+  brief: Brief; setBrief: (b: Brief) => void; custom: boolean; setCustom: (v: boolean) => void
+  keySet?: boolean; error?: BackendError; saving: boolean
+}) {
+  const set = <K extends keyof Brief>(k: K, v: Brief[K]) => setBrief({ ...brief, [k]: v })
+  const valid = brief.topic.trim() && brief.platforms.length && brief.quantity >= 1 && brief.quantity <= 20
+  return (
+    <div className="grid gap-7">
+      <Field label="Topic" hint="Pick a theme or type your own.">
+        {(id) => (
+          <Autocomplete id={id} value={brief.topic} suggestions={TOPICS} maxLength={60} autoFocus
+            onChange={(v) => set('topic', v)} />
+        )}
+      </Field>
+
+      <Choices legend="Tone" value={brief.tone} onChange={(v) => set('tone', v)}
+        options={TONES.map((t) => ({ value: t, label: label(t) }))} />
+
+      <Choices legend="Output" value={brief.format} onChange={(v) => set('format', v)} options={FORMATS} />
+
+      <div className="grid gap-2">
+        <Choices legend="Quantity" value={custom ? -1 : brief.quantity}
+          options={[...PRESETS.map((n) => ({ value: n, label: String(n) })), { value: -1, label: 'Custom' }]}
+          onChange={(v: number) => { setCustom(v === -1); if (v !== -1) set('quantity', v) }} />
+        {custom && (
+          <Input type="number" aria-label="Custom quantity" min={1} max={20} value={brief.quantity} className="w-24 tnum"
+            onChange={(e) => set('quantity', Math.max(1, Math.min(20, Number(e.target.value) || 1)))} />
+        )}
+      </div>
+
+      <Choices legend="Platforms" multiple value={brief.platforms} onChange={(v) => set('platforms', v)} options={PLATFORMS} />
+      {!brief.platforms.length && <p className="-mt-5 text-xs text-danger">Choose at least one platform.</p>}
+
+      <details className="group">
+        <summary className="flex cursor-pointer list-none items-center gap-1.5 text-[13px] text-ink-2 hover:text-ink">
+          <CaretRight size={12} weight="bold" className="transition-transform duration-150 group-open:rotate-90" />
+          Advanced
+        </summary>
+        <div className="grid gap-5 pt-5">
+          <Field label="Mood" hint="Optional, for example quiet determination.">
+            {(id) => <Input id={id} value={brief.mood} maxLength={80} onChange={(e) => set('mood', e.target.value)} />}
+          </Field>
+          <Field label="Audience" hint="Optional, for example young professionals.">
+            {(id) => <Input id={id} value={brief.audience} maxLength={80} onChange={(e) => set('audience', e.target.value)} />}
+          </Field>
+        </div>
+      </details>
+
+      {error && <ErrorNote error={error} />}
+
+      <div className="grid gap-3 border-t border-line pt-6">
+        <div><Button variant="primary" type="submit" disabled={!valid || saving} kbd="Ctrl Enter">
+          {saving ? 'Starting' : keySet ? 'Create and generate' : 'Save as draft'}</Button></div>
+        <p className="text-xs text-ink-3">{keySet ? 'DeepSeek plans the batch, then writes each piece. You can cancel at any time.'
+          : 'Add your DeepSeek API key in Settings to generate. The brief is saved as a draft until then.'}</p>
+      </div>
+    </div>
+  )
+}
+
+/** What clipping produces: one 9:16 frame per clip and the pipeline in words. */
+function ClipPreviewPanel({ form, groqSet, deepseekSet }: { form: ClipForm; groqSet: boolean; deepseekSet: boolean }) {
+  const [w, h] = form.orientation === '16:9' ? [16, 9] : form.orientation === '1:1' ? [1, 1] : [9, 16]
+  const ready = groqSet && deepseekSet
+  return (
+    <section aria-label="Clip preview" className="glass relative isolate sticky top-0 self-start overflow-hidden p-7">
+      <div aria-hidden className="absolute inset-0 -z-10 bg-[radial-gradient(80%_60%_at_80%_0%,rgb(240_135_58/0.18),transparent_70%)]" />
+      <div className="flex items-baseline justify-between gap-4 pb-6">
+        <h2 className="font-display text-lg font-semibold tracking-[-0.02em]">Clip from video</h2>
+        <p className="tnum text-xs text-ink-3">{form.n ? `${form.n} clips` : 'auto count'}</p>
+      </div>
+      <div className="flex items-end gap-3">
+        <div className="rounded-[10px] bg-black/30 shadow-[inset_0_0_0_1px_rgb(255_244_232/0.1)]"
+          style={{ width: form.orientation === '16:9' ? 216 : form.orientation === '1:1' ? 122 : 69, aspectRatio: `${w} / ${h}` }} />
+        <div className="grid gap-1.5 pb-1">
+          {[1, 2, 3].map((i) => (
+            <div key={i} className={cx('rounded-[8px] bg-black/20 shadow-[inset_0_0_0_1px_rgb(255_244_232/0.08)]', i === 1 ? 'h-5 w-40' : 'h-3 w-32')} />
+          ))}
+        </div>
+      </div>
+      <ol className="grid gap-2.5 pt-6 text-[13px] text-ink-2">
+        <li>1. The video downloads (or a local file is used as-is).</li>
+        <li>2. Groq transcribes every word with timestamps.</li>
+        <li>3. DeepSeek finds the {form.min_len}-{form.max_len}s moments that stand alone and writes per-platform post copy.</li>
+        <li>4. Each clip is cropped to the speaker, captioned{form.burn_captions ? ', captions burned in,' : ''} and rendered as {form.orientation} MP4.</li>
+      </ol>
+      <p className="pt-5 text-xs text-ink-3">
+        {ready ? 'Every clip keeps its caption file, cover frame and post copy for review here.'
+          : 'Needs a Groq key and a DeepSeek key in Settings before clipping can start.'}
+      </p>
+    </section>
   )
 }
 

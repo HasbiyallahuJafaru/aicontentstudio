@@ -10,24 +10,41 @@ import assert from 'node:assert/strict'
 
 const QUOTES = ['Show up before the feeling does.', 'Small steps still count as moving.', 'The quiet work is the real work.']
 const SUBJECTS = ['runner on a mountain ridge at dawn', 'empty city crosswalk at night', 'fog rolling over a still lake']
+const CLIP = { title: 'The honest hour', hook: 'Most people quit too early', description: 'A story about lasting longer.' }
 let piece = 0
 const fake = createServer((req, res) => {
   let body = ''
   req.on('data', (c) => (body += c))
   req.on('end', () => {
-    const prompt = JSON.parse(body).messages.at(-1).content
-    const out = prompt.includes('Plan a batch')
+    const text = JSON.parse(body).messages.map((m) => m.content).join('\n')  // clip prompts ride the system message
+    const out = text.includes('Plan a batch')
       ? { batch_theme: 'discipline', pieces: SUBJECTS.map((s, i) => ({ angle: ['showing up', 'small habits', 'quiet work'][i], visual_subject: s, visual_type: 'video', intensity: 'medium', narration_style: 'calm reflective' })) }
-      : {
-          quote: { text: QUOTES[piece % 3], author: null },
-          narration: { text: `Nobody sees the early hours. ${QUOTES[piece++ % 3]} Keep going anyway.`, delivery: 'calm_reflective' },
-          visual: { preferred_type: 'video', search_query: 'runner mountain ridge sunrise', secondary_query: 'trail runner dawn fog', mood: 'quiet determination' },
-          design: { text_density: 'low', animation: 'slow', composition: 'editorial' },
-          metadata: { title: 'Before the feeling', description: 'A short reflection on discipline and showing up.', caption: 'Start before you feel ready.',
-            hashtags: ['#discipline', '#mindset', '#habits'], keywords: ['discipline', 'habits', 'consistency'], alt_text: 'A lone runner on a ridge at sunrise.' },
-        }
+      : text.includes('scan a video transcript')  // clip pass 1: candidate moments
+        ? { moments: [{ start: 0.5, end: 9.5, score: 90, reason: 'a story that lands' }] }
+        : text.includes('senior short-form video editor')  // clip pass 2: picks + copy
+          ? { clips: [{ id: 0, score: 94, hook: CLIP.hook, title: CLIP.title, description: CLIP.description,
+                       hashtags: ['#story'], posts: { tiktok: 'pt', instagram: 'pi', youtube: 'py', linkedin: 'pl', facebook: 'pf', x: 'px' } }] }
+          : {
+              quote: { text: QUOTES[piece % 3], author: null },
+              narration: { text: `Nobody sees the early hours. ${QUOTES[piece++ % 3]} Keep going anyway.`, delivery: 'calm_reflective' },
+              visual: { preferred_type: 'video', search_query: 'runner mountain ridge sunrise', secondary_query: 'trail runner dawn fog', mood: 'quiet determination' },
+              design: { text_density: 'low', animation: 'slow', composition: 'editorial' },
+              metadata: { title: 'Before the feeling', description: 'A short reflection on discipline and showing up.', caption: 'Start before you feel ready.',
+                hashtags: ['#discipline', '#mindset', '#habits'], keywords: ['discipline', 'habits', 'consistency'], alt_text: 'A lone runner on a ridge at sunrise.' },
+            }
     setTimeout(() => res.end(JSON.stringify({ choices: [{ message: { content: JSON.stringify(out) } }] })), 400)
   })
+}).listen(0)
+
+// Fake Groq Whisper: word-level verbose_json over the whole fixture, whatever audio arrives
+const WORDS = ['One.', 'Two.', 'Three.', 'Four.', 'Five.', 'Six.', 'Seven.', 'Eight.', 'Nine.', 'Ten.', 'Eleven.', 'Twelve.']
+const fakeGroq = createServer((req, res) => {
+  req.on('data', () => {})
+  req.on('end', () => res.end(JSON.stringify({
+    language: 'en',
+    segments: [{ start: 0, end: 11.5, text: WORDS.join(' ') }],
+    words: WORDS.map((w, i) => ({ word: w, start: i * 0.95, end: i * 0.95 + 0.6 })),
+  })))
 }).listen(0)
 
 /** An 8x8 BMP whose stripes repeat every `period` pixels: distinct-looking thumbnails, so each asset hashes differently. */
@@ -81,7 +98,7 @@ const root = mkdtempSync(join(tmpdir(), 'acs-'))
 const out = process.env.SMOKE_OUT || join(tmpdir(), 'acs-smoke')
 mkdirSync(out, { recursive: true })
 const env = { ...process.env, ACS_DATA_DIR: join(root, 'data'), ACS_DEEPSEEK_URL: `http://127.0.0.1:${fake.address().port}`,
-  ACS_PEXELS_URL: pexelsBase }
+  ACS_PEXELS_URL: pexelsBase, ACS_GROQ_URL: `http://127.0.0.1:${fakeGroq.address().port}` }
 delete env.ELECTRON_RENDERER_URL
 delete env.ELECTRON_RUN_AS_NODE
 
@@ -143,7 +160,7 @@ await assertNoHorizontalOverflow(win, 'create')
 
 // Settings: keys (encrypted) + a default
 await win.keyboard.press('Control+,')
-for (const [labelText, value] of [['DeepSeek API key', 'sk-smoke-deepseek'], ['Pexels API key', 'smoke-test-key-123']]) {
+for (const [labelText, value] of [['DeepSeek API key', 'sk-smoke-deepseek'], ['Pexels API key', 'smoke-test-key-123'], ['Groq API key', 'gsk-smoke-groq']]) {
   await win.getByLabel(labelText).fill(value)
   await win.getByLabel(labelText).press('Enter')
 }
@@ -186,6 +203,8 @@ for (const f of readdirSync(assetsDir).filter((f) => f.endsWith('.mp4'))) {
 }
 await win.keyboard.press('Control+,')
 await win.getByRole('heading', { name: 'Narration' }).waitFor()
+await win.getByLabel('Voice engine').click()
+await win.getByText('Windows voices (offline)', { exact: true }).click() // kokoro (the default) has no model in the throwaway data dir
 await win.getByLabel('Speed').fill('1.1')
 await win.getByRole('button', { name: 'Save changes' }).click()
 await win.getByText('Saved', { exact: true }).waitFor()
@@ -289,10 +308,53 @@ await win.getByRole('button', { name: 'Library' }).click()
 await win.getByText('Pexels · Video').first().waitFor()
 assert.equal(await win.getByText('Pexels · Video').count(), 3, 'assets survive restart')
 await shot(win, '7-library-restart')
+
+// Clip from video (Milestone 7 Phase B): local 12s fixture through fake Groq + the fake DeepSeek's clip passes
+const talk = join(root, 'talk.mp4')
+{
+  const r = spawnSync('ffmpeg', ['-v', 'error', '-y', '-f', 'lavfi', '-i', 'testsrc2=size=640x360:rate=30:duration=12',
+    '-f', 'lavfi', '-i', 'sine=duration=12', '-shortest', talk], { timeout: 120_000, encoding: 'utf8' })
+  assert.equal(r.status, 0, `clip fixture failed: ${r.stderr}`)
+}
+await win.keyboard.press('Control+N')
+const chooseCreate = (legend, option) =>
+  win.locator('fieldset').filter({ hasText: legend }).getByText(option, { exact: true }).click()
+await chooseCreate('What do you want to make?', 'Clip from video')
+await win.getByLabel('Video', { exact: true }).fill(talk)
+await win.getByText('Advanced').click()
+await win.getByLabel('Shortest (s)').fill('5')
+await win.getByLabel('Longest (s)').fill('10')
+await shot(win, '8-clip-create')
+await win.keyboard.press('Control+Enter')
+await win.waitForTimeout(3000)
+await shot(win, 'debug-after-submit')
+try {
+  await win.getByText(CLIP.title).waitFor({ timeout: 240_000 })
+} catch (e) {
+  await shot(win, 'debug-clip-job')
+  console.error('PAGE TEXT AT TIMEOUT:', await win.evaluate(() => document.body.innerText.slice(0, 2000)))
+  throw e
+}
+await shot(win, '8b-clip-project')
+await assertNoHorizontalOverflow(win, 'clip-project')
+await win.getByRole('button', { name: 'Preview', exact: true }).click()
+await win.locator('[role="dialog"] video').waitFor({ timeout: 15_000 })
+await win.getByText(CLIP.description).waitFor()
+await win.getByText('Post copy per platform').click()
+await win.getByText('pt', { exact: true }).waitFor()
+await shot(win, '8c-clip-preview')
+await win.keyboard.press('Escape')
+await win.getByRole('button', { name: 'Approve' }).click()
+await win.getByText('Approved', { exact: true }).waitFor()
+await win.getByRole('button', { name: 'Export', exact: true }).click()
+await win.getByText('Exported', { exact: true }).waitFor({ timeout: 120_000 })
+await shot(win, '8d-clip-exported')
+
 await win.keyboard.press('Control+N')
 assert.equal(await win.getByRole('radio', { name: '3', exact: true }).isChecked(), true, 'settings survive restart')
 await app.close()
 fake.close()
+fakeGroq.close()
 fakePexels.close()
 
 console.log(`smoke ok, screenshots in ${out}`)

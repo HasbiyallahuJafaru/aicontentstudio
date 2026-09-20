@@ -90,6 +90,9 @@
 @media (prefers-reduced-transparency: reduce) {
   .glass { background: var(--color-panel); backdrop-filter: none; }
 }
+/* backdrop-filter makes each panel its own stacking context, so a dropdown's z-index
+   cannot escape it. Raise whichever panel holds the open dropdown above its siblings. */
+.glass:has([aria-expanded='true']) { position: relative; z-index: 40; }
 
 .drag { -webkit-app-region: drag; }
 .no-drag { -webkit-app-region: no-drag; }
@@ -104,7 +107,16 @@
   from { opacity: 0; transform: translateY(6px); filter: blur(4px); }
   to { opacity: 1; transform: none; filter: none; }
 }
+/* Tips left, back to centre, right, back to centre.
+   Uses `rotate` rather than `transform` so it never fights an inline `scale`. */
+@keyframes icon-vibrate {
+  0%, 50%, 100% { rotate: 0deg; }
+  25% { rotate: -45deg; }
+  75% { rotate: 45deg; }
+}
 @media (prefers-reduced-motion: no-preference) {
   .anim-slot { animation: slot-in var(--duration-base) var(--ease-out-expo) both; animation-delay: calc(var(--i, 0) * 35ms); }
   .anim-page { animation: page-in 320ms var(--ease-out-expo) both; }
+  /* Delayed so the shake starts once the icon has finished growing. */
+  .anim-vibrate { animation: icon-vibrate 1s ease-in-out 0.45s; }
 }
