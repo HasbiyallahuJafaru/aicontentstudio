@@ -15,8 +15,9 @@ Update it after every phase.
 | Milestone 4: visual analysis, HEX extraction, palette engine, composition detection | Done, verified on constructed images. Pushed: cb17653. |
 | Splash + root README (user request) | Done. Pushed: b73d254 + 84a95ff. |
 | Milestone 5: TTS, audio mixing, FFmpeg renderers, render UI | Done, verified, pushed: b815a50. |
-| **Milestone 6**: preview, regeneration, queue, export | **Done, verified 2026-09-20: 74 backend tests green, full `npm test` (backend + tsc + build + smoke incl. preview/approve/regenerate/export) green. Nothing committed.** |
-| M7 refinement, packaging | Not started |
+| **Milestone 6**: preview, regeneration, queue, export | **Done, verified, pushed: 8f78c3c.** |
+| **Milestone 7 (redefined)**: developer branding + ClipperAi engine merge + Buffer/Metricool publishing | **Plan written below — build in a fresh chat.** |
+| M8 (was M7): refinement, packaging | Not started |
 
 Git: `main` on https://github.com/HasbiyallahuJafaru/aicontentstudio. Commit/push only when the user asks.
 
@@ -111,18 +112,9 @@ Git: `main` on https://github.com/HasbiyallahuJafaru/aicontentstudio. Commit/pus
 
 **Verified 2026-09-20:** full `npm test` green (74 backend tests, tsc, build, smoke with the full M6 flow incl.
 export folders on disk). Screenshots reviewed: preview modal with indicators, project with exported chips, queue
-tabs, exports run. WindowsTTS + real ffmpeg verified. Nothing committed yet (M6).
+tabs, exports run. WindowsTTS + real ffmpeg verified. M6 pushed as 8f78c3c.
 **Not verified:** real DeepSeek/Pexels/Unsplash calls (need user keys); analyser thresholds on real photos;
 `npm run dev` HMR; developer link in a packaged build; renders at non-1080 settings in the UI; Kokoro end to end.
-
-## Resume here (after Milestone 6)
-
-1. Commit/push M6 when the user asks (nothing committed since b815a50 M5).
-2. M7: refinement pass + packaging (electron-builder NSIS + PyInstaller-frozen backend in resources/backend,
-   bundled ffmpeg per DECISIONS). Also the calendar view (§74) only if the user asks for it — it is not in the
-   M6/M7 scope the handover tracks.
-3. Real-key verification round (pending since M3): one real DeepSeek batch + real Pexels downloads; watch a
-   rendered video end to end; tune prompts/thresholds if needed.
 
 ## How to run
 ```bash
@@ -132,14 +124,60 @@ npm test          # all checks
 graphify update . # refresh the code map after changes
 ```
 
-## Next after M6
-- See "Resume here" above: commit M6 when asked, then M7 (refinement + packaging), plus the real-key
-  verification round pending since M3.
+## Next after M6 — Milestone 7 was REDEFINED by the user (2026-09-20)
+
+The user asked to pull in the feature set of their other project **ClipperAi** (`C:\Users\USER\Documents\ClipperAi`,
+read its README.md — "YT-Clipper": long-video → shorts engine) instead of going to packaging next. New plan,
+built in a **fresh chat** starting from this file:
+
+**Phase A — developer branding (small, do first):**
+- Splash: Instagram + GitHub icon buttons in the LOWER-LEFT corner. Instagram handle is TBD (user will supply;
+  do not guess). GitHub: https://github.com/HasbiyallahuJafaru
+- Every Shell page: a quiet "created by" footer with three interactive SVG logos — website
+  https://hasbiyallahu.xyz , LinkedIn https://www.linkedin.com/in/hasbiyallahu-jafaru/ , GitHub
+  https://github.com/HasbiyallahuJafaru . Interactive = hover states, open via `studio.openExternal` (https-only).
+  Inline SVGs (brand paths), no icon-font dependency. Replaces the splash's "Meet our developer" text button.
+
+**Phase B — ClipperAi engine merge (the big one).** Port the engine behind ClipperAi's `apps/backend/clipper.py`
+(+ `downloader.py`) into `apps/backend/app/clipper/` as desktop modules, keeping OUR job system (SQLite + threads,
+jobs.py), OUR storage (local `media/` served by `media://` — NOT R2), and NO billing/accounts/Clerk/Paystack
+(those are ClipperAi's SaaS layer, explicitly out of scope). Features to bring:
+1. Long-video acquisition: yt-dlp download from a link, or a local file pick (Electron file dialog).
+2. Word-level transcription via Groq Whisper (new setting `groq_api_key` in secrets; DeepSeek already wired).
+3. Two-pass DeepSeek clip selection: moments → picks with score/hook/title/description/reason/hashtags and
+   per-platform posts (tiktok, instagram, youtube, linkedin, facebook, x) — matches our §68 metadata flow.
+4. Word-boundary snapping, OpenCV face tracking → dynamic 9:16 crop (largest-face framing), shot-change deadzone.
+5. Word-level karaoke ASS captions burned via libass/ffmpeg (per-project toggle for already-subtitled videos).
+6. FFmpeg clip render + thumbnail 1s in. New deps: `yt-dlp`, `opencv-python` (DECISIONS said OpenCV waits for a
+   real need — this is it), verify libass in the bundled ffmpeg (see video-agent-kit env-setup skill).
+7. UI: a "Clip from video" flow (new project kind or section on Create), clip review list reusing the Preview
+   modal, clips as first-class pieces (status/review pending→approved), ZIP/exports reuse.
+
+**Phase C — publishing integrations ("connect to other apps for upload via CLI or API"):**
+1. Buffer via API: adapt ClipperAi's `publishing.py` (Buffer GraphQL: channels, post now, schedule, calendar
+   spread, unschedule) + `oauth.py` to the desktop (loopback/redirect design needed — decide in-chat).
+2. Metricool via MCP: the desktop backend acts as an MCP CLIENT talking to Metricool's MCP server (new work —
+   research Metricool's MCP endpoint/auth in-chat; no existing code to port).
+3. A small CLI entry (`python -m app.cli`) so uploads/exports can be driven from the terminal/other tools.
+
+After all three: the original M7 (refinement + packaging) still stands, plus real-key verification round.
+
+## Resume here (new chat — Milestone 7 Phase A)
+
+1. Confirm main is at 8f78c3c or later (`git log --oneline -1`); read this file + DECISIONS.md, then `npm test` once.
+2. Phase A branding (above), run `npm test`, screenshot the splash + a Shell page footer.
+3. Phase B engine merge — port clipper.py in slices (acquire → transcribe → select → crop → captions → render),
+   each with tests (`tests/test_clipper_port.py`), reusing the patterns in ClipperAi's `test_clipper.py`.
+4. Phase C publishing integrations.
+5. Then M8 (refinement + packaging: electron-builder NSIS + PyInstaller-frozen backend, bundled ffmpeg).
 
 ## Open decisions / notes
-- Rail shows Dashboard, Create, Projects, Library; Queue and Exports arrive with M6.
-- Platform metadata adapters (PRD §69) come with export (M6); pieces hold one metadata set.
+- Rail shows Dashboard, Create, Projects, Library, Queue, Exports (Queue/Exports landed with M6).
+- Platform metadata adapters (PRD §69) landed with M6 export; pieces hold one metadata set, adapted per platform.
 - Scoring weights are backend settings (`asset_weights`); user-facing knob is `asset_cooldown_days`.
-- `video_image` renders both outputs per piece now (M5); per-platform pairs still land with export (M6).
+- `video_image` renders both outputs per piece; instagram_feed targeting also renders the 4:5 image (M6).
 - Palette text colour and brand clamps are hardcoded defaults (§24); per-user brand settings can come later.
 - Kokoro is wired but optional; default TTS is Windows SAPI. `python -m app.tts download` fetches models.
+- M7 open questions to settle in-chat: Buffer OAuth redirect/loopback design on a desktop app (ClipperAi used a
+  web callback); which Metricool MCP server endpoint + auth; whether clip projects are a new project `kind` or a
+  parallel entity; Groq key joins the secrets allowlist (DEEPSEEK/PEXELS/UNSPLASH today).

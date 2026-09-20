@@ -8,6 +8,12 @@ TTS, FFmpeg render, per-platform metadata) and exports them for Metricool. Local
 - **Progress and next steps: `.claude/handover.md`. Read it first in every new chat, and update it at the end of
   every phase (or before the chat runs out).**
 
+## Developer identity (for branding + integrations)
+- Website: https://hasbiyallahu.xyz · GitHub: https://github.com/HasbiyallahuJafaru ·
+  LinkedIn: https://www.linkedin.com/in/hasbiyallahu-jafaru/ · Instagram: TBD (user will supply).
+- "Created by" footer (interactive SVG logos for website/LinkedIn/GitHub) goes on every Shell page, and the splash
+  gets Instagram+GitHub icons lower-left — see handover Milestone 7 Phase A.
+
 ## Save tokens (user priority)
 Don't read `Prd.txt` or big files end to end. Look things up with graphify, then read only the lines it points to:
 ```bash
