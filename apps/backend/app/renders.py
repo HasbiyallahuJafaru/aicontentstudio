@@ -35,6 +35,32 @@ def _wanted_kinds(brief: dict, piece: dict) -> list[str]:
     return sorted(set(kinds), key=lambda k: k != "video")
 
 
+GENRE_LOOKS = {"hope": "warm", "speech": "vivid", "stoic": "cool", "history": "mono", "books": "cool",
+               "cinema": "mono"}
+
+
+def _shots_for(asset: dict, duration: float) -> list[dict]:
+    """The edit plan for a video piece: the asset is cut into 2-3 motion shots (zoom in / pan / zoom out) and a
+    still cutaway made from its own cover frame is merged in the middle — video and image in one timeline, the
+    way the top motivational edits are cut. Short sources loop instead of running out mid-shot."""
+    src = config.MEDIA_DIR / asset["local_path"]
+    if asset["asset_type"] == "image":
+        return [{"src": str(src), "seek": 0.0, "length": duration, "still": True, "motion": "push"}]
+    avail = max(asset["duration"] or duration, 0.5)
+    n = 3 if duration >= 16 else 2
+    seg = duration / n
+    shots = []
+    for i in range(n):
+        seek = round(avail * i / n, 2)
+        shots.append({"src": str(src), "seek": seek, "length": round(seg, 3), "still": False,
+                      "motion": ("in", "pan", "out")[i % 3], "loop": seek + seg > avail})
+    if asset.get("thumb_path") and duration >= 9:  # the still cutaway: one beat, with a push-in
+        shots.insert(1 if len(shots) > 1 else 0,
+                     {"src": str(config.MEDIA_DIR / asset["thumb_path"]), "seek": 0.0,
+                      "length": round(min(1.4, duration / n), 3), "still": True, "motion": "push"})
+    return shots
+
+
 def render_project(project_id: str, report, piece_ids: list[str] | None = None) -> None:
     pieces = [p for p in content.pieces(project_id) if p["status"] != "failed"
               and (not piece_ids or p["id"] in piece_ids)]
@@ -75,14 +101,18 @@ def render_project(project_id: str, report, piece_ids: list[str] | None = None) 
                         # clean video: no scrim, no quote text burned in (user decision 2026-09-20)
                         subs = _subtitles_ass(piece, content_data["narration"]["text"], narration.duration,
                                               renderer.w, renderer.h) if brief["subtitles"] else None
+                        look = brief["look_filter"]
+                        if look == "auto":  # each genre carries its own grade
+                            look = GENRE_LOOKS.get(brief["tone"], "none")
                         info = renderer.render_video(src=config.MEDIA_DIR / asset["local_path"],
                                                      narration=narration.path, out=full_out,
                                                      subject_position=asset["subject_position"] or "center",
                                                      src_fps=asset["fps"], src_duration=asset["duration"],
                                                      still=asset["asset_type"] == "image", progress=None,
-                                                     out_fps=brief["fps"], look=brief["look_filter"],
+                                                     out_fps=brief["fps"], look=look,
                                                      blur_background=brief["blur_background"],
-                                                     parallax=brief["parallax"], subtitles=subs)
+                                                     parallax=brief["parallax"], subtitles=subs,
+                                                     shots=_shots_for(asset, narration.duration + 0.6))
                         duration, fps, w, h = info["duration"], info["fps"], renderer.w, renderer.h
                     else:
                         renderer.render_image(src=config.MEDIA_DIR / asset["local_path"], out=full_out,

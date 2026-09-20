@@ -18,7 +18,21 @@ TTS, FFmpeg render, per-platform metadata) and exports them for Metricool. Local
 North star: turn raw long-form content into polished, platform-ready short-form content with as little manual
 editing as possible. Clip quality bar: premium modern Shorts, never "AI-generated looking" — priority order:
 story > hook > pacing > clarity > visual quality > audio quality > platform-safe composition > brand consistency.
-Backlog + integration statuses (IP routing research, Metricool/Buffer open items, quality roadmap) live in
+
+**Content taxonomy = genres, not tones** (researched against top performers 2026-09-20): Hope (hopecore spoken
+word, soulsigh-style), Hard Truth (Goggins/Jocko speech edits), Stoic Wisdom (Daily Stoic), Historical Voices and
+Book Wisdom (real attributed public-domain quotes only — modern books are copyrighted, keep it pre-1929), and
+Cinematic Minimal (Mateusz M). Each genre's full voice spec lives in `app/creative/prompts.py GENRES`; the write
+prompt demands a scroll-stopping hook in line one, second person, concrete body-level images, and one
+screenshot-able closing line.
+
+**Output bar — renders must look EDITED, never plain:** multi-shot timelines (2-3 cuts from the asset with
+alternating zoom-in / pan / zoom-out motion), a still cutaway merged between video shots, the genre's color
+grade (`brief.look_filter`, default `auto` = genre grade), film dressing (vignette + grain), loudnorm narration,
+optional karaoke subtitles (`brief.subtitles`). Quote text is NOT burned into videos (user decision). Rendering
+belongs to `render.py render_video(shots=...)`; renders.py builds the shot plan in `_shots_for`.
+
+Backlog + integration statuses (IP routing research, Metricool/Buffer open items) live in
 `.claude/handover.md` under "Feature backlog / product direction". Publishing integrations must stay OAuth-based
 and store the minimum credentials (never a social-media credential store); the app stays local and free.
 

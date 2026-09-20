@@ -164,59 +164,80 @@ class FFmpegRenderer:
                      src_duration: float, still: bool, progress, out_fps: float | None = None,
                      scrim_png: Path | None = None, quote: str | None = None, palette: dict | None = None,
                      look: str = "none", blur_background: bool = False, parallax: bool = False,
-                     subtitles: Path | None = None) -> dict:
-        """Renders the narration over the visual. `scrim_png`/`quote`/`palette` are optional: omit them for a
-        clean video with no text overlay. `out_fps` forces 30/60 output. `look` is a color preset;
-        `blur_background` puts sharp centred footage over a blurred full-bleed copy; `parallax` adds a slow
-        push-in on video pieces (stills always push in); `subtitles` burns an .ass file."""
+                     subtitles: Path | None = None, shots: list[dict] | None = None) -> dict:
+        """Edits a finished video the way the top motivational studios do: the footage is cut into motion shots
+        (zoom in / zoom out / pan / push-in), a still cutaway can be merged between video shots, the whole
+        timeline is graded with the look preset and dressed with vignette + film grain, narration is normalised
+        and optional karaoke subtitles are burned.
+
+        `shots` (optional) describes the cut: [{src, seek, length, still, motion, blur}] — renders.py builds it
+        from the piece's asset pool. Without it a single shot is synthesised from `src` (old behaviour)."""
         from app.tts import AudioResult
         audio = AudioResult(narration)
         duration = round(audio.duration + 0.6, 3)
         out.parent.mkdir(parents=True, exist_ok=True)
         fps = out_fps or (60.0 if still else (src_fps or 30.0))
 
+        if not shots:
+            seek = round(max((src_duration - duration) / 2, 0), 3) if src_duration > duration + 2 else 0.0
+            motion = "push" if (still or parallax) else None
+            shots = [{"src": str(src), "seek": seek, "length": duration, "still": still, "motion": motion,
+                      "blur": blur_background}]
+
         args = ["ffmpeg", "-y", "-nostdin", "-nostats", "-progress", "pipe:1", "-hide_banner"]
-        frames = round(duration * fps)
-        look_frag = LOOKS.get(look, "")
-        push = (f",zoompan=z='min(1+0.05*on/{frames:g},1.05)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'"
-                f":d=1:s={self.w}x{self.h}:fps={fps:g}") if (parallax and not still) else ""
-        if still:  # §66: slow push-in on stills, at the output frame rate
-            vf = (f"scale={self.w}:{self.h}:force_original_aspect_ratio=increase,crop={self.w}:{self.h},"
-                  f"zoompan=z='min(1+0.06*on/{frames},1.06)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'"
-                  f":d=1:s={self.w}x{self.h}:fps={fps:g}{look_frag}")
-            args += ["-loop", "1", "-i", str(src)]
-        elif blur_background:
-            vf = (f"split=2[bgsrc][fgsrc];"
-                  f"[bgsrc]scale={self.w}:{self.h}:force_original_aspect_ratio=increase,crop={self.w}:{self.h},"
-                  f"boxblur=24:2[bgb];"
-                  f"[fgsrc]scale={self.w}:{self.h}:force_original_aspect_ratio=decrease{push}[fg];"
-                  f"[bgb][fg]overlay=(W-w)/2:(H-h)/2{look_frag},fps={fps:g}")
-            args += ["-i", str(src)]
+        chain = []
+        for i, shot in enumerate(shots):
+            length = max(shot["length"], 0.4)
+            if shot.get("still"):
+                args += ["-loop", "1", "-t", f"{length:.3f}", "-i", str(shot["src"])]
+                motion = "push"
+            else:
+                if shot.get("loop"):  # shorter than the edit: loop the source instead of running out mid-shot
+                    args += ["-stream_loop", "-1"]
+                if shot.get("seek"):
+                    args += ["-ss", f"{shot['seek']:.3f}"]
+                args += ["-t", f"{length:.3f}", "-i", str(shot["src"])]
+                motion = shot.get("motion")
+            frames = max(round(length * fps), 1)
+            geom = f"scale={self.w}:{self.h}:force_original_aspect_ratio=increase,crop={self.w}:{self.h}"
+            if shot.get("blur"):
+                blur_geom = (f"scale={self.w}:{self.h}:force_original_aspect_ratio=decrease")
+                chain.append(f"[{i}:v]split=2[bg{i}][fg{i}];"
+                             f"[bg{i}]scale={self.w}:{self.h}:force_original_aspect_ratio=increase,"
+                             f"crop={self.w}:{self.h},boxblur=24:2[bgb{i}];"
+                             f"[fg{i}]{blur_geom}[fgp{i}];"
+                             f"[bgb{i}][fgp{i}]overlay=(W-w)/2:(H-h)/2,fps={fps:g},setsar=1[v{i}]")
+                continue
+            zoom = {"push": f",zoompan=z='min(1+0.06*on/{frames:g},1.06)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'"
+                            f":d=1:s={self.w}x{self.h}:fps={fps:g}",
+                    "in": f",zoompan=z='min(1+0.08*on/{frames:g},1.08)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'"
+                          f":d=1:s={self.w}x{self.h}:fps={fps:g}",
+                    "out": f",zoompan=z='max(1.08-0.08*on/{frames:g},1.0)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'"
+                           f":d=1:s={self.w}x{self.h}:fps={fps:g}",
+                    "pan": f",zoompan=z='1.1':x='(iw-iw/zoom)*on/{frames:g}':y='ih/2-(ih/zoom/2)'"
+                           f":d=1:s={self.w}x{self.h}:fps={fps:g}"}.get(motion, "")
+            chain.append(f"[{i}:v]{geom}{zoom},setsar=1[v{i}]")
+        if len(shots) > 1:
+            chain.append("".join(f"[v{i}]" for i in range(len(shots))) + f"concat=n={len(shots)}:v=1:a=0[vc]")
         else:
-            vf = (f"scale={self.w}:{self.h}:force_original_aspect_ratio=increase,crop={self.w}:{self.h}"
-                  f"{push}{look_frag},fps={fps:g}")
-            if src_duration > duration + 2:  # §65 ponytail: take the middle of the clip; motion-scored
-                args += ["-ss", f"{round((src_duration - duration) / 2, 3)}"]  # segment scoring needs M5 frame work
-            elif src_duration < duration + 1:
-                args += ["-stream_loop", "-1"]
-            args += ["-i", str(src)]
+            chain.append("[v0]null[vc]")
 
-        narr_idx = 1
-        if scrim_png is not None:
-            args += ["-i", str(scrim_png)]
-            narr_idx = 2
-        args += ["-i", str(narration)]
-
-        chain = [f"[0:v]{vf}[base]"]
-        prev = "base"
+        prev = "vc"
+        grade = LOOKS.get(look, "")
+        chain.append(f"[{prev}]null{grade},vignette=angle=PI/5,noise=alls=4:allf=t[film]")
+        prev = "film"
         if subtitles is not None:  # burned karaoke-style subtitles (Montserrat, same styling as clips)
             sub_file = esc(str(subtitles).replace("\\", "/"))
             fonts_dir = esc(str(SUBTITLES_FONTS).replace("\\", "/"))
             chain.append(f"[{prev}]ass='{sub_file}':fontsdir='{fonts_dir}'[sub]")
             prev = "sub"
+        narr_idx = len(shots)
         if scrim_png is not None:
-            chain += ["[1:v]format=rgba[scr]", "[base][scr]overlay=0:0[o0]"]
+            args += ["-i", str(scrim_png)]
+            chain += [f"[{narr_idx}:v]format=rgba[scr]", f"[{prev}][scr]overlay=0:0[o0]"]
             prev = "o0"
+            narr_idx += 1
+        args += ["-i", str(narration)]
         if quote:
             where = placement(quote, subject_position, "video", self.w, self.h)
             # §32 ponytail: the drive-letter colon needs graph quoting AND escaping: fontfile='C\:/...'
@@ -239,6 +260,7 @@ class FFmpegRenderer:
             args += ["-i", str(self.music)]
         else:
             a_chain += ";[na]anull[aout]"
+
 
         args += ["-filter_complex", ";".join(chain) + ";" + a_chain, "-map", "[vout]", "-map", "[aout]",
                  "-c:v", "libx264", "-crf", str(self.crf), "-preset", "veryfast", "-c:a", "aac",

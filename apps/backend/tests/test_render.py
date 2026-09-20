@@ -132,10 +132,29 @@ class Renderers(unittest.TestCase):
                         encoding="utf-8")
         out = config.MEDIA_DIR / "renders" / "test" / "003-video.mp4"
         info = self.renderer.render_video(src=self.src, narration=self.narration, out=out,
-                                          subject_position="center", src_fps=30, src_duration=14.0,
+                                          subject_position="center", src_fps=30, src_duration=2.0,
                                           still=False, progress=None, out_fps=60, look="warm",
                                           blur_background=True, parallax=True, subtitles=subs)
         self.assertAlmostEqual(info["fps"], 60.0, delta=1.0)
+
+    def test_render_edited_multi_shot_sequence(self):
+        """The director-cut path: motion shots + a still cutaway + grade + dressing + subtitles in one timeline."""
+        from app.clipper.captions import captions as ass_captions
+        subs = config.MEDIA_DIR / "fixtures" / "subs.ass"
+        subs.write_text(ass_captions([{"word": "Hello", "start": 0.0, "end": 1.0}], 0.0, 2.0, self.w, self.h),
+                        encoding="utf-8")
+        shots = [
+            {"src": str(self.src), "seek": 0.0, "length": 0.8, "still": False, "motion": "in"},
+            {"src": str(self.still), "seek": 0.0, "length": 0.6, "still": True, "motion": "push"},
+            {"src": str(self.src), "seek": 1.0, "length": 0.8, "still": False, "motion": "out", "loop": True},
+        ]
+        out = config.MEDIA_DIR / "renders" / "test" / "005-video.mp4"
+        info = self.renderer.render_video(src=self.src, narration=self.narration, out=out,
+                                          subject_position="center", src_fps=30, src_duration=2.0,
+                                          still=False, progress=None, out_fps=60, look="vivid",
+                                          subtitles=subs, shots=shots)
+        self.assertAlmostEqual(info["fps"], 60.0, delta=1.0)
+        self.assertAlmostEqual(info["duration"], 1.8, delta=1.0)
 
     def test_render_image_output(self):
         out = config.MEDIA_DIR / "renders" / "test" / "001-image.jpg"

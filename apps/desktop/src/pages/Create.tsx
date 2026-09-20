@@ -31,7 +31,7 @@ export function Create({ onCreated }: { onCreated: (id: string) => void }) {
       setBrief({
         topic: label(settings.default_topic), tone: settings.default_tone, mood: '', audience: '',
         format: 'automatic', quantity: settings.default_quantity, platforms: ['youtube_shorts', 'instagram_reels', 'tiktok'],
-        voice: '', fps: 30, target_seconds: null, subtitles: false, look_filter: 'none',
+        voice: '', fps: 30, target_seconds: null, subtitles: false, look_filter: 'auto',
         blur_background: false, parallax: false,
       })
       setCustom(!PRESETS.includes(settings.default_quantity))
@@ -219,6 +219,7 @@ function WriteForm({ brief, setBrief, custom, setCustom, keySet, error, saving }
         {(id) => (
           <Select id={id} value={brief.look_filter} onChange={(v) => set('look_filter', v as Brief['look_filter'])}
             options={[
+              { value: 'auto', label: 'Auto (matches the genre)' },
               { value: 'none', label: 'Natural (no filter)' }, { value: 'warm', label: 'Warm' },
               { value: 'cool', label: 'Cool' }, { value: 'mono', label: 'Mono' },
               { value: 'vivid', label: 'Vivid' }]} />

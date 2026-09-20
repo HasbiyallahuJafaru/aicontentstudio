@@ -25,7 +25,7 @@ class CreativeBrief(BaseModel):
     fps: Literal[30, 60] = 30
     target_seconds: int | None = Field(None, ge=10, le=180)  # narration length target; None = writer's default
     subtitles: bool = False                   # burn spoken-word subtitles into rendered videos
-    look_filter: Literal["none", "warm", "cool", "mono", "vivid"] = "none"
+    look_filter: Literal["auto", "none", "warm", "cool", "mono", "vivid"] = "auto"  # auto = the genre's grade
     blur_background: bool = False             # blurred full-bleed background, sharp centred footage
     parallax: bool = False                    # slow push-in on video pieces (stills always push in)
 

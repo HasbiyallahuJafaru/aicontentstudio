@@ -272,6 +272,19 @@ so no OAuth dance needed there. Package: `apps/backend/app/publish/`:
 - Watch out: ffmpeg filter graphs for the new effects are covered by a real render test in test_render.py
   (graph syntax mistakes fail there, not in a user render).
 
+## User feedback round 3 (2026-09-20, implemented) — the director-cut render
+- The user's bar: output must look like a top director/movie editor cut it, not plain footage. **Video renders
+  are now edited sequences**: `render.py render_video(shots=...)` cuts the asset into 2-3 motion shots
+  (alternating zoom-in / pan-lr / zoom-out; stills push in), merges a **still cutaway** (the asset's cover frame,
+  1.2-1.4s push-in) between video shots — video + image in one timeline — then grades with the look, and dresses
+  with vignette + film grain. renders.py builds the shot plan in `_shots_for` (short sources loop instead of
+  running out mid-shot). Karaoke subtitles (when `brief.subtitles`) burn after the grade.
+- Genre-aware dressing: `brief.look_filter = 'auto'` (the default for new projects) resolves per genre —
+  hope=warm, speech=vivid, stoic=cool, history/books=mono, cinema=mono (GENRE_LOOKS in renders.py).
+- Legacy note: `Renderers` render tests exercise single-shot synth, blur, and the multi-shot concat graph —
+  filter-graph syntax mistakes fail in CI. Input order matters: shot inputs, then scrim, then narration, then
+  music (narr_idx = len(shots) [+1 with scrim]).
+
 ## Feature backlog / product direction (user-supplied 2026-09-20)
 
 Ideas and requirements to revisit in future phases. Items 2 and 3 have base integrations from Phase C; the rest
