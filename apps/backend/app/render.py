@@ -155,50 +155,60 @@ class FFmpegRenderer:
         if not Path(FONT_PATH).exists():
             raise UserError("The Sora font is missing from the backend assets.", str(FONT_PATH))
 
-    def render_video(self, *, src: Path, narration: Path, scrim_png: Path, out: Path, quote: str,
-                     subject_position: str, palette: dict, src_fps: float, src_duration: float,
-                     still: bool, progress) -> dict:
+    def render_video(self, *, src: Path, narration: Path, out: Path, subject_position: str, src_fps: float,
+                     src_duration: float, still: bool, progress, out_fps: float | None = None,
+                     scrim_png: Path | None = None, quote: str | None = None, palette: dict | None = None) -> dict:
+        """Renders the narration over the visual. `scrim_png`/`quote`/`palette` are optional: omit them for a
+        clean video with no text overlay (the Create page's videos). `out_fps` forces 30/60 output."""
         from app.tts import AudioResult
         audio = AudioResult(narration)
         duration = round(audio.duration + 0.6, 3)
         out.parent.mkdir(parents=True, exist_ok=True)
-        where = placement(quote, subject_position, "video", self.w, self.h)
+        fps = out_fps or (60.0 if still else (src_fps or 30.0))
 
         args = ["ffmpeg", "-y", "-nostdin", "-nostats", "-progress", "pipe:1", "-hide_banner"]
-        if still:  # §66: slow push-in on stills, rendered at 60fps
-            frames = round(duration * 60)
+        if still:  # §66: slow push-in on stills, at the output frame rate
+            frames = round(duration * fps)
             vf = (f"scale={self.w}:{self.h}:force_original_aspect_ratio=increase,crop={self.w}:{self.h},"
                   f"zoompan=z='min(1+0.06*on/{frames},1.06)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'"
-                  f":d=1:s={self.w}x{self.h}:fps=60")
-            want_fps = 60.0
+                  f":d=1:s={self.w}x{self.h}:fps={fps:g}")
             args += ["-loop", "1", "-i", str(src)]
         else:
             vf = f"scale={self.w}:{self.h}:force_original_aspect_ratio=increase,crop={self.w}:{self.h}"
-            want_fps = src_fps or 30.0
             if src_duration > duration + 2:  # §65 ponytail: take the middle of the clip; motion-scored
                 args += ["-ss", f"{round((src_duration - duration) / 2, 3)}"]  # segment scoring needs M5 frame work
             elif src_duration < duration + 1:
                 args += ["-stream_loop", "-1"]
             args += ["-i", str(src)]
-        args += ["-i", str(scrim_png), "-i", str(narration)]
 
-        chain = [f"[0:v]{vf}[base]", "[1:v]format=rgba[scr]", "[base][scr]overlay=0:0[o0]"]
-        # §32 ponytail: the drive-letter colon needs graph quoting AND escaping: fontfile='C\:/...'
-        font_file = esc(str(FONT_PATH).replace("\\", "/"))
-        prev = "o0"
-        for i, (x, y) in enumerate(where["positions"]):
-            text = where["lines"][i].replace("'", "\u2019")  # typographic apostrophes read better and skip escaping
-            dt = (f"drawtext=fontfile='{font_file}':text={esc(text)}:fontcolor={palette['text']}"
-                  f":fontsize={where['size']}:x={x}:y={y}:line_spacing=0"
-                  ":shadowcolor=black@0.45:shadowx=0:shadowy=3:expansion=none")
-            nxt = f"o{i + 1}"
-            chain.append(f"[{prev}]{dt}[{nxt}]")
-            prev = nxt
+        narr_idx = 1
+        if scrim_png is not None:
+            args += ["-i", str(scrim_png)]
+            narr_idx = 2
+        args += ["-i", str(narration)]
+
+        chain = [f"[0:v]{vf},fps={fps:g}[base]"]
+        prev = "base"
+        if scrim_png is not None:
+            chain += ["[1:v]format=rgba[scr]", "[base][scr]overlay=0:0[o0]"]
+            prev = "o0"
+        if quote:
+            where = placement(quote, subject_position, "video", self.w, self.h)
+            # §32 ponytail: the drive-letter colon needs graph quoting AND escaping: fontfile='C\:/...'
+            font_file = esc(str(FONT_PATH).replace("\\", "/"))
+            for i, (x, y) in enumerate(where["positions"]):
+                text = where["lines"][i].replace("'", "\u2019")  # typographic apostrophes read better and skip escaping
+                dt = (f"drawtext=fontfile='{font_file}':text={esc(text)}:fontcolor={(palette or {}).get('text', '#FFFFFF')}"
+                      f":fontsize={where['size']}:x={x}:y={y}:line_spacing=0"
+                      ":shadowcolor=black@0.45:shadowx=0:shadowy=3:expansion=none")
+                nxt = f"t{i + 1}"
+                chain.append(f"[{prev}]{dt}[{nxt}]")
+                prev = nxt
         chain.append(f"[{prev}]format=yuv420p[vout]")
 
-        a_chain = "[2:a]loudnorm=I=-16:TP=-1.5:LRA=11[na]"
+        a_chain = f"[{narr_idx}:a]loudnorm=I=-16:TP=-1.5:LRA=11[na]"
         if self.music and self.music.exists():
-            a_chain += (f";[3:a]volume={self.music_volume},afade=t=in:st=0:d=1,"
+            a_chain += (f";[{narr_idx + 1}:a]volume={self.music_volume},afade=t=in:st=0:d=1,"
                         f"afade=t=out:st={max(duration - 1.5, 0):.3f}:d=1.5[mu]"
                         ";[na][mu]amix=inputs=2:duration=first:normalize=0[aout]")
             args += ["-i", str(self.music)]
@@ -239,7 +249,7 @@ class FFmpegRenderer:
                 errf.seek(0)
                 raise UserError("FFmpeg failed while rendering the video.",
                                 errf.read().decode("utf-8", "replace")[-800:])
-        return validate_video(out, {"fps": want_fps, "duration": duration}, self.w, self.h)
+        return validate_video(out, {"fps": fps, "duration": duration}, self.w, self.h)
 
     def render_image(self, *, src: Path, out: Path, quote: str, subject_position: str, palette: dict) -> None:
         with Image.open(src) as img:

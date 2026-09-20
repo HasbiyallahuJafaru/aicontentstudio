@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { CaretRight, Scissors } from '@phosphor-icons/react'
 import { call, FORMATS, hasKey, label, PLATFORMS, TONES, TOPICS, useQuery, BackendError,
-  type Brief, type Project, type Settings } from '../lib/studio'
+  type Brief, type Project, type Settings, type VoiceList } from '../lib/studio'
 import { Button, Autocomplete, Choices, ErrorNote, Field, Input, PageHeader, Select, cx } from '../components/ui'
 
 const PRESETS = [1, 3, 6]
@@ -11,13 +11,13 @@ const ORIENTATIONS = [
   { value: '1:1', label: '1:1 — square' },
 ]
 
-type ClipForm = { source: string; n: number | null; orientation: '9:16' | '16:9' | '1:1'; min_len: number; max_len: number; burn_captions: boolean }
+type ClipForm = { source: string; n: number | null; orientation: '9:16' | '16:9' | '1:1'; min_len: number; max_len: number; burn_captions: boolean; fps: number }
 
 export function Create({ onCreated }: { onCreated: (id: string) => void }) {
   const { data: settings } = useQuery<Settings>('settings.get')
   const [mode, setMode] = useState<'write' | 'clip'>('write')
   const [brief, setBrief] = useState<Brief>()
-  const [clip, setClip] = useState<ClipForm>({ source: '', n: null, orientation: '9:16', min_len: 30, max_len: 60, burn_captions: true })
+  const [clip, setClip] = useState<ClipForm>({ source: '', n: null, orientation: '9:16', min_len: 30, max_len: 60, burn_captions: true, fps: 30 })
   const [custom, setCustom] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<BackendError>()
@@ -31,10 +31,20 @@ export function Create({ onCreated }: { onCreated: (id: string) => void }) {
       setBrief({
         topic: label(settings.default_topic), tone: settings.default_tone, mood: '', audience: '',
         format: 'automatic', quantity: settings.default_quantity, platforms: ['youtube_shorts', 'instagram_reels', 'tiktok'],
+        voice: '', fps: 30,
       })
       setCustom(!PRESETS.includes(settings.default_quantity))
     }
   }, [settings, brief])
+
+  useEffect(() => {
+    // window-level so Ctrl+Enter works after any click (e.g. right after using a dropdown, focus is on body)
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); submit() }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  })
 
   if (!brief) return <PageHeader title="New project" />
 
@@ -62,7 +72,7 @@ export function Create({ onCreated }: { onCreated: (id: string) => void }) {
 
   const clipSourceOk = clipValid
   return (
-    <form onSubmit={submit} onKeyDown={(e) => (e.ctrlKey || e.metaKey) && e.key === 'Enter' && submit()}>
+    <form onSubmit={submit}>
       <PageHeader title="New project" />
       <div className="grid grid-cols-[440px_minmax(0,1fr)] gap-5 max-[1180px]:grid-cols-[380px_minmax(0,1fr)]">
         <div className="glass grid content-start gap-7 p-8">
@@ -96,6 +106,10 @@ export function Create({ onCreated }: { onCreated: (id: string) => void }) {
               <Choices legend="Captions" value={clip.burn_captions ? 'burn' : 'clean'}
                 options={[{ value: 'burn', label: 'Burned in' }, { value: 'clean', label: 'Clean video' }]}
                 onChange={(v) => setClip({ ...clip, burn_captions: v === 'burn' })} />
+
+              <Choices legend="Frame rate" value={clip.fps}
+                options={[{ value: 30, label: '30 fps' }, { value: 60, label: '60 fps' }]}
+                onChange={(v: number) => setClip({ ...clip, fps: v })} />
 
               <details className="group">
                 <summary className="flex cursor-pointer list-none items-center gap-1.5 text-[13px] text-ink-2 hover:text-ink">
@@ -142,8 +156,14 @@ function WriteForm({ brief, setBrief, custom, setCustom, keySet, error, saving }
   brief: Brief; setBrief: (b: Brief) => void; custom: boolean; setCustom: (v: boolean) => void
   keySet?: boolean; error?: BackendError; saving: boolean
 }) {
+  const { data: voices } = useQuery<VoiceList>('tts.voices')
   const set = <K extends keyof Brief>(k: K, v: Brief[K]) => setBrief({ ...brief, [k]: v })
   const valid = brief.topic.trim() && brief.platforms.length && brief.quantity >= 1 && brief.quantity <= 20
+  const voiceOptions = [
+    { value: '', label: 'Studio default (Settings)' },
+    ...(voices?.kokoro ?? []).map((v) => ({ value: `kokoro:${v}`, label: `Kokoro · ${v}` })),
+    ...(voices?.windows ?? []).map((v) => ({ value: `windows:${v}`, label: `Windows · ${v}` })),
+  ]
   return (
     <div className="grid gap-7">
       <Field label="Topic" hint="Pick a theme or type your own.">
@@ -153,8 +173,12 @@ function WriteForm({ brief, setBrief, custom, setCustom, keySet, error, saving }
         )}
       </Field>
 
-      <Choices legend="Tone" value={brief.tone} onChange={(v) => set('tone', v)}
-        options={TONES.map((t) => ({ value: t, label: label(t) }))} />
+      <Field label="Tone">
+        {(id) => (
+          <Select id={id} value={brief.tone} onChange={(v) => set('tone', v as Brief['tone'])}
+            options={TONES.map((t) => ({ value: t, label: label(t) }))} />
+        )}
+      </Field>
 
       <Choices legend="Output" value={brief.format} onChange={(v) => set('format', v)} options={FORMATS} />
 
@@ -170,6 +194,16 @@ function WriteForm({ brief, setBrief, custom, setCustom, keySet, error, saving }
 
       <Choices legend="Platforms" multiple value={brief.platforms} onChange={(v) => set('platforms', v)} options={PLATFORMS} />
       {!brief.platforms.length && <p className="-mt-5 text-xs text-danger">Choose at least one platform.</p>}
+
+      <Field label="Narration voice" hint="Kokoro voices are local neural voices. Empty uses the Settings default.">
+        {(id) => (
+          <Select id={id} value={brief.voice} onChange={(v) => set('voice', v)} options={voiceOptions} />
+        )}
+      </Field>
+
+      <Choices legend="Frame rate" value={brief.fps}
+        options={[{ value: 30, label: '30 fps' }, { value: 60, label: '60 fps' }]}
+        onChange={(v: number) => set('fps', v)} />
 
       <details className="group">
         <summary className="flex cursor-pointer list-none items-center gap-1.5 text-[13px] text-ink-2 hover:text-ink">

@@ -6,6 +6,7 @@
 """
 import asyncio
 import json
+import subprocess
 import sys
 import uuid
 import wave
@@ -91,10 +92,9 @@ class KokoroTTS(TTSProvider):
         return AudioResult(out)
 
 
-def get_tts() -> TTSProvider:
+def get_tts(provider: str | None = None) -> TTSProvider:
     from app import settings
-    provider = settings.get()["tts_provider"]
-    return {"windows": WindowsTTS, "kokoro": KokoroTTS}[provider]()
+    return {"windows": WindowsTTS, "kokoro": KokoroTTS}[provider or settings.get()["tts_provider"]]()
 
 
 def download_models() -> None:
@@ -110,6 +110,29 @@ def download_models() -> None:
         print(f"downloading {name} (~{mb} MB)...")
         urllib.request.urlretrieve(f"{MODELS_URL}/{name}", dest)
     print("done:", json.dumps({n: str(target / LOCAL_NAMES.get(n, n)) for n in MODEL_FILES}))
+
+
+def voices() -> dict:
+    """Narration voice options per engine, for the Create page picker. The optional engine simply contributes
+    an empty list when it isn't installed/downloaded."""
+    out = {"kokoro": [], "windows": _windows_voices()}
+    try:
+        import kokoro_onnx
+        if KokoroTTS.model_path().exists():
+            engine = kokoro_onnx.Kokoro(str(KokoroTTS.model_path()), str(KokoroTTS.model_path("voices.bin")))
+            out["kokoro"] = sorted(engine.get_voices())
+    except Exception:  # ponytail: voice listing must never break a settings call; empty list = not usable
+        pass
+    return out
+
+
+def _windows_voices() -> list[str]:
+    script = ("Add-Type -AssemblyName System.Speech\n"
+              "(New-Object System.Speech.Synthesis.SpeechSynthesizer).GetInstalledVoices() | "
+              "ForEach-Object { $_.VoiceInfo.Name }")
+    proc = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
+                          capture_output=True, text=True, timeout=60)
+    return [line.strip() for line in proc.stdout.splitlines() if line.strip()]
 
 
 if __name__ == "__main__":

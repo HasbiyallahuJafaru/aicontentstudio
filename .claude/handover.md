@@ -280,6 +280,21 @@ platform compatibility, user control, speed, reliability, cost efficiency, or pr
    story > hook > pacing > clarity > visual quality > audio quality > platform-safe composition > brand
    consistency. Never optimize for "looks AI generated."
 
+## User feedback round (2026-09-20, implemented + pushed)
+- **Create page**: Tone is a dropdown again (user prefers it); **Narration voice** picker (per-project
+  `brief.voice` = "engine:voice", rendered by renders.py via `tts.get_tts(engine)`; `tts.voices` RPC lists
+  Kokoro `get_voices()` + Windows SAPI names); **frame rate** choice 30/60 (`brief.fps`, also on clip briefs,
+  honored via `render_video(out_fps=)` / `render_clip(fps=)`).
+- **Rendered social videos are now clean** — no scrim, no quote text burned in (user decision). `render_video`
+  takes scrim/quote/palette optionally; image (4:5) renders still carry the quote. Ctrl+Enter on Create moved to
+  a window-level listener (form-level one died when focus was on body after using a dropdown -> React #310 fix
+  came from moving the effect above the `if (!brief)` early return).
+- Watch out: existing installs' stored settings keep `tts_provider: 'windows'` — the kokoro default applies to
+  fresh installs/new settings rows; picking a Kokoro voice per project sidesteps it.
+- M8 packaging started: `backend.spec` freezes the backend (232 MB one-folder, includes cv2/kokoro/yt-dlp +
+  fonts/YuNet); electron-builder installed; NOT yet verified end to end (exe RPC/render check, NSIS build,
+  backend.ts packaged branch: spawn `resources/backend/backend.exe` + bundled ffmpeg on PATH when packaged).
+
 ## Open decisions / notes
 - Rail shows Dashboard, Create, Projects, Library, Queue, Exports (Queue/Exports landed with M6).
 - Platform metadata adapters (PRD §69) landed with M6 export; pieces hold one metadata set, adapted per platform.

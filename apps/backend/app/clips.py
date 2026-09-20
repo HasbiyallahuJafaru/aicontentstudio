@@ -61,7 +61,7 @@ def run(project_id: str, report) -> None:
         clip.start, clip.end = snap(clip.start, clip.end, transcript["words"])
         path = out / f"clip{i:02}.mp4"
         render_clip(video, max(0, clip.start - 0.1), clip.end + 0.2, path, transcript["words"],
-                    b["burn_captions"], b["orientation"])
+                    b["burn_captions"], b["orientation"], fps=b["fps"])
         with connect() as conn:
             conn.execute("INSERT INTO clips (id, project_id, idx, start_at, end_at, score, reason, hook, title, "
                          "description, hashtags, posts, video_path, cover_path) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",

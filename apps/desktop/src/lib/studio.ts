@@ -11,10 +11,10 @@ export const studio = window.studio
 export type Tone = (typeof TONES)[number]
 export type Format = 'automatic' | 'video' | 'image' | 'video_image'
 export type Platform = 'youtube_shorts' | 'instagram_reels' | 'instagram_feed' | 'tiktok'
-export type Brief = { kind?: never; topic: string; tone: Tone; mood: string; audience: string; format: Format; quantity: number; platforms: Platform[] }
+export type Brief = { kind?: never; topic: string; tone: Tone; mood: string; audience: string; format: Format; quantity: number; platforms: Platform[]; voice: string; fps: number }
 export type ClipBrief = {
   kind: 'clip'; source: string; n: number | null; min_len: number; max_len: number
-  orientation: '9:16' | '16:9' | '1:1'; burn_captions: boolean
+  orientation: '9:16' | '16:9' | '1:1'; burn_captions: boolean; fps: number
 }
 export type Project = { id: string; name: string; status: string; brief: Brief | ClipBrief; created_at: string; updated_at: string; pieces_written?: number }
 export type Clip = {
@@ -75,6 +75,7 @@ export type QueueData = {
 export type ExportRun = { id: string; project_id: string; dir: string; path: string; pieces: number
   created_at: string; project: string }
 export type BackendStatus = { state: 'starting' | 'ready' | 'crashed' | 'stopped'; message?: string; detail?: string }
+export type VoiceList = { kokoro: string[]; windows: string[] }
 export type SecretName = 'DEEPSEEK_API_KEY' | 'PEXELS_API_KEY' | 'UNSPLASH_ACCESS_KEY' | 'GROQ_API_KEY' | 'METRICOOL_API_KEY'
 
 export const TOPICS = ['Motivation', 'Discipline', 'Personal growth', 'Mindset', 'Productivity', 'Relationships',

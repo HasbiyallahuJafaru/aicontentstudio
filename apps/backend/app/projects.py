@@ -21,6 +21,8 @@ class CreativeBrief(BaseModel):
     format: Literal["automatic", "video", "image", "video_image"] = "automatic"
     quantity: int = Field(ge=1, le=20)
     platforms: list[Platform] = Field(min_length=1)
+    voice: str = Field("", max_length=120)  # "engine:voice" from the Create picker; empty = Settings default
+    fps: Literal[30, 60] = 30
 
 
 class ClipBrief(BaseModel):
@@ -32,6 +34,7 @@ class ClipBrief(BaseModel):
     max_len: float = Field(60, ge=10, le=900)
     orientation: Literal["9:16", "16:9", "1:1"] = "9:16"
     burn_captions: bool = True
+    fps: Literal[30, 60] = 30
 
 
 def _row(r) -> dict:

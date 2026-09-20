@@ -48,13 +48,18 @@ def render_project(project_id: str, report) -> None:
     if shutil.which("ffmpeg") is None:
         raise UserError("FFmpeg is not installed or not on PATH.", "Install ffmpeg and restart the app.")
 
+    # the brief's narration voice ("engine:voice") overrides the Settings default for this project
+    voice_engine, _, voice_name = (brief.get("voice") or "").partition(":")
+    if voice_engine:
+        engine = tts.get_tts(voice_engine)
+    voice = voice_name or s["tts_voice"]
+
     n = len(pieces)
     for i, piece in enumerate(pieces, 1):
         report(f"Narration {i} of {n}", (i - 0.5) / n)
         content_data = piece["content"]
         try:
-            narration = asyncio.run(engine.generate(content_data["narration"]["text"], s["tts_voice"],
-                                                    s["tts_speed"]))
+            narration = asyncio.run(engine.generate(content_data["narration"]["text"], voice, s["tts_speed"]))
             asset = _asset_for(piece)
             if asset is None:
                 raise UserError("This piece has no visual asset yet.", "Generate visuals, then render again.")
@@ -66,15 +71,13 @@ def render_project(project_id: str, report) -> None:
                 full_out = config.MEDIA_DIR / out
                 try:
                     if kind == "video":
-                        scrim_png = render.scrim(config.MEDIA_DIR / "tmp" / f"{piece['id']}-scrim.png",
-                                                 content_data["palette"]["overlay"], renderer.w, renderer.h,
-                                                 (30, 190))
-                        info = renderer.render_video(
-                            src=config.MEDIA_DIR / asset["local_path"], narration=narration.path,
-                            scrim_png=scrim_png, out=full_out, quote=content_data["quote"]["text"],
-                            subject_position=asset["subject_position"] or "center", palette=content_data["palette"],
-                            src_fps=asset["fps"], src_duration=asset["duration"],
-                            still=asset["asset_type"] == "image", progress=None)
+                        # clean video: no scrim, no quote text burned in (user decision 2026-09-20)
+                        info = renderer.render_video(src=config.MEDIA_DIR / asset["local_path"],
+                                                     narration=narration.path, out=full_out,
+                                                     subject_position=asset["subject_position"] or "center",
+                                                     src_fps=asset["fps"], src_duration=asset["duration"],
+                                                     still=asset["asset_type"] == "image", progress=None,
+                                                     out_fps=brief["fps"])
                         duration, fps, w, h = info["duration"], info["fps"], renderer.w, renderer.h
                     else:
                         renderer.render_image(src=config.MEDIA_DIR / asset["local_path"], out=full_out,
