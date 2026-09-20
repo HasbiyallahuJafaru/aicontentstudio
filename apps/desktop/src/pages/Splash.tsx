@@ -1,10 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
-import { Aperture, ArrowUpRight } from '@phosphor-icons/react'
-import { studio } from '../lib/studio'
+import { Aperture } from '@phosphor-icons/react'
+import { SocialLinks } from '../components/Branding'
 import { Button } from '../components/ui'
 import splashVideo from '../assets/splash.webm'
-
-const DEVELOPER_URL = 'https://hasbiyallahu.xyz'
 
 export function Splash({ onCreate }: { onCreate: () => void }) {
   const videoRef = useRef<HTMLVideoElement>(null)
@@ -41,14 +39,14 @@ export function Splash({ onCreate }: { onCreate: () => void }) {
             written and kept entirely on your own computer.
           </p>
         </div>
-        <div className="mt-1 flex items-center gap-3">
+        <div className="mt-1">
           <Button variant="primary" onClick={onCreate}>Let&apos;s create content</Button>
-          <Button variant="secondary" onClick={() => studio.openExternal(DEVELOPER_URL)}>
-            Meet our developer<ArrowUpRight size={14} />
-          </Button>
         </div>
       </div>
 
+      <div className="absolute bottom-4 left-5">
+        <SocialLinks size={17} />
+      </div>
       <p className="absolute bottom-4 right-5 text-2xs text-ink-3">Waves: Adam S. Keck, CC BY-SA 4.0</p>
     </div>
   )

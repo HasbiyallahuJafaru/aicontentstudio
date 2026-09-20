@@ -1,7 +1,7 @@
 # Handover
 
-Last updated: 2026-09-20 (Milestone 6 built, verified, not committed). Read this first in a new chat, then `.claude/CLAUDE.md` rules.
-Update it after every phase.
+Last updated: 2026-09-20 (Milestone 7 Phase A complete + committed; next: Phase B engine merge). Read this first in
+a new chat, then `.claude/CLAUDE.md` rules. Update it after every phase.
 
 ## Where things stand
 
@@ -16,7 +16,7 @@ Update it after every phase.
 | Splash + root README (user request) | Done. Pushed: b73d254 + 84a95ff. |
 | Milestone 5: TTS, audio mixing, FFmpeg renderers, render UI | Done, verified, pushed: b815a50. |
 | **Milestone 6**: preview, regeneration, queue, export | **Done, verified, pushed: 8f78c3c.** |
-| **Milestone 7 (redefined)**: developer branding + ClipperAi engine merge + Buffer/Metricool publishing | **Plan written below — build in a fresh chat.** |
+| **Milestone 7 (redefined)**: developer branding + ClipperAi engine merge + Buffer/Metricool publishing | **Phase A (branding + rail animation) done and committed. Phase B/C not started — build next.** |
 | M8 (was M7): refinement, packaging | Not started |
 
 Git: `main` on https://github.com/HasbiyallahuJafaru/aicontentstudio. Commit/push only when the user asks.
@@ -130,28 +130,38 @@ The user asked to pull in the feature set of their other project **ClipperAi** (
 read its README.md — "YT-Clipper": long-video → shorts engine) instead of going to packaging next. New plan,
 built in a **fresh chat** starting from this file:
 
-**Phase A — developer branding (small, do first):**
-- Splash: Instagram + GitHub icon buttons in the LOWER-LEFT corner. Instagram handle is TBD (user will supply;
-  do not guess). GitHub: https://github.com/HasbiyallahuJafaru
-- Every Shell page: a quiet "created by" footer with three interactive SVG logos — website
-  https://hasbiyallahu.xyz , LinkedIn https://www.linkedin.com/in/hasbiyallahu-jafaru/ , GitHub
-  https://github.com/HasbiyallahuJafaru . Interactive = hover states, open via `studio.openExternal` (https-only).
-  Inline SVGs (brand paths), no icon-font dependency. Replaces the splash's "Meet our developer" text button.
+**Phase A — developer branding (DONE, committed 2026-09-20):**
+- `components/Branding.tsx`: SocialLinks (three inline interactive SVG logos — globe/website,
+  LinkedIn, GitHub — hover states, opened via `studio.openExternal`, https-guarded) + CreatedBy footer.
+- Splash: the three logos sit LOWER-LEFT (replaces the old "Meet our developer" text button); the Shell
+  renders the "Created by Hasbiyallahu Jafaru" footer at the bottom of every page (flex column, pinned
+  on short pages, follows content on long ones). Instagram was dropped by the user — only
+  website/LinkedIn/GitHub. Hover shows a styled dark pill tooltip (custom, not the native `title`).
+  Smoke updated (asserts 3 splash links).
+- Rail buttons (Shell.tsx RailItem): on hover the icon does a full 360° spin (700ms ease-out-expo,
+  reverses on leave) and the page name slides out from the icon's center to its right in a dark pill
+  (200ms, reverses on leave); native `title` removed so only the custom label shows.
 
-**Phase B — ClipperAi engine merge (the big one).** Port the engine behind ClipperAi's `apps/backend/clipper.py`
-(+ `downloader.py`) into `apps/backend/app/clipper/` as desktop modules, keeping OUR job system (SQLite + threads,
-jobs.py), OUR storage (local `media/` served by `media://` — NOT R2), and NO billing/accounts/Clerk/Paystack
-(those are ClipperAi's SaaS layer, explicitly out of scope). Features to bring:
-1. Long-video acquisition: yt-dlp download from a link, or a local file pick (Electron file dialog).
-2. Word-level transcription via Groq Whisper (new setting `groq_api_key` in secrets; DeepSeek already wired).
-3. Two-pass DeepSeek clip selection: moments → picks with score/hook/title/description/reason/hashtags and
-   per-platform posts (tiktok, instagram, youtube, linkedin, facebook, x) — matches our §68 metadata flow.
-4. Word-boundary snapping, OpenCV face tracking → dynamic 9:16 crop (largest-face framing), shot-change deadzone.
-5. Word-level karaoke ASS captions burned via libass/ffmpeg (per-project toggle for already-subtitled videos).
-6. FFmpeg clip render + thumbnail 1s in. New deps: `yt-dlp`, `opencv-python` (DECISIONS said OpenCV waits for a
-   real need — this is it), verify libass in the bundled ffmpeg (see video-agent-kit env-setup skill).
-7. UI: a "Clip from video" flow (new project kind or section on Create), clip review list reusing the Preview
-   modal, clips as first-class pieces (status/review pending→approved), ZIP/exports reuse.
+**Phase B — ClipperAi engine merge (the big one).** Port the engine in ClipperAi's `apps/backend/clipper.py`
+(478 lines; do read that file + its `test_clipper.py` first) into `apps/backend/app/clipper/` as desktop modules,
+keeping OUR job system (SQLite + threads, jobs.py), OUR storage (local `media/` served by `media://` — NOT R2),
+and NO billing/accounts/Clerk/Paystack (user decision: the app is free and fully local). Port map (line refs into
+ClipperAi's clipper.py):
+
+| ClipperAi source | → new module | Notes |
+|---|---|---|
+| `acquire` (:160) + `downloader.py` | `app/clipper/acquire.py` | yt-dlp for links; local file path picks skip it. Progress per percent. |
+| `transcribe` (:221) | `app/clipper/transcribe.py` | Groq Whisper, word-level JSON. New secret `GROQ_API_KEY` + Settings entry. |
+| `ask_json` (:247), `parse_moments` (:261), `parse_picks` (:274), `find_clips` (:293), `snap` (:325) | `app/clipper/select.py` | Two-pass DeepSeek: moments → picks with score/hook/title/description/reason/hashtags + per-platform posts. Reuse the httpx + cert-store pattern from `app/creative/deepseek.py`. |
+| `face_xs` (:325), `shots` (:354), `crop_filter` (:367) | `app/clipper/crop.py` | OpenCV largest-face tracking → dynamic 9:16 crop filter with shot-change deadzone. New dep `opencv-python`. |
+| `ass_escape` (:387), `captions` (:391) | `app/clipper/captions.py` | Word-level karaoke ASS burned by ffmpeg subtitles filter (needs libass in the ffmpeg build — verify). |
+| `render` (:419) | `app/clipper/render_clip.py` | Clip render + thumbnail 1s in. Copy our render.py subprocess discipline: argv arrays, `-nostdin`, stderr → temp file, stall watchdog. |
+
+Wiring: new job kind `'clip'` in jobs.py (same dispatch pattern as generate|render|export), RPC methods
+(`clips.*`), migration **007** (clips table: project, idx, start/end seconds, score, hook, review status, paths),
+UI: "Clip from video" on Create (link or file), clip review list reusing the Preview modal patterns, approve →
+export reuse. Tests: `tests/test_clipper_port.py`, porting the assertion patterns from ClipperAi's
+`test_clipper.py` but with testsrc2 fixtures (no network downloads) like our test_render does.
 
 **Phase C — publishing integrations ("connect to other apps for upload via CLI or API"):**
 1. Buffer via API: adapt ClipperAi's `publishing.py` (Buffer GraphQL: channels, post now, schedule, calendar
@@ -162,13 +172,16 @@ jobs.py), OUR storage (local `media/` served by `media://` — NOT R2), and NO b
 
 After all three: the original M7 (refinement + packaging) still stands, plus real-key verification round.
 
-## Resume here (new chat — Milestone 7 Phase A)
+## Resume here (new chat — Milestone 7 Phase B)
 
-1. Confirm main is at 8f78c3c or later (`git log --oneline -1`); read this file + DECISIONS.md, then `npm test` once.
-2. Phase A branding (above), run `npm test`, screenshot the splash + a Shell page footer.
-3. Phase B engine merge — port clipper.py in slices (acquire → transcribe → select → crop → captions → render),
-   each with tests (`tests/test_clipper_port.py`), reusing the patterns in ClipperAi's `test_clipper.py`.
-4. Phase C publishing integrations.
+1. `git log --oneline -1` → main should be at the "Phase A branding" commit or later; read this file +
+   DECISIONS.md, then `npm test` once to confirm a green base.
+2. Read ClipperAi's `apps/backend/clipper.py` and `test_clipper.py` fully, then port per the Phase B table:
+   add deps (`yt-dlp`, `opencv-python`) to requirements, `GROQ_API_KEY` to the secrets allowlist + Settings,
+   migration 007, then engine slices in order acquire → transcribe → select → crop → captions → render_clip,
+   each landing with tests in `tests/test_clipper_port.py` before moving to the next slice.
+3. Wire the job kind + RPC + UI ("Clip from video" flow and clip review). Full `npm test` + smoke extension.
+4. Phase C publishing (Buffer API adaptation, Metricool MCP client, `python -m app.cli`).
 5. Then M8 (refinement + packaging: electron-builder NSIS + PyInstaller-frozen backend, bundled ffmpeg).
 
 ## Open decisions / notes

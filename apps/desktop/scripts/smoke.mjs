@@ -131,7 +131,9 @@ async function assertNoHorizontalOverflowOnSplash(win) {
 }
 
 let { app, win } = await launch()
-await win.getByText('Meet our developer').waitFor()
+await win.getByRole('link', { name: 'GitHub' }).waitFor()
+const splashLinks = await win.getByRole('link', { name: /Website|LinkedIn|GitHub/ }).count()
+assert.equal(splashLinks, 3, 'three developer links on the splash')
 await shot(win, '0-splash')
 await assertNoHorizontalOverflowOnSplash(win)
 await enterApp(win)

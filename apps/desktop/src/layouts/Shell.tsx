@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import { Aperture, Export, Folders, GearSix, Images, ListChecks, PlusCircle, SquaresFour, type Icon } from '@phosphor-icons/react'
 import { studio, useBackendStatus } from '../lib/studio'
+import { CreatedBy } from '../components/Branding'
 import { Button, ErrorNote, cx } from '../components/ui'
 
 export type Page = 'dashboard' | 'create' | 'projects' | 'project' | 'library' | 'queue' | 'exports' | 'settings'
@@ -19,14 +20,18 @@ function RailItem({ id, label, icon: I, active, onClick }: { id: Page; label: st
     <button
       onClick={() => onClick(id)}
       aria-label={label}
-      title={label}
       aria-current={active ? 'page' : undefined}
       className={cx(
-        'no-drag grid size-11 place-items-center rounded-2xl transition-[background-color,color,transform] duration-150 active:scale-95',
+        'no-drag group relative grid size-11 place-items-center rounded-2xl transition-[background-color,color,transform] duration-150 active:scale-95',
         active ? 'bg-white/[0.11] text-ink shadow-[inset_0_0_0_1px_rgb(255_244_232/0.1)]' : 'text-ink-3 hover:bg-white/[0.06] hover:text-ink',
       )}
     >
-      <I size={20} weight={active ? 'fill' : 'regular'} />
+      <I size={20} weight={active ? 'fill' : 'regular'}
+        className="transition-transform duration-700 ease-out-expo group-hover:rotate-[360deg]" />
+      <span aria-hidden
+        className="pointer-events-none absolute left-full top-1/2 z-50 ml-2 -translate-x-3 -translate-y-1/2 whitespace-nowrap rounded-field bg-black/90 px-2.5 py-1 text-2xs font-medium text-ink opacity-0 shadow-[inset_0_0_0_1px_rgb(255_244_232/0.12),0_8px_24px_-8px_rgb(0_0_0/0.8)] transition-all duration-200 ease-out group-hover:translate-x-0 group-hover:opacity-100">
+        {label}
+      </span>
     </button>
   )
 }
@@ -61,7 +66,7 @@ export function Shell({ page, onNavigate, children }: { page: Page; onNavigate: 
       </nav>
 
       <main className="relative mx-3 mb-3 min-w-0 overflow-x-hidden overflow-y-auto rounded-[30px] bg-white/[0.025] shadow-[inset_0_0_0_1px_rgb(255_244_232/0.06)]">
-        <div className="mx-auto max-w-[1240px] px-10 pt-9 pb-12">
+        <div className="mx-auto flex min-h-full max-w-[1240px] flex-col px-10 pt-9 pb-6">
           {status.message && status.state !== 'ready' && (
             <div className="mb-6">
               <ErrorNote
@@ -70,7 +75,8 @@ export function Shell({ page, onNavigate, children }: { page: Page; onNavigate: 
               />
             </div>
           )}
-          {children}
+          <div className="min-w-0 flex-1">{children}</div>
+          <CreatedBy />
         </div>
       </main>
     </div>
