@@ -17,7 +17,8 @@ from app.errors import UserError
 SIMILAR_BITS = 10       # dHash bits that may differ before two assets count as "visually similar"
 MIN_HEIGHT = 720        # usable portrait footage/photos for 1080x1920 output
 VIDEO_MIN_S, VIDEO_MAX_S = 4, 90
-SEARCH_LIMIT = 8        # candidates per provider per query; thumbs only, full download happens for the winner
+SEARCH_LIMIT = 5        # candidates per provider per query; thumbs only, full download happens for the winner
+SHOTS = 4               # distinct visuals a video piece is cut from (one clip on its own reads as a slideshow)
 
 
 # --- perceptual hashing ---------------------------------------------------------------------------------------------
@@ -160,26 +161,24 @@ async def _pick(providers: list[VisualProvider], query: str, wanted: str,
     return None, {}
 
 
-async def _assign_one(brief: dict, piece: dict, providers: list[VisualProvider],
-                      ever: dict, recent: list[dict], weights: dict[str, float]) -> None:
-    content = piece["content"]
-    wanted = content["plan"]["visual_type"]  # ponytail: video_image forces per-type asset pairs at export (M6)
-    if brief["format"] in ("video", "image"):
-        wanted = brief["format"]
-    best = None
-    for query in dict.fromkeys([content["visual"]["search_query"], content["visual"]["secondary_query"]]):
-        best, meta = await _pick(providers, query, wanted, ever, recent, weights)
-        if best:
-            break
-    if best is None:
-        raise UserError(f'No usable {wanted} turned up for the visual search "{content["visual"]["search_query"]}".')
+def _queries(content: dict) -> list[str]:
+    """This piece's shot queries. Pieces written before the shot list fall back to their two flat queries."""
+    shots = [s["query"] for s in content["visual"].get("shots") or []]
+    flat = [content["visual"]["search_query"], content["visual"].get("secondary_query", "")]
+    return list(dict.fromkeys(q for q in shots + flat if q))
 
+
+async def _take(best: Candidate, meta: dict, piece: dict, providers: list[VisualProvider], seen: list[str],
+                ever: dict, recent: list[dict]) -> dict | None:
+    """Store one chosen candidate (downloading it only if it is new) and return its content entry. None when it
+    looks like a shot this piece already has - checked before the full download, so a duplicate costs nothing."""
     provider = next(p for p in providers if p.name == best.provider)
     with connect() as conn:
         row = conn.execute("SELECT id, thumb_path, perceptual_hash, themes, quality_score FROM assets "
-                           "WHERE provider = ? AND provider_asset_id = ?", (best.provider, best.provider_asset_id)).fetchone()
+                           "WHERE provider = ? AND provider_asset_id = ?",
+                           (best.provider, best.provider_asset_id)).fetchone()
     if row:
-        asset_id, phash, themes = row["id"], row["perceptual_hash"], row["themes"]
+        phash, themes = row["perceptual_hash"], row["themes"]
         if "analysis" not in meta:  # fallback winner: analyse its stored thumbnail instead of a new download
             meta["thumb"] = (config.MEDIA_DIR / row["thumb_path"]).read_bytes()
             meta["analysis"] = visual.analyze(meta["thumb"])
@@ -187,8 +186,12 @@ async def _assign_one(brief: dict, piece: dict, providers: list[VisualProvider],
         if "analysis" not in meta:  # brand-new fallback winner: fetch its thumbnail for analysis
             meta["thumb"] = await provider.download_thumb(best)
             meta["analysis"] = visual.analyze(meta["thumb"])
+        phash, themes = dhash(meta["thumb"]), meta.get("themes", "[]")
+    if any(hamming(phash, s) <= SIMILAR_BITS for s in seen):
+        return None  # cutting back to a near-identical frame reads as a stutter, not as an edit
     a = meta["analysis"]
     if row:
+        asset_id = row["id"]
         if row["quality_score"] is None:  # backfill the analysis columns on pre-M4 rows
             with connect() as conn:
                 conn.execute("UPDATE assets SET brightness = ?, saturation = ?, contrast = ?, dominant_colors = ?, "
@@ -199,8 +202,6 @@ async def _assign_one(brief: dict, piece: dict, providers: list[VisualProvider],
                               meta.get("themes", "[]"), asset_id))
     else:
         asset_id = uuid.uuid4().hex[:12]
-        phash = dhash(meta["thumb"])
-        themes = meta["themes"]
         data = await provider.download(best)
         aext = "mp4" if best.asset_type == "video" else "jpg"  # ponytail: providers only serve mp4/jpeg today
         text = Image.open(io.BytesIO(meta["thumb"])).format.lower()  # thumbs arrive as jpeg/bmp/webp; trust the bytes
@@ -219,11 +220,40 @@ async def _assign_one(brief: dict, piece: dict, providers: list[VisualProvider],
                  a["temperature"], visual.quality(a), themes))
     with connect() as conn:
         conn.execute("INSERT OR IGNORE INTO asset_usage (asset_id, piece_id) VALUES (?, ?)", (asset_id, piece["id"]))
-        content["asset"] = {"id": asset_id, "provider": best.provider, "asset_type": best.asset_type}
-        content["palette"] = visual.palette(a["dominant_colors"])
+    _remember(best.provider, best.provider_asset_id, phash, themes, ever, recent)
+    seen.append(phash)
+    return {"id": asset_id, "provider": best.provider, "asset_type": best.asset_type, "analysis": a}
+
+
+async def _assign_one(brief: dict, piece: dict, providers: list[VisualProvider],
+                      ever: dict, recent: list[dict], weights: dict[str, float]) -> None:
+    """Fill the piece's shot pool: one distinct visual per planned shot, so the edit cuts between real locations
+    instead of seeking around inside a single clip. Images only ever need the one."""
+    content = piece["content"]
+    wanted = content["plan"]["visual_type"]  # ponytail: video_image forces per-type asset pairs at export (M6)
+    if brief["format"] in ("video", "image"):
+        wanted = brief["format"]
+    want = SHOTS if wanted == "video" else 1
+    picked: list[dict] = []
+    seen: list[str] = []
+    for query in _queries(content):
+        if len(picked) >= want:
+            break
+        best, meta = await _pick(providers, query, wanted, ever, recent, weights)
+        if best is None:
+            continue
+        entry = await _take(best, meta, piece, providers, seen, ever, recent)
+        if entry:
+            picked.append(entry)
+    if not picked:
+        raise UserError(f'No usable {wanted} turned up for the visual search "{content["visual"]["search_query"]}".')
+
+    with connect() as conn:
+        content["assets"] = [{k: v for k, v in e.items() if k != "analysis"} for e in picked]
+        content["asset"] = content["assets"][0]  # the hero shot, where every existing reader still looks
+        content["palette"] = visual.palette(picked[0]["analysis"]["dominant_colors"])
         conn.execute("UPDATE content_pieces SET content = ? WHERE id = ?",
                      (json.dumps(content, ensure_ascii=False), piece["id"]))
-    _remember(best.provider, best.provider_asset_id, phash, themes, ever, recent)
 
 
 def _store(rel: str, data: bytes) -> None:
@@ -233,7 +263,7 @@ def _store(rel: str, data: bytes) -> None:
 
 
 async def _assign_all(brief: dict, pieces: list[dict], report) -> None:
-    """Find and download one asset per piece. Written pieces are never lost to a visual failure: it lands in the content."""
+    """Fill every piece's shot pool. Written pieces are never lost to a visual failure: it lands in the content."""
     providers = get_providers()
     n = len(pieces)
     if not providers:

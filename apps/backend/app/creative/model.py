@@ -76,7 +76,16 @@ class DeepSeekModel(CreativeModel):
                 if r.status_code in (400, 422):
                     raise UserError("DeepSeek rejected the request. Check the model name in Settings.", r.text[:500])
                 if r.is_success:
-                    content = (r.json()["choices"][0]["message"].get("content") or "").strip()
+                    reply = r.json()
+                    choice = reply["choices"][0]
+                    content = (choice["message"].get("content") or "").strip()
+                    # Out of output room: the JSON is cut mid-string. Repairing or retrying just truncates again,
+                    # and reasoning-capable models spend this budget before they emit a single visible character.
+                    if choice.get("finish_reason") == "length":
+                        raise UserError(
+                            "The AI ran out of room before it finished writing. Raise \"AI max tokens\" in "
+                            "Settings, then try again.",
+                            f"finish_reason=length, usage={reply.get('usage')}, max_tokens={self.max_tokens}")
                     if content:  # JSON mode occasionally returns empty content: retry
                         return content
                 elif attempt == self.RETRIES:

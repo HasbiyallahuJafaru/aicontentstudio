@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { ArrowLeft, Check, Export, PaperPlaneTilt, Play, Trash, X } from '@phosphor-icons/react'
 import { call, formatDate, hasKey, label, mediaUrl, useJob, useQuery, BackendError,
   type BufferChannel, type Clip, type Project as P } from '../lib/studio'
-import { Button, ErrorNote, Field, Input, cx } from './ui'
+import { Button, Dialog, ErrorNote, Field, Input, cx } from './ui'
 
 const POST_ORDER = ['tiktok', 'instagram', 'youtube', 'linkedin', 'facebook', 'x'] as const
 
@@ -163,65 +163,64 @@ function ClipRow({ clip: c, onPreview, onPublish, onReview, busy }: {
   )
 }
 
+// Two columns: the clip fills the panel height on the left, everything readable or clickable sits in
+// the right rail. Only the rail's middle band scrolls, so the publish button is never below the fold.
 function ClipPreview({ clip: c, onClose, onPublish }: { clip: Clip; onClose: () => void; onPublish: () => void }) {
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [onClose])
-  const video = mediaUrl(c.video_path)
-
   return (
-    <div role="dialog" aria-label={`Preview clip ${c.idx}`} onClick={onClose}
-      className="fixed inset-0 z-40 grid place-items-center bg-black/70 p-6 backdrop-blur-sm">
-      <div onClick={(e) => e.stopPropagation()}
-        className="grid max-h-full w-full max-w-[820px] gap-5 overflow-y-auto rounded-[24px] bg-[#17181a] p-8 shadow-[inset_0_0_0_1px_rgb(255_244_232/0.09),0_32px_80px_-24px_rgb(0_0_0/0.8)]">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <p className="text-xs text-ink-3">Clip {String(c.idx).padStart(2, '0')} · {(c.end_at - c.start_at).toFixed(0)}s · score {c.score}</p>
-            <h2 className="mt-0.5 font-display text-[20px] font-semibold tracking-[-0.02em]">{c.title}</h2>
+    <Dialog label={`Preview clip ${c.idx}`} width={1180} onClose={onClose}
+      className="h-[min(780px,calc(100dvh-3rem))] grid-cols-[minmax(0,1fr)_368px] max-[1040px]:h-[calc(100dvh-3rem)] max-[1040px]:grid-cols-1 max-[1040px]:grid-rows-[minmax(0,1fr)_auto]">
+      <section className="grid min-h-0 place-items-center p-3">
+        <video src={mediaUrl(c.video_path)} controls className="max-h-full max-w-full rounded-field bg-black/35" />
+      </section>
+
+      <aside className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)_auto] border-l border-line max-[1040px]:border-l-0 max-[1040px]:border-t">
+        <header className="grid gap-2 border-b border-line px-6 py-5">
+          <div className="flex items-start justify-between gap-3">
+            <p className="tnum text-xs text-ink-3">Clip {String(c.idx).padStart(2, '0')} · {(c.end_at - c.start_at).toFixed(0)}s · score {c.score}</p>
+            <Button variant="ghost" onClick={onClose} aria-label="Close preview" className="-mt-2 -mr-3 h-8"><X size={15} /></Button>
           </div>
-          <div className="flex shrink-0 items-center gap-2">
-            <span className={cx('rounded-full px-3 py-1 text-2xs font-medium',
-              c.status === 'rejected' ? 'bg-danger/15 text-danger' : 'bg-white/[0.07] text-ink-2')}>{label(c.status)}</span>
-            <Button variant="ghost" onClick={onClose} aria-label="Close preview"><X size={15} /></Button>
+          <h2 className="line-clamp-3 font-display text-[17px] font-semibold leading-snug tracking-[-0.02em]">{c.title}</h2>
+          <span className={cx('w-fit rounded-full px-3 py-1 text-2xs font-medium',
+            c.status === 'rejected' ? 'bg-danger/15 text-danger' : 'bg-white/[0.07] text-ink-2')}>{label(c.status)}</span>
+        </header>
+
+        <div className="grid content-start gap-4 overflow-y-auto px-6 py-5 text-[13px]">
+          <div className="grid gap-1">
+            <p className="text-ink-3">Hook</p>
+            <p data-selectable className="text-ink">{c.hook}</p>
           </div>
-        </div>
-
-        <video src={video} controls className="max-h-[56vh] justify-self-center rounded-field" />
-
-        <div className="grid gap-2 text-[13px]">
-          <p className="text-ink-3">Hook</p>
-          <p data-selectable className="text-ink">{c.hook}</p>
-          <p className="pt-2 text-ink-3">Description</p>
-          <p data-selectable className="text-ink-2">{c.description}</p>
-          <p className="pt-2 text-ink-3">Why this moment</p>
-          <p data-selectable className="text-ink-2">{c.reason}</p>
-        </div>
-
-        <details className="text-xs">
-          <summary className="w-fit cursor-pointer list-none text-ink-3 hover:text-ink">Post copy per platform</summary>
-          <dl data-selectable className="mt-3 grid max-w-[68ch] grid-cols-[88px_minmax(0,1fr)] gap-x-5 gap-y-2 text-ink-2">
-            {POST_ORDER.filter((n) => c.posts[n]).map((n) => (
-              <div key={n} className="col-span-2 grid grid-cols-subgrid">
-                <dt className="text-ink-3">{label(n)}</dt>
-                <dd className="whitespace-pre-line">{c.posts[n]}</dd>
+          <div className="grid gap-1">
+            <p className="text-ink-3">Description</p>
+            <p data-selectable className="text-ink-2">{c.description}</p>
+          </div>
+          <div className="grid gap-1">
+            <p className="text-ink-3">Why this moment</p>
+            <p data-selectable className="text-ink-2">{c.reason}</p>
+          </div>
+          <details className="text-xs">
+            <summary className="w-fit cursor-pointer list-none text-ink-3 hover:text-ink">Post copy per platform</summary>
+            <dl data-selectable className="mt-3 grid grid-cols-[76px_minmax(0,1fr)] gap-x-4 gap-y-2 text-ink-2">
+              {POST_ORDER.filter((n) => c.posts[n]).map((n) => (
+                <div key={n} className="col-span-2 grid grid-cols-subgrid">
+                  <dt className="text-ink-3">{label(n)}</dt>
+                  <dd className="whitespace-pre-line">{c.posts[n]}</dd>
+                </div>
+              ))}
+              <div className="col-span-2 grid grid-cols-subgrid">
+                <dt className="text-ink-3">Hashtags</dt>
+                <dd>{c.hashtags.join(' ')}</dd>
               </div>
-            ))}
-            <div className="col-span-2 grid grid-cols-subgrid">
-              <dt className="text-ink-3">Hashtags</dt>
-              <dd>{c.hashtags.join(' ')}</dd>
-            </div>
-          </dl>
-        </details>
+            </dl>
+          </details>
+        </div>
 
         {c.status === 'approved' && (
-          <div className="flex justify-end border-t border-line pt-4">
+          <div className="flex justify-end border-t border-line px-6 py-4">
             <Button variant="primary" onClick={onPublish}><PaperPlaneTilt size={14} />Publish</Button>
           </div>
         )}
-      </div>
-    </div>
+      </aside>
+    </Dialog>
   )
 }
 
@@ -233,12 +232,6 @@ function PublishDialog({ clip: c, onClose, onChanged }: {
   const [when, setWhen] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<Error>()
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [onClose])
 
   async function publish() {
     if (busy) return
@@ -257,28 +250,26 @@ function PublishDialog({ clip: c, onClose, onChanged }: {
 
   const usable = channels?.filter((ch) => ch.usable) ?? []
   return (
-    <div role="dialog" aria-label={`Publish clip ${c.idx}`} onClick={onClose}
-      className="fixed inset-0 z-40 grid place-items-center bg-black/70 p-6 backdrop-blur-sm">
-      <div onClick={(e) => e.stopPropagation()}
-        className="grid max-h-full w-full max-w-[560px] gap-5 overflow-y-auto rounded-[24px] bg-[#17181a] p-8 shadow-[inset_0_0_0_1px_rgb(255_244_232/0.09),0_32px_80px_-24px_rgb(0_0_0/0.8)]">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <p className="text-xs text-ink-3">Publish to Buffer</p>
-            <h2 className="mt-0.5 font-display text-[20px] font-semibold tracking-[-0.02em]">{c.title}</h2>
-          </div>
-          <Button variant="ghost" onClick={onClose} aria-label="Close"><X size={15} /></Button>
+    <Dialog label={`Publish clip ${c.idx}`} width={560} onClose={onClose} className="grid-rows-[auto_minmax(0,1fr)_auto]">
+      <header className="flex items-start justify-between gap-3 border-b border-line px-6 py-5">
+        <div>
+          <p className="text-xs text-ink-3">Publish to Buffer</p>
+          <h2 className="mt-0.5 font-display text-[18px] font-semibold tracking-[-0.02em]">{c.title}</h2>
         </div>
+        <Button variant="ghost" onClick={onClose} aria-label="Close" className="-mt-2 -mr-3 h-8"><X size={15} /></Button>
+      </header>
 
+      <div className="grid content-start gap-5 overflow-y-auto px-6 py-5">
         {channelsError && <ErrorNote error={channelsError} />}
         {channels && usable.length === 0 && !channelsError && (
           <p className="text-[13px] text-ink-2">No usable channels in Buffer. Connect a network inside Buffer first.</p>
         )}
         <fieldset className="grid gap-1.5">
-          <legend className="text-[13px] font-medium text-ink">Channels</legend>
+          <legend className="mb-1.5 text-[13px] font-medium text-ink">Channels</legend>
           {usable.map((ch) => (
             <button key={ch.id} type="button"
               onClick={() => setPicked(picked.includes(ch.id) ? picked.filter((x) => x !== ch.id) : [...picked, ch.id])}
-              className={cx('flex items-center justify-between rounded-[10px] px-3.5 py-2.5 text-left text-[13px]',
+              className={cx('flex items-center justify-between rounded-[10px] px-3.5 py-2.5 text-left text-[13px] transition-colors duration-150',
                 picked.includes(ch.id) ? 'bg-white/[0.08] text-ink' : 'text-ink-2 hover:bg-white/[0.05]')}>
               {ch.displayName || ch.name}
               <span className="text-2xs uppercase tracking-wide text-ink-3">{ch.service}</span>
@@ -291,13 +282,14 @@ function PublishDialog({ clip: c, onClose, onChanged }: {
         </Field>
 
         {error && <ErrorNote error={error} />}
-        <div className="flex justify-end gap-2 border-t border-line pt-4">
-          <Button variant="ghost" onClick={onClose}>Cancel</Button>
-          <Button variant="primary" disabled={!picked.length || busy} onClick={publish}>
-            <PaperPlaneTilt size={14} />{busy ? 'Publishing…' : when ? 'Schedule' : 'Post now'}
-          </Button>
-        </div>
       </div>
-    </div>
+
+      <div className="flex justify-end gap-2 border-t border-line px-6 py-4">
+        <Button variant="ghost" onClick={onClose}>Cancel</Button>
+        <Button variant="primary" disabled={!picked.length || busy} onClick={publish}>
+          <PaperPlaneTilt size={14} />{busy ? 'Publishing…' : when ? 'Schedule' : 'Post now'}
+        </Button>
+      </div>
+    </Dialog>
   )
 }

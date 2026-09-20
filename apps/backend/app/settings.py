@@ -17,7 +17,7 @@ _LEGACY_TONES = {"cinematic": "cinema", "reflective": "hope", "calm": "stoic", "
 class Settings(BaseModel):
     ai_model: str = Field("deepseek-flash", min_length=1, max_length=64)
     ai_temperature: float = Field(1.0, ge=0, le=2)
-    ai_max_tokens: int = Field(2000, ge=256, le=8192)
+    ai_max_tokens: int = Field(4000, ge=256, le=8192)  # a piece + its metadata, with room for a thinking model
     default_topic: str = Field("", max_length=60)  # blank: the Create page starts empty
     default_tone: Genre = "hope"
 

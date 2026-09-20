@@ -117,6 +117,16 @@ export function useBackendStatus() {
   return status
 }
 
+/** Whether the window is fullscreen. Fullscreen hides the system controls, so the UI draws its own exit. */
+export function useFullScreen() {
+  const [full, setFull] = useState(false)
+  useEffect(() => {
+    studio.isFullScreen().then(setFull)
+    return studio.onFullScreen((on) => setFull(on))
+  }, [])
+  return full
+}
+
 /** Load data from the backend; reloads when the backend (re)becomes ready or `refresh` changes. */
 export function useQuery<T>(method: string, params?: object, refresh?: unknown) {
   const status = useBackendStatus()

@@ -34,6 +34,7 @@ end on the quote or a variation). It must OPEN on the hook.
 - Visual search queries are cinematic, filmable stock-footage searches: subject + setting + light or motion — \
 for example "lone runner city dawn slow motion", "storm waves ocean cliff drone", "empty gym night rain window". \
 3 to 8 words, no brand names, no text-in-image requests.
+- The piece is CUT, not illustrated: "shots" is the shot list the edit cuts between, 4 beats in narration order. Every shot is a different subject AND a different location - never the same place at another hour, never the same subject from another angle. Shot 1 is the hook: the most kinetic thing in the list, already in motion. Across the four use at least one "literal" (shows what the words say), one "metaphorical" (shows the feeling, not the words) and one "atmospheric" (sets the place and the weather). Order them to follow your own narration, beat by beat.
 - You never decide colors, font sizes, pixel positions, bitrates or crops.
 
 Before you answer, reread the first line and the quote once. If the first line wouldn't stop a scroll, or the quote \
@@ -80,7 +81,8 @@ PLAN_SHAPE = {
 PIECE_SHAPE = {
     "quote": {"text": "string", "author": None},
     "narration": {"text": "string", "delivery": "e.g. calm_reflective"},
-    "visual": {"preferred_type": "video|image", "search_query": "string", "secondary_query": "string", "mood": "string"},
+    "visual": {"preferred_type": "video|image", "search_query": "string", "secondary_query": "string", "mood": "string",
+               "shots": [{"query": "stock search for this beat", "role": "literal|metaphorical|atmospheric"}]},
     "design": {"text_density": "low|medium|high", "animation": "still|slow|medium",
                "composition": "editorial|centered|minimal|bold"},
     "metadata": {"title": "short title, no hashtags", "description": "2-3 sentences", "caption": "social caption, 1-3 short lines",

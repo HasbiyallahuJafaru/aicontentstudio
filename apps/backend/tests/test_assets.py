@@ -59,13 +59,16 @@ def thumb_for(pid: str) -> bytes:
     return SPECIAL.get(pid, bmp(STRIPES))
 
 
-def make_thumbs(*pids: str, solid: tuple[str, ...] = (), dark: tuple[str, ...] = ()) -> None:
+def make_thumbs(*pids: str, solid: tuple[str, ...] = (), dark: tuple[str, ...] = (),
+                inverted: tuple[str, ...] = ()) -> None:
     global SPECIAL
     SPECIAL = {p: bmp(STRIPES) for p in pids}
     for p in solid:
         SPECIAL[p] = bmp(SOLID)
     for p in dark:
         SPECIAL[p] = bmp(DARK)
+    for p in inverted:
+        SPECIAL[p] = bmp(INVERTED)
 
 
 SPECIAL: dict[str, bytes] = {}
@@ -140,8 +143,9 @@ class Selection(unittest.TestCase):
         prov = FakeProvider2([cand("a1", duration=12), cand("a2")])
         notes: list = []
         assign_sync(BRIEF, [piece_row(p["id"])], [prov], notes)
-        self.assertEqual(prov.downloads, ["a1"])  # winner only; the second candidate is never fetched whole
-        self.assertEqual(prov.thumb_downloads, ["a1", "a2"])  # thumbnails first (PRD §64)
+        # one distinct visual per query: the piece is cut between them instead of seeking around inside one
+        self.assertEqual(prov.downloads, ["a1", "a2"])
+        self.assertEqual(prov.thumb_downloads, ["a1", "a2", "a2"])  # thumbnails first (PRD §64); a1 is stored by then
         self.assertIn("Finding visual 1 of 1", notes[0][0])
         row = asset_row("a1")
         self.assertEqual((row["provider"], row["asset_type"], row["creator"], row["license"]),
@@ -150,17 +154,27 @@ class Selection(unittest.TestCase):
         self.assertTrue((config.MEDIA_DIR / row["local_path"]).exists())
         self.assertTrue((config.MEDIA_DIR / row["thumb_path"]).exists())
         stored = content.pieces(p["id"])[0]["content"]
-        self.assertEqual(stored["asset"]["id"], row["id"])
+        self.assertEqual([a["id"] for a in stored["assets"]], [row["id"], asset_row("a2")["id"]])
+        self.assertEqual(stored["asset"]["id"], row["id"])  # the hero shot stays where every reader looks
         self.assertNotIn("visual_error", stored)
 
     def test_second_piece_avoids_first_pick_even_without_history(self):
         p = projects.create(BRIEF)
-        make_thumbs("a1", "a2", solid=("a2",))
-        prov = FakeProvider2([cand("a1"), cand("a2")])
+        make_thumbs("a1", "a2", "a3", solid=("a2",), inverted=("a3",))
+        prov = FakeProvider2([cand("a1"), cand("a2"), cand("a3")])
         assign_sync(BRIEF, [piece_row(p["id"], 1)], [prov], [])
         assign_sync(BRIEF, [piece_row(p["id"], 2)], [prov], [])
         picks = [content.pieces(p["id"])[i]["content"]["asset"]["id"] for i in (0, 1)]
         self.assertNotEqual(picks[0], picks[1])
+
+    def test_pool_skips_a_shot_that_looks_like_one_it_already_has(self):
+        p = projects.create(BRIEF)
+        make_thumbs("a1", "a2")  # both striped: the same frame twice would read as a stutter, not a cut
+        prov = FakeProvider2([cand("a1"), cand("a2")])
+        assign_sync(BRIEF, [piece_row(p["id"])], [prov], [])
+        stored = content.pieces(p["id"])[0]["content"]
+        self.assertEqual(len(stored["assets"]), 1)
+        self.assertEqual(prov.downloads, ["a1"])  # the near-duplicate is rejected before it is fetched whole
 
     def test_exhausted_pool_falls_back_to_least_used(self):
         p = projects.create(BRIEF)
@@ -268,15 +282,15 @@ class JobIntegration(unittest.TestCase):
 
     def test_full_job_writes_pieces_and_visuals(self):
         p = projects.create({**BRIEF, "quantity": 2})
-        make_thumbs("a1", "a2", solid=("a2",))
+        make_thumbs("a1", "a2", "a3", solid=("a2",), inverted=("a3",))
         prov = FakeProvider2([cand("a1"), cand("a2"), cand("a3")])
         job = run_job_with([prov], FakeModel(["One quiet step at a time.", "The work is the way."]), p["id"])
         self.assertEqual(job["status"], "completed")
         pieces = content.pieces(p["id"])
-        self.assertEqual([bool(x["content"].get("asset")) for x in pieces], [True, True])
-        self.assertEqual(prov.downloads, ["a1", "a2"])
+        self.assertEqual([bool(x["content"].get("assets")) for x in pieces], [True, True])
+        self.assertEqual(sorted(prov.downloads), ["a1", "a2", "a3"])
         rows = assets.list_assets()
-        self.assertEqual([r["times_used"] for r in rows], [1, 1])
+        self.assertEqual(sum(r["times_used"] for r in rows), 4)  # two pieces, two shots each
         self.assertEqual(projects.get(p["id"])["status"], "ready")
 
 

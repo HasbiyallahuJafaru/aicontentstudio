@@ -47,6 +47,10 @@ function createWindow() {
   // screen. F11 toggles fullscreen; Escape leaves it. In fullscreen the overlay controls are hidden, so these
   // keys are the only way back out.
   win.on('maximize', () => { if (!win.isFullScreen()) win.setFullScreen(true) })
+  // In fullscreen the overlay controls are gone, so the renderer draws its own way out and needs the state.
+  const fullScreenChanged = () => broadcast('app:fullscreen', win.isFullScreen())
+  win.on('enter-full-screen', fullScreenChanged)
+  win.on('leave-full-screen', fullScreenChanged)
   win.webContents.on('before-input-event', (_e, input) => {
     if (input.type !== 'keyDown') return
     if (input.key === 'F11') {
@@ -94,6 +98,8 @@ app.whenReady().then(() => {
     await backend.call('secrets.load', { keys: secrets.all() })
     return secrets.status()
   })
+  ipcMain.handle('app:isFullScreen', () => BrowserWindow.getAllWindows()[0]?.isFullScreen() ?? false)
+  ipcMain.handle('app:exitFullScreen', () => BrowserWindow.getAllWindows()[0]?.setFullScreen(false))
   ipcMain.handle('app:openDataDir', () => shell.openPath(dataDir))
   // Only export folders may be opened by path (PRD §47 "open export folder"); nothing else from the renderer.
   ipcMain.handle('app:openExportPath', (_e, p: string) => {

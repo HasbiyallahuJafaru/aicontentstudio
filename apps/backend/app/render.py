@@ -13,7 +13,7 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont, UnidentifiedImageError
 
-from app import config
+from app import config, edit
 from app.errors import UserError
 
 FONT_PATH = Path(__file__).resolve().parents[1] / "assets" / "fonts" / "Sora-Variable.ttf"
@@ -22,10 +22,6 @@ IMAGE_W, IMAGE_H = 1080, 1350
 MARGIN = 96
 SIZES = (96, 84, 72, 64, 56)  # §25: size follows quote length and line count
 STALL_SECS = 180  # no ffmpeg progress for this long = wedged; real renders emit progress ~2x/sec
-# color presets for the Create page's Look picker (appended to the visual filter chain)
-LOOKS = {"none": "", "warm": ",colorbalance=rm=.07:bm=-.07,eq=saturation=1.08",
-         "cool": ",colorbalance=rm=-.06:bm=.07", "mono": ",hue=s=0",
-         "vivid": ",eq=saturation=1.32:contrast=1.05"}
 SUBTITLES_FONTS = Path(__file__).resolve().parents[1] / "app" / "clipper" / "assets" / "fonts"
 
 
@@ -110,6 +106,15 @@ def _probe(path: Path) -> dict:
     return json.loads(proc.stdout)
 
 
+def open_luma(path: Path) -> float:
+    """Average brightness of the first frame, 0..1. The hook lives in the first seconds; opening on black
+    throws them away, so a render that starts dark is a defect, not a style."""
+    proc = subprocess.run(["ffmpeg", "-nostdin", "-v", "error", "-i", str(path), "-frames:v", "1",
+                           "-vf", "scale=32:32,format=gray", "-f", "rawvideo", "-"],
+                          capture_output=True, stdin=subprocess.DEVNULL, timeout=60)
+    return sum(proc.stdout) / len(proc.stdout) / 255 if proc.stdout else 1.0
+
+
 def validate_video(path: Path, want: dict, w: int, h: int) -> dict:
     """§34: resolution, orientation, codec, fps and duration are checked before anything is accepted."""
     d = _probe(path)
@@ -127,6 +132,8 @@ def validate_video(path: Path, want: dict, w: int, h: int) -> dict:
         problems.append(f"fps is {fps:.2f}, wanted {want['fps']:.2f}")
     if abs(float(d["format"]["duration"]) - want["duration"]) > 1.5:
         problems.append(f"duration is {float(d['format']['duration']):.2f}s, wanted ~{want['duration']:.2f}s")
+    if open_luma(path) < 0.02:
+        problems.append("the video opens on a black frame, so the hook is wasted")
     if problems:
         raise UserError("The rendered video failed its quality check.", "; ".join(problems))
     return {"duration": float(d["format"]["duration"]), "fps": fps}
@@ -168,7 +175,7 @@ class FFmpegRenderer:
     def render_video(self, *, src: Path, narration: Path, out: Path, subject_position: str, src_fps: float,
                      src_duration: float, still: bool, progress, out_fps: float | None = None,
                      scrim_png: Path | None = None, quote: str | None = None, palette: dict | None = None,
-                     look: str = "none", blur_background: bool = False, parallax: bool = False,
+                     look: str = "none", duck: float = 6.0, blur_background: bool = False, parallax: bool = False,
                      subtitles: Path | None = None, shots: list[dict] | None = None) -> dict:
         """Edits a finished video the way the top motivational studios do: the footage is cut into motion shots
         (zoom in / zoom out / pan / push-in), a still cutaway can be merged between video shots, the whole
@@ -193,18 +200,20 @@ class FFmpegRenderer:
         chain = []
         for i, shot in enumerate(shots):
             length = max(shot["length"], 0.4)
+            # a ramped shot plays slower, so it needs less source; stills and the blur treatment never ramp
+            speed = 1.0 if shot.get("still") or shot.get("blur") else float(shot.get("speed", 1.0))
             if shot.get("still"):
                 args += ["-loop", "1", "-t", f"{length:.3f}", "-i", str(shot["src"])]
-                motion = "push"
+                motion = shot.get("motion") or "push"
             else:
                 if shot.get("loop"):  # shorter than the edit: loop the source instead of running out mid-shot
                     args += ["-stream_loop", "-1"]
                 if shot.get("seek"):
                     args += ["-ss", f"{shot['seek']:.3f}"]
-                args += ["-t", f"{length:.3f}", "-i", str(shot["src"])]
+                args += ["-t", f"{length / speed:.3f}", "-i", str(shot["src"])]
                 motion = shot.get("motion")
             frames = max(round(length * fps), 1)
-            geom = f"scale={self.w}:{self.h}:force_original_aspect_ratio=increase,crop={self.w}:{self.h}"
+            ramp = f",setpts={speed:g}*PTS" if speed != 1.0 else ""
             if shot.get("blur"):
                 blur_geom = (f"scale={self.w}:{self.h}:force_original_aspect_ratio=decrease")
                 chain.append(f"[{i}:v]split=2[bg{i}][fg{i}];"
@@ -213,7 +222,12 @@ class FFmpegRenderer:
                              f"[fg{i}]{blur_geom}[fgp{i}];"
                              f"[bgb{i}][fgp{i}]overlay=(W-w)/2:(H-h)/2,fps={fps:g},setsar=1[v{i}]")
                 continue
+            # zoompan quantises its zoom in source pixels, which stair-steps on a still: supersample first
+            box = (2 * self.w, 2 * self.h) if shot.get("still") else (self.w, self.h)
+            geom = f"scale={box[0]}:{box[1]}:force_original_aspect_ratio=increase,crop={box[0]}:{box[1]}"
             zoom = {"push": f",zoompan=z='min(1+0.06*on/{frames:g},1.06)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'"
+                            f":d=1:s={self.w}x{self.h}:fps={fps:g}",
+                    "slow": f",zoompan=z='min(1+0.03*on/{frames:g},1.03)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'"
                             f":d=1:s={self.w}x{self.h}:fps={fps:g}",
                     "in": f",zoompan=z='min(1+0.08*on/{frames:g},1.08)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'"
                           f":d=1:s={self.w}x{self.h}:fps={fps:g}",
@@ -221,15 +235,44 @@ class FFmpegRenderer:
                            f":d=1:s={self.w}x{self.h}:fps={fps:g}",
                     "pan": f",zoompan=z='1.1':x='(iw-iw/zoom)*on/{frames:g}':y='ih/2-(ih/zoom/2)'"
                            f":d=1:s={self.w}x{self.h}:fps={fps:g}"}.get(motion, "")
-            chain.append(f"[{i}:v]{geom}{zoom},setsar=1[v{i}]")
+            if not zoom:  # a locked-off shot still has to land on the canvas at the timeline's frame rate
+                zoom = f",scale={self.w}:{self.h},fps={fps:g}"
+            chain.append(f"[{i}:v]{geom}{zoom}{ramp},setsar=1[v{i}]")
+
+        # every join is an xfade, a hard cut included (one frame): one timeline, one set of offset maths.
+        # xfade eats `duration` seconds at each join, which the planned shot lengths already carry back.
         if len(shots) > 1:
-            chain.append("".join(f"[v{i}]" for i in range(len(shots))) + f"concat=n={len(shots)}:v=1:a=0[vc]")
+            prev, acc = "v0", max(shots[0]["length"], 0.4)
+            for i in range(1, len(shots)):
+                tr, td = shots[i].get("transition", "fade"), float(shots[i].get("tdur", 0.04))
+                chain.append(f"[{prev}][v{i}]xfade=transition={tr}:duration={td:g}"
+                             f":offset={max(acc - td, 0):.3f}[x{i}]")
+                prev, acc = f"x{i}", acc + max(shots[i]["length"], 0.4) - td
+            chain.append(f"[{prev}]null[vc]")
         else:
             chain.append("[v0]null[vc]")
 
+        # grade, then halation, then the dressing that sells it as film
+        style = edit.LOOKS.get(look, edit.LOOKS["none"])
         prev = "vc"
-        grade = LOOKS.get(look, "")
-        chain.append(f"[{prev}]null{grade},vignette=angle=PI/5,noise=alls=4:allf=t[film]")
+        if style["grade"]:
+            chain.append(f"[{prev}]{style['grade']}[graded]")
+            prev = "graded"
+        if style["bloom"]:
+            chain.append(f"[{prev}]split=2[base][hi];[hi]gblur=sigma=18,curves=all='0/0 0.62/0.12 1/1'[blur];"
+                         f"[base][blur]blend=all_mode=screen:all_opacity={style['bloom']:g}[bloomed]")
+            prev = "bloomed"
+        dress = []
+        if style["unsharp"]:
+            dress.append(f"unsharp=5:5:{style['unsharp']:g}")
+        if style["vignette"]:
+            dress.append(f"vignette=angle=PI/{style['vignette']:g}")
+        if style["grain"]:
+            dress.append(f"noise=alls={style['grain']}:allf=t+u")
+        if style["bars"]:
+            dress.append(f"drawbox=x=0:y=0:w=iw:h=ih*{style['bars']:g}:color=black@1:t=fill")
+            dress.append(f"drawbox=x=0:y=ih*{1 - style['bars']:g}:w=iw:h=ih*{style['bars']:g}:color=black@1:t=fill")
+        chain.append(f"[{prev}]{','.join(dress) or 'null'}[film]")
         prev = "film"
         if subtitles is not None:  # burned karaoke-style subtitles (Montserrat, same styling as clips)
             sub_file = esc(str(subtitles).replace("\\", "/"))
@@ -259,9 +302,13 @@ class FFmpegRenderer:
 
         a_chain = f"[{narr_idx}:a]loudnorm=I=-16:TP=-1.5:LRA=11[na]"
         if self.music and self.music.exists():
-            a_chain += (f";[{narr_idx + 1}:a]volume={self.music_volume},afade=t=in:st=0:d=1,"
+            a_chain += (";[na]asplit=2[nk][key]"
+                        f";[{narr_idx + 1}:a]volume={self.music_volume},afade=t=in:st=0:d=1,"
                         f"afade=t=out:st={max(duration - 1.5, 0):.3f}:d=1.5[mu]"
-                        ";[na][mu]amix=inputs=2:duration=first:normalize=0[aout]")
+                        # ponytail: ratio stands in for the genre's duck depth in dB; close enough by ear
+                        f";[mu][key]sidechaincompress=threshold=0.03:ratio={max(2.0, duck * 1.5):g}"
+                        ":attack=20:release=400[duck]"
+                        ";[nk][duck]amix=inputs=2:duration=first:normalize=0[aout]")
             args += ["-i", str(self.music)]
         else:
             a_chain += ";[na]anull[aout]"

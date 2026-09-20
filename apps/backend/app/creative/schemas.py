@@ -46,11 +46,19 @@ class Narration(BaseModel):
     delivery: Annotated[str, capped(40)] = Field(min_length=3)
 
 
+class Shot(BaseModel):
+    """One beat of the edit: what the camera is on while a given stretch of narration plays."""
+    query: Annotated[str, capped(100)] = Field(min_length=3)
+    role: Literal["literal", "metaphorical", "atmospheric"]
+
+
 class Visual(BaseModel):
     preferred_type: Literal["video", "image"]
     search_query: Annotated[str, capped(100)] = Field(min_length=3)
     secondary_query: Annotated[str, capped(100)] = Field(min_length=3)
     mood: Annotated[str, capped(60)] = Field(min_length=3)
+    # optional so a model that skips it degrades to the two flat queries instead of failing the whole piece
+    shots: list[Shot] = Field(default_factory=list, max_length=6)
 
 
 class DesignHints(BaseModel):

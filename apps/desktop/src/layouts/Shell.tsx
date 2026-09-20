@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
-import { Aperture, Export, Folders, GearSix, Images, ListChecks, PlusCircle, SquaresFour, type Icon } from '@phosphor-icons/react'
-import { studio, useBackendStatus } from '../lib/studio'
+import { Aperture, CornersIn, Export, Folders, GearSix, Images, ListChecks, PlusCircle, SquaresFour, type Icon } from '@phosphor-icons/react'
+import { studio, useBackendStatus, useFullScreen } from '../lib/studio'
 import { CreatedBy } from '../components/Branding'
 import { Button, ErrorNote, cx } from '../components/ui'
 
@@ -36,15 +36,35 @@ function RailItem({ id, label, icon: I, active, onClick }: { id: Page; label: st
   )
 }
 
+/** A live dot, like the rail icons: the state is the colour, the words wait for a hover. */
 function BackendIndicator() {
   const s = useBackendStatus()
   const text = { starting: 'Starting engine', ready: 'Engine ready', crashed: 'Engine stopped', stopped: 'Engine stopped' }[s.state]
   const color = { starting: 'bg-accent', ready: 'bg-ok', crashed: 'bg-danger', stopped: 'bg-ink-3' }[s.state]
+  const beating = s.state === 'ready' || s.state === 'starting'
   return (
-    <div className="flex items-center gap-2 rounded-full bg-white/[0.05] px-3 py-1 text-xs text-ink-2" role="status" aria-live="polite">
-      <span className={cx('size-1.5 rounded-full', color, s.state === 'starting' && 'animate-pulse')} />
-      {text}
+    <div role="status" aria-live="polite"
+      className="no-drag group relative grid size-9 shrink-0 place-items-center rounded-full transition-colors duration-150 hover:bg-white/[0.06]">
+      <span className="relative grid place-items-center">
+        {beating && <span aria-hidden className={cx('absolute size-2 rounded-full opacity-60 motion-safe:animate-ping', color)} />}
+        <span className={cx('relative size-2 rounded-full', color)} />
+      </span>
+      <span className="sr-only">{text}</span>
+      <span aria-hidden
+        className="pointer-events-none absolute right-full top-1/2 z-50 mr-1 -translate-y-1/2 translate-x-3 whitespace-nowrap rounded-field bg-black/90 px-2.5 py-1 text-2xs font-medium text-ink opacity-0 shadow-[inset_0_0_0_1px_rgb(255_244_232/0.12),0_8px_24px_-8px_rgb(0_0_0/0.8)] transition-all duration-200 ease-out group-hover:translate-x-0 group-hover:opacity-100">
+        {text}
+      </span>
     </div>
+  )
+}
+
+/** Fullscreen hides the window controls, so this is the only way back out besides F11 and Escape. */
+function ExitFullScreen() {
+  if (!useFullScreen()) return null
+  return (
+    <Button variant="ghost" onClick={() => studio.exitFullScreen()} className="no-drag h-8 !px-3 !text-xs">
+      <CornersIn size={14} />Exit fullscreen
+    </Button>
   )
 }
 
@@ -55,7 +75,7 @@ export function Shell({ page, onNavigate, children }: { page: Page; onNavigate: 
       <header className="drag titlebar-inset col-span-2 flex items-center gap-3 pl-5">
         <Aperture size={20} weight="fill" className="text-accent" />
         <span className="font-display text-[13px] font-semibold tracking-[-0.01em]">AI Social Content Studio</span>
-        <div className="ml-auto"><BackendIndicator /></div>
+        <div className="ml-auto flex items-center gap-1"><ExitFullScreen /><BackendIndicator /></div>
       </header>
 
       <nav aria-label="Main" className="mb-3 ml-3 flex flex-col items-center gap-2 rounded-[24px] bg-black/35 py-3 shadow-[inset_0_0_0_1px_rgb(255_244_232/0.06)]">

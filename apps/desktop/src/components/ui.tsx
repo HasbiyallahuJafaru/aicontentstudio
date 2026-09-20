@@ -1,6 +1,7 @@
 // The small shared component set. Every screen builds from these; no one-off button or input styles.
 import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode } from 'react'
 import { useEffect, useId, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { CaretDown, Check } from '@phosphor-icons/react'
 
 const cx = (...c: (string | false | undefined)[]) => c.filter(Boolean).join(' ')
@@ -109,6 +110,36 @@ export function ErrorNote({ error, action }: { error: { message: string; detail?
         </details>
       )}
     </div>
+  )
+}
+
+/** Modal shell. The panel is bounded by the viewport and never scrolls itself; children own their
+ * scroll regions, so a dialog's header and actions can never be pushed off screen by tall media.
+ * Portalled to the body: mounted in place it lands inside a glass panel's stacking context, where
+ * z-40 cannot beat later siblings such as the created-by footer's positioned social links. */
+export function Dialog({ label, width, onClose, className, children }: {
+  label: string
+  width: number
+  onClose: () => void
+  className?: string
+  children: ReactNode
+}) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+
+  return createPortal(
+    <div role="dialog" aria-modal="true" aria-label={label} onClick={onClose}
+      className="fixed inset-0 z-40 grid place-items-center bg-black/70 p-6 backdrop-blur-sm">
+      <div onClick={(e) => e.stopPropagation()} style={{ maxWidth: width }}
+        className={cx('grid max-h-[calc(100dvh-3rem)] w-full rounded-panel bg-[#17181a]',
+          'shadow-[inset_0_0_0_1px_rgb(255_244_232/0.09),0_32px_80px_-24px_rgb(0_0_0/0.8)]', className)}>
+        {children}
+      </div>
+    </div>,
+    document.body,
   )
 }
 

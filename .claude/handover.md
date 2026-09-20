@@ -140,6 +140,20 @@ graphify update . # refresh the code map after changes
 
 ## Feature backlog / product direction (user-supplied 2026-09-20)
 
+**Edit quality: implemented 2026-09-20.** `app/edit.py` holds the grammar (per-genre cadence, transition, motion,
+grade, dressing, music duck). A piece now downloads a pool of up to 4 distinct visuals (`assets.SHOTS`, in-piece
+perceptual dedupe) instead of one clip; `renders._shots_for` cuts on real narration word timings (Groq STT when a
+key is set, estimator otherwise); `render.render_video` joins every shot with `xfade`, supersamples stills before
+`zoompan`, ramps the turn shot, applies the genre grade + halation + grain + bars, ducks music with
+`sidechaincompress`, and fails a render that opens on black. Tests: `tests/test_edit.py` plus the heavy-graph and
+black-frame cases in `tests/test_render.py`. Deviations and what is still open are at the top of section 5 of
+`.claude/edit-grammar.md`.
+
+**Spec: `.claude/edit-grammar.md`** (written 2026-09-20) is the director's spec for how a piece is cut:
+audit of why renders read as a slideshow, per-genre cadence/grade/transition grammar, the locally verified
+ffmpeg capability table, and a six-phase refactor (A shot pool per piece, B cut to the voice, C real LUT grades,
+D transitions and ramps, E ducked audio, F validation). Phase A is the unlock; nothing else matters without it.
+
 North star: **turn raw long-form content into polished, platform-ready short-form content with as little manual
 editing as possible** — every feature should improve content quality, automation, publishing, platform
 compatibility, user control, speed, reliability, cost efficiency, or professional appearance.

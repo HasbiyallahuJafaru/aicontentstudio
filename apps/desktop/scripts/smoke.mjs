@@ -94,7 +94,8 @@ const fakePexels = createServer((req, res) => {
 }).listen(0)
 pexelsBase = `http://127.0.0.1:${fakePexels.address().port}`
 
-const root = mkdtempSync(join(tmpdir(), 'acs-'))
+// SMOKE_DATA pins the data folder so a debug run's renders survive for inspection; default is throwaway
+const root = process.env.SMOKE_DATA || mkdtempSync(join(tmpdir(), 'acs-'))
 const out = process.env.SMOKE_OUT || join(tmpdir(), 'acs-smoke')
 mkdirSync(out, { recursive: true })
 const env = { ...process.env, ACS_DATA_DIR: join(root, 'data'), ACS_DEEPSEEK_URL: `http://127.0.0.1:${fake.address().port}`,
@@ -115,7 +116,8 @@ async function launch() {
 
 async function enterApp(win) {
   await win.getByRole('button', { name: "Let's create content" }).click()
-  await win.getByText('Engine ready').waitFor({ timeout: 30_000 })
+  // the status is a dot now; its words live in a screen-reader span and a hover tooltip, so match the region
+  await win.getByRole('status').filter({ hasText: 'Engine ready' }).waitFor({ timeout: 30_000 })
 }
 const shot = (win, name) => win.screenshot({ path: join(out, `${name}.png`) })
 
@@ -287,7 +289,8 @@ await win.getByRole('button', { name: 'Library' }).click()
 await win.getByText('Pexels · Video').first().waitFor()
 assert.equal(await win.getByText('Pexels · Video').count(), 3)
 assert.equal(await win.getByText('1080 × 1920').count(), 3)
-await win.getByText('Used 1 time').first().waitFor()
+// each piece now cuts between several shots, so an asset's usage count is no longer always 1
+await win.getByText(/Used \d+ times?/).first().waitFor()
 assert.ok(await win.locator('main span[title^="#"]').count() >= 3, 'dominant color swatches shown')
 await shot(win, '6-library')
 await assertNoHorizontalOverflow(win, 'library')

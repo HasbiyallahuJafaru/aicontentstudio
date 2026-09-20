@@ -41,6 +41,9 @@ export function Create({ onCreated }: { onCreated: (id: string) => void }) {
     }
   }, [settings, brief])
 
+  const writeValid = !!brief && !!brief.topic.trim() && !!brief.platforms.length && brief.quantity >= 1 && brief.quantity <= 20
+  const clipValid = clip.source.trim().length > 1
+
   useEffect(() => {
     // window-level so Ctrl+Enter works after any click (e.g. right after using a dropdown, focus is on body)
     const onKey = (e: KeyboardEvent) => {
@@ -51,9 +54,6 @@ export function Create({ onCreated }: { onCreated: (id: string) => void }) {
   })
 
   if (!brief) return <PageHeader title="New project" />
-
-  const writeValid = !!brief.topic.trim() && !!brief.platforms.length && brief.quantity >= 1 && brief.quantity <= 20
-  const clipValid = clip.source.trim().length > 1
 
   async function submit(e?: FormEvent) {
     e?.preventDefault()

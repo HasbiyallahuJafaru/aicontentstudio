@@ -156,6 +156,33 @@ class Renderers(unittest.TestCase):
         self.assertAlmostEqual(info["fps"], 60.0, delta=1.0)
         self.assertAlmostEqual(info["duration"], 1.8, delta=1.0)
 
+    def test_render_genre_cut_with_transitions_ramp_bars_and_music(self):
+        """The heaviest graph: xfade joins, a ramped shot, halation bloom, letterbox bars, ducked music."""
+        music = config.MEDIA_DIR / "fixtures" / "music.wav"
+        tone_wav(music, 3.0)
+        renderer = render.FFmpegRenderer(28, "128k", music, 0.15, self.w, self.h)
+        shots = [  # 0.8 + 0.64 + 0.84 less two 0.24 overlaps = 1.8s, the narration plus its tail
+            {"src": str(self.src), "seek": 0.0, "length": 0.8, "still": False, "motion": "in", "speed": 1.0},
+            {"src": str(self.still), "seek": 0.0, "length": 0.64, "still": True, "motion": "push",
+             "speed": 1.0, "transition": "fadeblack", "tdur": 0.24},
+            {"src": str(self.src), "seek": 0.5, "length": 0.84, "still": False, "motion": "pan",
+             "speed": 1.8, "transition": "fadeblack", "tdur": 0.24, "loop": True},
+        ]
+        out = config.MEDIA_DIR / "renders" / "test" / "006-video.mp4"
+        info = renderer.render_video(src=self.src, narration=self.narration, out=out,
+                                     subject_position="center", src_fps=30, src_duration=2.0,
+                                     still=False, progress=None, out_fps=30, look="cinema", duck=4.0,
+                                     shots=shots)
+        self.assertAlmostEqual(info["duration"], 1.8, delta=0.5)
+
+    def test_a_black_opening_frame_is_caught(self):
+        """The hook lives in the first seconds: a render that opens on black has thrown it away."""
+        black = config.MEDIA_DIR / "fixtures" / "black.mp4"
+        subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "color=black:s=64x64:d=1:r=30",
+                        "-c:v", "libx264", "-preset", "ultrafast", str(black)], check=True, timeout=60)
+        self.assertLess(render.open_luma(black), 0.02)
+        self.assertGreater(render.open_luma(self.src), 0.02)
+
     def test_render_image_output(self):
         out = config.MEDIA_DIR / "renders" / "test" / "001-image.jpg"
         self.renderer.render_image(src=self.still, out=out, quote="Show up before the feeling does.",

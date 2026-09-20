@@ -1,11 +1,50 @@
 # AI Social Content Studio
 
-A Windows desktop app that turns a short creative brief into finished social content: original quotes, spoken
-narration, chosen visuals, an adapted color palette, platform captions, and (from Milestone 5) rendered video and
-image exports for Metricool. Local only: no accounts, no cloud. Your API keys and your content never leave this
-machine.
+A Windows desktop app that turns a short brief, or a long video you already have, into finished short-form
+content: written lines, spoken narration, cut and graded footage, burned captions, and per-platform copy ready to
+post. Local only. No accounts, no cloud, no subscription. Your API keys and your content never leave this machine.
 
 Built by [Hasbiyallahu](https://hasbiyallahu.xyz).
+
+## Two ways in
+
+**Write content.** Give it a topic and a genre. It plans a batch, writes each piece hook-first, picks a pool of
+stock shots, speaks the narration, cuts the video, and writes the caption, hashtags and metadata for every platform
+you targeted.
+
+**Clip from video.** Give it a YouTube URL or a local file. It transcribes the whole thing, scans the transcript
+for moments that stand alone, ranks them, tracks the speaker's face to reframe 16:9 into 9:16, burns karaoke
+captions, and writes native post copy per network.
+
+Both land in the same review flow: preview, redo any single part, approve, export, publish.
+
+## Genres, not tones
+
+Content is organised by format rather than mood, because that is how the platforms actually reward it. Each genre
+carries its own writing voice and its own edit grammar.
+
+| Genre | Voice | Cut |
+|---|---|---|
+| Hope | Hopecore spoken word, a letter to the listener's 2am self | 2.6-3.2s shots, dissolves throughout, warm lift and halation |
+| Hard Truth | Speech-edit energy, second person, escalating | 1.4-1.9s shots, hard cuts, bleach bypass, coarse grain |
+| Stoic Wisdom | Marcus Aurelius at night, plain declaratives | 3.0-4.0s holds, mostly locked off, cold and desaturated |
+| Historical Voices | Documented public-domain lines, attributed | 2.4-3.0s, black beats between shots, sepia and heavy grain |
+| Book Wisdom | Public-domain classics bridged into an ordinary day | 2.6-3.2s, alternating dissolves, warm paper mids |
+| Cinematic Minimal | The visuals carry it, words land like titles | 3.5-4.5s, fade to black, teal-orange, letterbox bars, one speed ramp |
+
+Attributed genres quote real, documented, pre-1929 sources and name the author. Everything else is original.
+
+## How it edits
+
+The renders are meant to look edited, not illustrated. A piece is cut between a pool of distinct visuals rather
+than one clip panning: different subject, different location, mixed literal / metaphorical / atmospheric registers.
+Cuts land on breaths in the narration, not on a divisor, using real word timings. Every join is an `xfade`, stills
+are supersampled before the Ken Burns move so they do not stair-step, the turn shot can ramp, and the whole
+timeline gets one grade so unrelated stock reads as one film. Music ducks under the voice. A render that opens on
+a black frame fails its own quality check.
+
+The full spec, including the reference research and the ffmpeg capability audit, is in
+[.claude/edit-grammar.md](.claude/edit-grammar.md).
 
 ## Status
 
@@ -16,26 +55,33 @@ Built by [Hasbiyallahu](https://hasbiyallahu.xyz).
 | 2 | DeepSeek generation: batch planning, content schemas, jobs with live progress | Done |
 | 3 | Pexels/Unsplash asset pipeline: scoring, dedup, cooldowns, Library | Done |
 | 4 | Visual analysis, HEX extraction, palette engine, composition detection | Done |
-| 5 | TTS, audio, FFmpeg video/image renderers | Next |
-| 6-7 | Preview, regeneration, queue, export, refinement, packaging | Planned |
+| 5 | TTS, audio mixing, FFmpeg video and image renderers | Done |
+| 6 | Preview, per-part regeneration, queue, export | Done |
+| 7 | Branding, long-video clipper, Buffer and Metricool publishing, genres, director-cut renders | Done |
+| 8 | Packaging and installer | In flight |
 
-Milestones 2-4 are verified end to end against local fake servers (see `apps/desktop/scripts/smoke.mjs`); real API
-calls need your keys and are the first thing to try once they are set.
+Everything is verified end to end against local fake servers (`apps/desktop/scripts/smoke.mjs`) plus 135 backend
+tests. Real-key runs against DeepSeek, Pexels, Groq and Buffer are the user's own verification rounds and are
+still in progress, so treat output quality claims as unproven until you have run your own keys through it.
 
 ## Architecture
 
-- `apps/desktop` - Electron 44 + React 19 + TypeScript + Tailwind CSS 4. The renderer is sandboxed: it talks to the
-  backend through one preload bridge and never sees API keys. API keys are encrypted with the OS (safeStorage/DPAPI).
-- `apps/backend` - Python 3.12, stdlib + pydantic + httpx + Pillow. JSON lines over stdio, one module per area,
-  SQLite with plain SQL migrations. All pipeline logic lives here; the UI never duplicates it.
-- Providers: DeepSeek (creative writing), Pexels and Unsplash (visuals). Everything provider-specific stays behind
-  small interfaces (`CreativeModel`, `VisualProvider`).
-- The spec in [Prd.txt](Prd.txt) is the source of truth for scope; [DECISIONS.md](DECISIONS.md) records dependency
-  and license choices; `.claude/handover.md` tracks exact progress.
+- `apps/desktop` - Electron 44, React 19, TypeScript, Tailwind CSS 4. The renderer is sandboxed and reaches the
+  backend through a single preload bridge (`window.studio`). It never sees an API key. Keys are encrypted at rest
+  with the OS (safeStorage / DPAPI).
+- `apps/backend` - Python 3.12, stdlib plus pydantic, httpx, Pillow, opencv-python, yt-dlp, kokoro-onnx. JSON
+  lines over stdio, one module per area, SQLite with plain SQL migrations. All pipeline logic lives here; the UI
+  never duplicates it.
+- `app/edit.py` is the edit grammar, `app/renders.py` plans the shots, `app/render.py` drives ffmpeg.
+  `app/clipper/` is the long-video engine, `app/publish/` is Buffer and Metricool.
+- Anything provider-specific sits behind a small interface: `CreativeModel`, `VisualProvider`, `TTSProvider`,
+  `Renderer`, `Publisher`.
+- ffmpeg always runs as a subprocess with argument arrays, never shell strings, with a stall watchdog so a hung
+  encode cannot wedge a job.
 
 ## Getting started
 
-Requirements: Node 20+, Python 3.12, ffmpeg on PATH (needed from Milestone 5 on).
+Requirements: Node 20+, Python 3.12, and ffmpeg on PATH.
 
 ```bash
 npm run setup     # once: Python venv + pip + npm install
@@ -43,10 +89,29 @@ npm run dev       # Electron + Vite HMR + Python auto-restart
 npm test          # backend unittest + typecheck + build + end-to-end smoke (fake servers, no paid calls)
 ```
 
-On this kind of machine with a TLS-inspecting proxy, set `NODE_OPTIONS=--use-system-ca` before network commands.
+Behind a TLS-inspecting proxy, set `NODE_OPTIONS=--use-system-ca` before any network command.
 
-First run: open Settings, paste your DeepSeek API key (and Pexels/Unsplash keys for visuals), then Create. Keys are
-stored encrypted in your user profile and are only ever decrypted by the app itself.
+## Keys
+
+Open Settings on first run. Nothing is required to launch the app, and each key unlocks one thing:
+
+| Key | Unlocks |
+|---|---|
+| DeepSeek | Writing: batch plans, quotes, narration, per-platform copy |
+| Pexels or Unsplash | Stock footage and photos for written pieces |
+| Groq | Transcription for clip projects, and real word timings for karaoke captions |
+| Buffer | Scheduling and publishing, via OAuth. Optional |
+| Metricool | Publishing through the Metricool MCP. Optional |
+
+Narration is local and free by default (Kokoro, an 82M on-device voice model), with Windows SAPI as a fallback.
+Keys are stored encrypted in your user profile and are only ever decrypted by the app itself.
+
+## Documentation
+
+- [Prd.txt](Prd.txt) is the source of truth for scope and phase order.
+- [DECISIONS.md](DECISIONS.md) records dependency and license choices, and the machine-specific gotchas.
+- [.claude/edit-grammar.md](.claude/edit-grammar.md) is the director's spec for how a piece is cut.
+- `.claude/handover.md` tracks exact progress, what is verified and what is not.
 
 ## The splash
 
