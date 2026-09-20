@@ -42,9 +42,10 @@ class Backend(unittest.TestCase):
         self.assertIn("error", call("settings.update", ai_temperature=5))
         self.assertEqual(call("settings.get")["result"]["default_quantity"], 3)
 
-    def test_empty_default_topic_is_human(self):
-        reply = call("settings.update", default_topic="   ")
-        self.assertIn("topic can't be empty", reply["error"]["message"])
+    def test_blank_default_topic_is_allowed(self):
+        """A blank default topic is the shipped default: the Create page starts empty."""
+        reply = call("settings.update", default_topic="")
+        self.assertEqual(reply["result"]["default_topic"], "")
 
     def test_secrets_in_memory_only(self):
         self.assertEqual(call("secrets.load", keys={"PEXELS_API_KEY": "abc", "X": ""})["result"], {"loaded": ["PEXELS_API_KEY"]})

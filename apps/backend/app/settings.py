@@ -72,9 +72,6 @@ def get() -> dict:
 
 
 def update(**changes) -> dict:
-    from app.errors import UserError
-    if "default_topic" in changes and not str(changes["default_topic"]).strip():
-        raise UserError("The default topic can't be empty. Type a topic or put the old one back.")
     merged = Settings.model_validate(_load().model_dump() | changes)
     with connect() as conn:
         conn.execute("INSERT INTO settings (key, value) VALUES ('app', ?) "
