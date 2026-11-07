@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { Check, FolderOpen, Plug, PlugsConnected } from '@phosphor-icons/react'
-import { call, studio, GENRES, useQuery, BackendError, type SecretName, type Settings as S } from '../lib/studio'
+import { CaretRight, Check, FolderOpen, Plug, PlugsConnected, Trash } from '@phosphor-icons/react'
+import { call, studio, useQuery, BackendError, type SecretName, type Settings as S } from '../lib/studio'
 import { Button, ErrorNote, Field, Input, PageHeader, Select } from '../components/ui'
 
 const KEYS: { name: SecretName; label: string }[] = [
@@ -9,6 +9,76 @@ const KEYS: { name: SecretName; label: string }[] = [
   { name: 'UNSPLASH_ACCESS_KEY', label: 'Unsplash access key (optional)' },
   { name: 'METRICOOL_API_KEY', label: 'Metricool API key' },
 ]
+
+// OpenRouter model ids (checked against openrouter.ai/api/v1/models 2026-11-07), labelled by cost, not by claims.
+const WRITERS = [
+  { value: 'deepseek/deepseek-v4-pro', label: 'DeepSeek V4 Pro · best value (recommended)' },
+  { value: 'anthropic/claude-sonnet-5.5', label: 'Claude Sonnet 5.5 · premium' },
+  { value: 'openai/gpt-6.1-sol', label: 'GPT-6.1 Sol · premium' },
+  { value: 'google/gemini-3.8-flash', label: 'Gemini 3.8 Flash · mid-price' },
+  { value: 'anthropic/claude-haiku-5.5', label: 'Claude Haiku 5.5 · budget' },
+  { value: 'deepseek/deepseek-v4.1-flash', label: 'DeepSeek V4.1 Flash · cheapest' },
+]
+const SCANNERS = [
+  { value: 'deepseek/deepseek-v4.1-flash', label: 'DeepSeek V4.1 Flash · cheapest (recommended)' },
+  { value: 'anthropic/claude-haiku-5.5', label: 'Claude Haiku 5.5 · budget' },
+  { value: 'google/gemini-3.8-flash', label: 'Gemini 3.8 Flash · mid-price' },
+]
+const QUALITY = [
+  { value: '22', label: 'Standard · smaller files' },
+  { value: '18', label: 'High (recommended)' },
+  { value: '16', label: 'Maximum · largest files' },
+]
+/** A saved value outside the list (an older custom model or quality) still shows instead of a blank select. */
+const withCurrent = (options: { value: string; label: string }[], current: string) =>
+  options.some((o) => o.value === current) ? options : [...options, { value: current, label: `${current} (current)` }]
+
+function formatBytes(n: number) {
+  return n >= 1e9 ? `${(n / 1e9).toFixed(1)} GB` : n >= 1e6 ? `${Math.round(n / 1e6)} MB` : `${Math.round(n / 1e3)} KB`
+}
+
+/** Space used by created content, and one button to wipe it. Keys and settings stay. */
+function StorageSection({ dataDir }: { dataDir?: string }) {
+  const { data: usage, reload } = useQuery<{ bytes: number; projects: number }>('storage.usage')
+  const [busy, setBusy] = useState(false)
+  const [result, setResult] = useState<string>()
+  const [error, setError] = useState<BackendError>()
+
+  async function clear() {
+    if (!confirm('Delete all projects, videos, clips, exports and downloaded footage? Your keys and settings stay. ' +
+      "This can't be undone.")) return
+    setBusy(true)
+    setError(undefined)
+    try {
+      const { freed } = await call<{ freed: number }>('storage.clear')
+      setResult(`Cleared. ${formatBytes(freed)} freed.`)
+      reload()
+    } catch (e) {
+      setError(e as BackendError)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Section title="Storage" description="Everything the studio creates is kept on this computer.">
+      {error && <ErrorNote error={error} />}
+      <Field label="Space used" hint={usage ? `${usage.projects} project${usage.projects === 1 ? '' : 's'}` : ' '}>
+        {(id) => (
+          <div className="flex items-center gap-2">
+            <Input id={id} readOnly value={usage ? formatBytes(usage.bytes) : '…'} className="tnum text-ink-2" />
+            <Button onClick={() => studio.openDataDir()} title={dataDir}><FolderOpen size={14} />Open folder</Button>
+          </div>
+        )}
+      </Field>
+      <div className="flex items-center gap-3">
+        <Button onClick={clear} disabled={busy || !usage?.bytes && !usage?.projects}
+          className="hover:!bg-[#c42b1c] hover:!text-white"><Trash size={14} />{busy ? 'Clearing…' : 'Clear all content'}</Button>
+        {result && <span className="text-xs text-ok">{result}</span>}
+      </div>
+    </Section>
+  )
+}
 
 function Section({ title, description, children }: { title: string; description: string; children: ReactNode }) {
   return (
@@ -202,120 +272,55 @@ export function Settings() {
       </PageHeader>
       {error && <div className="mb-6"><ErrorNote error={error} /></div>}
 
-      <Section title="API keys" description="Stored encrypted by Windows and never shown again. Saved immediately.">
+      <Section title="API keys" description="Paste each key once. Stored encrypted on this computer, saved straight away.">
         {secrets && KEYS.map((k) => <SecretField key={k.name} name={k.name} text={k.label} isSet={secrets[k.name]} onSaved={setSecrets} />)}
       </Section>
 
-      <Section title="AI" description="OpenRouter models. Any model id from openrouter.ai/models works here.">
-        <div className="grid grid-cols-2 gap-4">
-          <Field label="Writing model" hint="Plans, pieces, clip picks and post copy. e.g. deepseek/deepseek-v4-pro">
-            {(id) => <Input id={id} value={form.ai_model} spellCheck={false} onChange={(e) => set('ai_model', e.target.value)} />}
-          </Field>
-          <Field label="Scanning model" hint="Reads whole transcripts to find clip moments. A cheap model is fine.">
-            {(id) => <Input id={id} value={form.ai_model_fast} spellCheck={false} onChange={(e) => set('ai_model_fast', e.target.value)} />}
-          </Field>
-        </div>
-        <div className="grid grid-cols-2 gap-4">
-          <Field label="Temperature" hint="0 to 2. Higher is more varied.">
-            {(id) => <Input id={id} type="number" step={0.1} min={0} max={2} className="tnum" value={form.ai_temperature}
-              onChange={(e) => set('ai_temperature', Number(e.target.value))} />}
-          </Field>
-          <Field label="Max tokens" hint="256 to 8192.">
-            {(id) => <Input id={id} type="number" step={256} min={256} max={8192} className="tnum" value={form.ai_max_tokens}
-              onChange={(e) => set('ai_max_tokens', Number(e.target.value))} />}
-          </Field>
-        </div>
+      <Section title="AI" description="Which AI writes your content. Billed to your OpenRouter account.">
+        <Field label="Writing model" hint="Writes the scripts, hooks, captions and clip picks.">
+          {(id) => <Select id={id} value={form.ai_model} onChange={(v) => set('ai_model', v)}
+            options={withCurrent(WRITERS, form.ai_model)} />}
+        </Field>
+        <Field label="Clip finder model" hint="Reads a whole video's transcript to spot the best moments.">
+          {(id) => <Select id={id} value={form.ai_model_fast} onChange={(v) => set('ai_model_fast', v)}
+            options={withCurrent(SCANNERS, form.ai_model_fast)} />}
+        </Field>
       </Section>
 
-      <Section title="Content defaults" description="Pre-filled every time you start a new project.">
-        <Field label="Topic" hint="Leave empty to start every project with a blank topic.">
-          {(id) => <Input id={id} value={form.default_topic} onChange={(e) => set('default_topic', e.target.value)} />}
+      <Section title="Video" description="How finished videos look.">
+        <Field label="Quality" hint="Higher looks sharper after upload and makes bigger files.">
+          {(id) => <Select id={id} value={String(form.render_crf)} onChange={(v) => set('render_crf', Number(v))}
+            options={withCurrent(QUALITY, String(form.render_crf))} />}
         </Field>
-        <div className="grid grid-cols-3 gap-4">
-          <Field label="Genre">
-            {(id) => (
-              <Select id={id} value={form.default_tone} onChange={(v) => set('default_tone', v as S['default_tone'])}
-                options={GENRES} />
-            )}
-          </Field>
-          <Field label="Quantity" hint="1 to 20 pieces.">
-            {(id) => <Input id={id} type="number" min={1} max={20} className="tnum" value={form.default_quantity}
-              onChange={(e) => set('default_quantity', Number(e.target.value))} />}
-          </Field>
-          <Field label="Asset cooldown" hint="Days before a visually similar asset can be used again.">
-            {(id) => <Input id={id} type="number" min={0} max={365} className="tnum" value={form.asset_cooldown_days}
-              onChange={(e) => set('asset_cooldown_days', Number(e.target.value))} />}
-          </Field>
-        </div>
-      </Section>
-
-      <Section title="Narration" description="The voice that reads each piece aloud in rendered videos.">
-        <Field label="Voice engine" hint="Kokoro is a local neural voice (default; download it once with python -m app.tts download). Windows voices are always available.">
-          {(id) => (
-            <Select id={id} value={form.tts_provider} onChange={(v) => set('tts_provider', v as S['tts_provider'])}
-              options={[{ value: 'kokoro', label: 'Kokoro (local neural)' }, { value: 'windows', label: 'Windows voices (offline)' }]} />
-          )}
-        </Field>
-        <Field label="Voice name" hint="Leave empty for the default voice.">
-          {(id) => <Input id={id} value={form.tts_voice} placeholder="e.g. Microsoft Zira Desktop" spellCheck={false}
-            onChange={(e) => set('tts_voice', e.target.value)} />}
-        </Field>
-        <div className="grid grid-cols-2 gap-4">
-          <Field label="Speed" hint="0.5 to 2. 1 is normal speech.">
-            {(id) => <Input id={id} type="number" step={0.1} min={0.5} max={2} className="tnum" value={form.tts_speed}
-              onChange={(e) => set('tts_speed', Number(e.target.value))} />}
-          </Field>
-          <Field label="Volume" hint="0 to 1.">
-            {(id) => <Input id={id} type="number" step={0.05} min={0} max={1} className="tnum" value={form.tts_volume}
-              onChange={(e) => set('tts_volume', Number(e.target.value))} />}
-          </Field>
-        </div>
-      </Section>
-
-      <Section title="Render" description="How videos and images are rendered when you press Render on a project.">
-        <div className="grid grid-cols-2 gap-4">
-          <Field label="Quality" hint="14 to 32. Lower is sharper and larger files.">
-            {(id) => <Input id={id} type="number" step={1} min={14} max={32} className="tnum" value={form.render_crf}
-              onChange={(e) => set('render_crf', Number(e.target.value))} />}
-          </Field>
-          <Field label="Music volume" hint="0 to 0.5, mixed under the narration.">
-            {(id) => <Input id={id} type="number" step={0.05} min={0} max={0.5} className="tnum" value={form.music_volume}
-              onChange={(e) => set('music_volume', Number(e.target.value))} />}
-          </Field>
-        </div>
-        <Field label="Motion graphics" hint="Animated hook titles and callouts, rendered with Edge or Chrome. Adds about 30-60 s per video.">
+        <Field label="Animated titles" hint="Moving hook titles and callouts on each video. Adds about a minute per video.">
           {(id) => (
             <Select id={id} value={form.motion_graphics ? 'on' : 'off'} onChange={(v) => set('motion_graphics', v === 'on')}
-              options={[{ value: 'on', label: 'On' }, { value: 'off', label: 'Off (plain edit)' }]} />
+              options={[{ value: 'on', label: 'On' }, { value: 'off', label: 'Off' }]} />
           )}
         </Field>
-        <Field label="Music file" hint="Optional background track, fades in and out under the narration.">
-          {(id) => <Input id={id} value={form.music_path} placeholder="Path to an mp3 or wav on this computer" spellCheck={false}
+        <Field label="Background music" hint="Optional. A music file on this computer, played quietly under the voice.">
+          {(id) => <Input id={id} value={form.music_path} placeholder="Path to an mp3 or wav" spellCheck={false}
             onChange={(e) => set('music_path', e.target.value)} />}
         </Field>
       </Section>
 
-      <Section title="Clip downloads" description="How links are downloaded when you clip a video.">
-        <Field label="YouTube cookies" hint="When YouTube asks to confirm you're not a bot: a browser you're signed in with (firefox works best), or the path to a cookies.txt file. Leave empty to download anonymously.">
-          {(id) => <Input id={id} value={form.ytdlp_cookies} placeholder="e.g. firefox" spellCheck={false}
-            onChange={(e) => set('ytdlp_cookies', e.target.value)} />}
-        </Field>
-      </Section>
+      <StorageSection dataDir={info?.data_dir} />
 
-      <Section title="Publishing" description="Send approved clips to Buffer or Metricool. Everything stays local until you publish.">
-        <Publishing form={form} set={set} />
-      </Section>
-
-      <Section title="Storage" description="Projects, downloaded assets, renders and exports live here.">
-        <Field label="Media folder">
-          {(id) => (
-            <div className="flex gap-2">
-              <Input id={id} readOnly value={info?.data_dir ?? ''} className="text-ink-2" />
-              <Button onClick={() => studio.openDataDir()}><FolderOpen size={14} />Open</Button>
-            </div>
-          )}
-        </Field>
-      </Section>
+      <details className="group mb-5">
+        <summary className="mb-5 flex cursor-pointer list-none items-center gap-1.5 text-[13px] text-ink-2 hover:text-ink">
+          <CaretRight size={12} weight="bold" className="transition-transform duration-150 group-open:rotate-90" />
+          Advanced: publishing and video downloads
+        </summary>
+        <Section title="Publishing" description="Send approved clips to Buffer or Metricool. Everything stays local until you publish.">
+          <Publishing form={form} set={set} />
+        </Section>
+        <Section title="Video downloads" description="Only needed if YouTube blocks a download.">
+          <Field label="YouTube cookies" hint="A browser you're signed in to YouTube with (Firefox works best), or the path to a cookies.txt file.">
+            {(id) => <Input id={id} value={form.ytdlp_cookies} placeholder="e.g. firefox" spellCheck={false}
+              onChange={(e) => set('ytdlp_cookies', e.target.value)} />}
+          </Field>
+        </Section>
+      </details>
     </>
   )
 }

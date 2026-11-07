@@ -1,211 +1,137 @@
-# Next Steps
+# Handover
 
-Work in order. Each step lists what to change, where, and how to know it is done. Finish a step and confirm
-`npm test` is green before starting the next. Diagnosis behind this list: 2026-11-07.
+Last updated 2026-11-07. This is the single source of truth for progress and next steps; `.claude/handover.md` is
+the older milestone log (M1-M8) and is superseded where they disagree. Read this, then `.claude/CLAUDE.md`.
 
----
+## Start here
 
-## Phase 1: One app, not two
+- Branch `quality-motion-openrouter`, pushed. Last commit `50a4309` (steps 1-11, 15-18). `main` is untouched.
+- **About 24 files are uncommitted** (Dashboard landing, Gemini TTS, plain Settings, Clear content, fullscreen
+  controls; list below). `npm test` was green on them (155 backend tests, typecheck, build, smoke). Commit them
+  first; the owner asked for commit + push of earlier work, so ask before pushing these.
+- Repo `.env` (gitignored) holds real `OPENROUTER_API_KEY` and `PEXELS_API_KEY`. Never print them. OpenRouter
+  account limit is $4; well under $0.05 has been spent.
+- Next real work: step 12 (render a real piece and clip a real video). It needs a video from the owner.
 
-The antivirus problem. On this machine Windows Defender has no detections. Avast AutoSandbox is the one acting:
-the main exe only runs normally because it is on Avast's exception list, and the uninstaller was sandboxed
-(`autosandbox.log`, 2026-09-26). Nothing is signed, and the backend is an anonymous `backend.exe`.
+Uncommitted files: `NEXT_STEPS.md README.md`, backend `app/{config,motion,renders,rpc,settings,tts,storage*}.py
+backend.spec requirements.txt tests/{__init__,test_render,test_storage*}.py`, desktop `electron/{main,preload}.ts
+scripts/smoke.mjs src/{app/App,components/Preview,components/ui,layouts/Shell,lib/studio,pages/Create,pages/Settings}`
+(* = new).
 
-### 1. Give the backend an identity (done 2026-11-07)
-- [x] Rename the frozen exe to `AI Social Content Studio Engine.exe` (`ENGINE` in `apps/backend/backend.spec`).
-- [x] Add the app icon and a version resource (read from `apps/desktop/package.json`) to `EXE(...)`.
-- [x] Set `upx=False` explicitly in `EXE(...)` and `COLLECT(...)`.
-- [x] Update the spawn path in `apps/desktop/electron/backend.ts` and the check in `scripts/smoke-packaged.mjs`.
-- Verified: the exe reports FileDescription, ProductName, CompanyName and version 0.1.0; `npm test` green
-  (135 backend tests, typecheck, build, smoke); `npm run smoke:packaged` passes.
+## Run and test
 
-### 2. Reproduce the "separate apps" symptom (done 2026-11-07)
-- [x] Launched the fresh unpacked build. Avast `autosandbox.log`:
-  - 14:52:31 `AI Social Content Studio.exe` -> `Sandboxing`
-  - 14:52:59 `AI Social Content Studio Engine.exe` -> `Sandboxing`, separately: this is the split
-  - 14:53 onward both -> `Not sandboxing (because the file is in the exception list)`
-- Cause: unsigned exes with a new hash get sandboxed on first run, each one on its own. Every rebuild is a new
-  hash, so every new unsigned build gets sandboxed again. The first packaged-smoke launch timed out for this
-  reason; the second passed.
+```bash
+npm run setup           # once: venv + pip + npm install (set NODE_OPTIONS=--use-system-ca first on this machine)
+npm run dev             # Electron + Vite HMR + Python auto-restart
+npm test                # backend unittest + typecheck + build + smoke (fake servers, no paid calls), ~4 min
+npm run package         # freeze backend, bundle ffmpeg, NSIS installer in apps/desktop/release (~321 MB, less now)
+npm run smoke:packaged  # launches the built exe, checks every exe's signature, renders a motion layer
+```
 
-### 3. Code-sign everything (ready, waiting on a certificate)
-- [ ] Get a signing identity. Azure Trusted Signing only accepts individual developers in the US/Canada
-      (organizations: US/Canada/EU/UK). Elsewhere, an OV certificate (e.g. Certum, SSL.com) works.
-- [x] The engine, `ffmpeg.exe`, `ffprobe.exe`, the Electron exe, the uninstaller and the installer all go through
-      electron-builder's signing hook (confirmed in the build log). No config change needed for a .pfx.
-- [x] `npm run smoke:packaged` prints the signature status of every shipped exe; `ACS_REQUIRE_SIGNED=1` makes
-      any unsigned exe fail it.
-- How to switch it on, by certificate type:
-  - **.pfx file:** set `CSC_LINK=<path to .pfx>` and `CSC_KEY_PASSWORD=<password>`, then `npm run package`.
-  - **USB token or cloud cert in the Windows certificate store (most OV/EV certs today):** add
-    `"signtoolOptions": { "certificateSubjectName": "<Issued to name>" }` under `build.win` in
-    `apps/desktop/package.json`.
-  - **Azure Trusted Signing:** add `"azureSignOptions": { "publisherName", "endpoint",
-    "codeSigningAccountName", "certificateProfileName" }` under `build.win`, and set `AZURE_TENANT_ID`,
-    `AZURE_CLIENT_ID`, `AZURE_CLIENT_SECRET`.
-- **Done when:** `ACS_REQUIRE_SIGNED=1 npm run smoke:packaged` passes.
+- Tests run keyless and motion-off: `tests/__init__.py` sets `ACS_NO_DOTENV=1` (never load the real `.env`) and
+  `ACS_NO_MOTION=1`; `test_motion.RealRender` turns motion on and needs Edge.
+- Real-key manual runs: point `ACS_DATA_DIR` at a throwaway folder and call backend modules directly from
+  `apps/backend` (the `.env` loads automatically outside tests).
+- PowerShell 5 is the shell: no `&&`; `Set-Content -Encoding utf8` writes a BOM (strip it); multi-line git commit
+  messages must go through `git commit -F <file>` (a here-string piped to `-F -` became file arguments and
+  committed nothing). Git identity is set repo-local to `HasbiyallahuJafaru <jafaruhasbiyallahu@gmail.com>`.
 
-### 4. Clean install test (blocked on step 3)
-- [ ] Remove both app exes from Avast's exception list (Avast -> Menu -> Settings -> General -> Exceptions).
-- [ ] Install the signed build and run a full generate and a full clip.
-- [ ] If Avast still sandboxes the engine, report it to Avast as a false positive. If it persists after that,
-      rebuild the PyInstaller bootloader from source.
-- **Done when:** a clean install runs with no exception list entry and no sandbox.
+## What the app is now (changes this session)
 
----
+| Area | Now | Where |
+|---|---|---|
+| Keys | One `OPENROUTER_API_KEY` for every AI call (writing, clip selection, transcription, narration) + `PEXELS_API_KEY`; Unsplash optional; Metricool optional. DeepSeek/Groq keys removed. | `creative/model.py` (`BASE`, `api_key`), `electron/secrets.ts` |
+| Writing | `deepseek/deepseek-v4-pro` writes plans, pieces (+metadata), clip picks, post copy; `deepseek/deepseek-v4.1-flash` scans transcripts (clip pass 1). Requests send `provider.require_parameters` (JSON-mode providers only). Bare legacy names map to OpenRouter ids. | `settings.py`, `clipper/select.py` |
+| Transcription | `openai/whisper-large-v3-turbo` via OpenRouter, 300 s chunks (60 s upstream limit). Segment-estimated words if a provider returns none. | `clipper/transcribe.py` |
+| Narration | Gemini TTS `google/gemini-3.8-flash-tts` via `/audio/speech`. Gemini only returns PCM (rate/channels in the content type), wrapped as WAV with stdlib `wave`. 18 voices, default Charon, picked per project; the piece's `delivery` becomes `instructions`. Kokoro/Windows voices and all `tts_*` settings removed. | `tts.py`, `renders.py` |
+| Clips | Dead air (>0.35 s) and fillers cut; optional cold open plays the strongest line first; captions retimed; group pop + yellow spoken word + orange keywords; small crop moves glide, big ones cut; master medium/CRF 18/192k; YouTube cookies setting. | `clipper/{tighten,render_clip,captions,crop,select,acquire}.py` |
+| Motion | HyperFrames (Apache 2.0) renders an animated hook title and timed callouts as alpha WebM through Edge/Chrome, run on the app's own Electron binary as Node; ffmpeg composites them. Cached by content. Never fails a job. | `motion.py`, `motion_assets/{hook,callout}.html`, `apps/desktop/motion/render.mjs` |
+| Packaging | Frozen backend is `AI Social Content Studio Engine.exe` with icon + version info, UPX off; `motion/` + `node_modules/` unpacked from the asar. Signing switches on with a cert (see step 3). | `backend.spec`, `apps/desktop/package.json` |
+| UI | Splash opens the Dashboard. Create's topic suggestions open on click/typing, not on autofocus. Settings: API keys, AI (two model dropdowns, price-tier labels), Video (quality preset, animated titles, music file), Storage (space used, Open folder, **Clear all content**), Advanced collapsed (Publishing, YouTube cookies). Content defaults removed. | `pages/Settings.tsx`, `App.tsx`, `components/ui.tsx` |
+| Storage | `storage.usage` / `storage.clear`: deletes all projects and assets (cascades), wipes the media folder, VACUUMs; keys and settings stay; refuses while a job runs. | `storage.py` |
+| Window | Maximize means fullscreen. In fullscreen the bar draws minimize / restore / close flush top-right (Windows hides its own). `useFullScreen` re-checks on resize because `enter-full-screen` doesn't reliably fire when entered from the maximize handler; the handler un-maximizes first so Restore doesn't bounce back. | `electron/main.ts`, `layouts/Shell.tsx`, `lib/studio.ts` |
 
-## Phase 2: Clip quality (no new dependencies)
+## Real-key results so far (2026-11-07)
 
-Steps 5-10 implemented 2026-11-07. `npm test` green (142 backend tests, typecheck, build, smoke). Still needs a
-real-footage review: none of this has been judged on a real podcast or YouTube link yet (that is step 12).
+- Transcription: real word-level timings back from OpenRouter (14 words, accurate pauses), $0.00002.
+- Narration: Gemini TTS answered (5 s of speech in 5.8 s); unknown voice names are a 400, so only listed ones are
+  offered.
+- Writing: one piece per genre with the pro model, 60-100 s each; one malformed reply repaired automatically.
+  Hooks are strong ("The *Lie* You Whisper Alone", "*Only You* Know"); attributed genres quoted Epictetus and
+  Marcus Aurelius. Weak spots for prompt tuning: some callouts are filler ("mile two", "reluctant"); multi-word
+  callout anchors now land on their first word.
+- Pexels key valid (24,999 requests left this month).
 
-### 5. Better master encode (done)
-- [x] Clips (`clipper/render_clip.py`): `-preset medium -crf 18`, audio 192k.
-- [x] Written-content renders (`render.py`): default CRF 22 -> 18 (`settings.py`). The preset stays `veryfast`:
-      `medium` pushed the smoke render past 240 s (vs 98 s) for mostly a smaller file. Installs that already
-      saved settings keep their stored CRF; set Render -> Quality to 18 in Settings.
+## What is left, in order
 
-### 6. Dead-air and filler removal (done)
-- [x] `clipper/tighten.py`: `keep()` cuts pauses over 0.35 s down to 0.12 s of breath each side and drops
-      unambiguous fillers (um, uh, er, hmm...). "like"/"you know" are left alone (they need context).
-- [x] `render_clip.render(ranges=...)` trims each range, crops each one to the face, joins with 10 ms audio
-      fades, and the captions are retimed onto the joined timeline (`tighten.retime`).
+| # | What | Waiting on |
+|---|---|---|
+| A | Commit the uncommitted work; merge `quality-motion-openrouter` into `main` (PR or direct) | Owner's go-ahead to push/merge |
+| 12 | Real-footage verification (below) | A video from the owner (local file avoids YouTube's bot check) |
+| 11 | Tune `creative/prompts.py` from step 12 output (callouts: only times, counts, turning words; never decoration) | Step 12 |
+| 3 | Code signing, the fix for Avast sandboxing every new build | A signing certificate |
+| 4 | Clean install test with no Avast exception | Step 3 |
+| — | Read GSAP's licence (Webflow "Standard no charge", not open source) before shipping; HyperFrames also accepts WAAPI/Anime.js (MIT) | Owner |
+| 13, 19 | Speaker-aware crop; model-written motion, sound design, hook A/B variants | Step 12 showing the need |
 
-### 7. Cold-open hook (done)
-- [x] Pass 2 in `clipper/select.py` may return `cold_open_start/end`: the clip's strongest line when it is not
-      already the opening. Accepted only inside the clip, 0.8-4.5 s long, and at least 1.5 s after the start.
-- [x] It plays first (padded, tightened), then the clip runs from the top.
+### 12. Real-footage verification
+- [x] Transcription word timings, writing per genre, TTS call, Pexels key (above).
+- [ ] Render one real written piece end to end (Pexels footage, Gemini narration, captions, grade, animated hook
+      and callouts). Judge it frame by frame and by ear; note time per video with motion on.
+- [ ] Clip a real video: dead-air cuts land between words with no clicks; the cold open is a real payoff line;
+      caption pop and keyword colours; reframing glides vs cuts; the animated hook.
+- [ ] Buffer: connect, publish now, publish scheduled. Metricool: inspect `schedule_post`, then wire the UI.
 
-### 8. Animated captions (done)
-- [x] Each word group pops in (82% -> 100% over 120 ms); the spoken word is yellow; the model's 2-6 `emphasis`
-      words are orange. Colours reset with `\c`, not `\r` (which would reset the pop's scale). Frame-checked.
-- [x] Position unchanged: bottom margin 560/1920, clear of TikTok/Reels UI.
+### 3. Code signing (ready, waiting on a certificate)
+- Azure Trusted Signing only takes individual developers in the US/Canada (organizations US/Canada/EU/UK);
+  elsewhere an OV certificate (Certum, SSL.com).
+- Every shipped exe (app, engine, ffmpeg, ffprobe, esbuild, uninstaller, installer) already goes through
+  electron-builder's signing hook. Switch on by cert type:
+  - `.pfx`: set `CSC_LINK` + `CSC_KEY_PASSWORD`, then `npm run package`. No config change.
+  - USB token / cloud cert in the Windows store: `"signtoolOptions": { "certificateSubjectName": "<Issued to>" }`
+    under `build.win` in `apps/desktop/package.json`.
+  - Azure: `"azureSignOptions": { publisherName, endpoint, codeSigningAccountName, certificateProfileName }`
+    + `AZURE_TENANT_ID`, `AZURE_CLIENT_ID`, `AZURE_CLIENT_SECRET`.
+- Done when `ACS_REQUIRE_SIGNED=1 npm run smoke:packaged` passes.
 
-### 9. Smooth reframing (done)
-- [x] `crop.position_expr`: moves under half a crop width glide over 0.5 s (smoothstep); bigger moves (a
-      different speaker) still hard-cut.
+### 4. Clean install test
+Remove both exes from Avast's exceptions (Menu, Settings, General, Exceptions), install the signed build, run a
+full generate and clip. If Avast still sandboxes the engine: report a false positive, then rebuild the PyInstaller
+bootloader from source.
 
-### 10. YouTube downloads (done)
-- [x] Settings -> Clip downloads -> YouTube cookies: a browser name (firefox works best; Chrome/Edge often
-      lock their cookies on Windows) or a cookies.txt path. `ytdlp_cookies` in `settings.py`.
-- [x] Bot-check and cookie-read failures give human errors that point to that setting.
+### 13. Speaker-aware crop (only if two-person podcasts crop the wrong face)
+WhisperX + pyannote diarization (Hugging Face token + model licences), word -> speaker -> face.
 
----
+### 19. Motion, later
+Model-written compositions checked by `hyperframes lint`; CC0 whoosh/riser; hook A/B variants. Batch layers per
+video into one browser launch if motion time adds up (~40 s for hook + callout today, first launch dominates).
 
-## Phase 2b: Motion graphics with HyperFrames
+## Gotchas learned this session
 
-Feasibility proven 2026-11-07: `@hyperframes/producer` 0.9.20 (Apache 2.0) rendered a 3 s 1080x1920 kinetic hook
-title through the Edge that ships with Windows (`HYPERFRAMES_BROWSER_PATH`), to VP9 WebM with real alpha, and the
-app's ffmpeg composited it over footage cleanly. Measured cost: 30 s to render 3 s (90 frames, 3 workers, screenshot
-mode; Windows has no BeginFrame). That decides the shape: HyperFrames renders only the motion-graphics moments
-(hook title, callouts, end card) as alpha layers; the existing ffmpeg edit stays the base. A full 60 s video through
-HyperFrames would take ~10 min per piece.
+- **Avast AutoSandbox** sandboxes every new unsigned exe hash on first run, the app and the engine separately (that
+  was the "two apps" symptom). Expect the first launch after any rebuild to time out (packaged smoke, manual runs);
+  the second passes. Signing is the fix. Windows Defender has no detections.
+- **HyperFrames templates:** never declare a global named `top` (it is `window.top`): the script dies and the layer
+  renders fully transparent with no error. Size/duration go into the markup (`__W__`, `__H__`, `__DUR__`), not JS.
+  The browser comes from `HYPERFRAMES_BROWSER_PATH`, ffmpeg from `HYPERFRAMES_FFMPEG_PATH` (not `chromePath`).
+- **Puppeteer's Chrome download** stays blocked by npm's allow-scripts; the app uses Edge. Keep it blocked.
+- **Gemini TTS** rejects `mp3`; only `pcm`. OpenRouter ignores provider routing for transcription.
+- **Render speed:** written-content renders keep `-preset veryfast` (medium more than doubled render time for mostly
+  smaller files); CRF sets quality. Clips use medium (light filter graph).
+- **Smoke timing:** Export waits for the whole re-render job (`click({ timeout: 240_000 })`); on the project page
+  "Projects" matches both the rail button and the back link, so don't navigate by that name there.
+- Saved settings rows from older installs keep stale fields (`tts_*`, old CRF 22); pydantic ignores unknown keys.
 
-Steps 15-18 built 2026-11-07. `npm test` green (152 backend tests incl. a real Edge render, typecheck, build,
-smoke with a motion hook rendered inside the app); `npm run smoke:packaged` renders a motion layer with the
-installed exe. Not yet judged on real footage or real model output (step 12).
+## Earlier steps (done, for reference)
 
-### 15. Engine in the app (done)
-- [x] `@hyperframes/producer` 0.9.20 in `apps/desktop` (Puppeteer's Chrome download stays blocked by npm's
-      allow-scripts); `apps/desktop/motion/render.mjs` renders one composition dir to an alpha WebM.
-- [x] The backend runs it with the app's own Electron binary as Node (`ACS_NODE` + `ACS_MOTION_RUNNER` from
-      `backend.ts`, `ELECTRON_RUN_AS_NODE=1`); dev falls back to `node` on PATH.
-- [x] Browser: `HYPERFRAMES_BROWSER_PATH`, else Edge, else Chrome; ffmpeg: the bundled one.
-- [x] Packaging: `motion/` and `node_modules/` unpacked from the asar. Installer 296 -> 321 MB. Ships an
-      `esbuild.exe` (a HyperFrames core dependency): unsigned like the rest until step 3.
-
-### 16. Template library (done)
-- [x] `apps/backend/app/motion_assets/`: `hook.html` (bar draws, words rise one by one, *keywords* in the accent
-      colour bounce, lifts away at 2.3 s) and `callout.html` (a phrase or number punches in, holds, drops out).
-      Accent and case per genre (`motion.LOOKS`); Montserrat ExtraBold bundled for identical renders.
-- [x] Probe collision fixed: keywords bounce instead of scaling, so neighbours never overlap.
-- Skipped: end card. The user removed quote text from videos (2026-09-20); an end card would put it back.
-- Skipped: HyperFrames registry blocks (licence check first; not needed for the hook/callout).
-- Found and fixed: a template global named `top` (it is `window.top`) killed the script and rendered a fully
-  transparent layer with no error. `test_motion.RealRender` now checks the words are opaque mid-animation.
-
-### 17. AI direction (done)
-- [x] Clips: pass 2's `hook` is now the animated title, 1-2 keywords in `*asterisks*` (stripped before storing).
-- [x] Written pieces: new optional `hook` (shown with the sound off, so a sharper promise than the first line)
-      and 0-2 `callouts`, each tied to a narration word and placed at that word's real timing. Old pieces load.
-
-### 18. Compositing and controls (done)
-- [x] `motion.overlay_graph` composites layers (libvpx decode keeps alpha, `setpts` places each one);
-      used by `render_clip.py` and `render.py`. Layers are cached by content: re-renders reuse them.
-- [x] Settings -> Render -> Motion graphics on/off. Off, no browser, or a failed layer = the plain edit; motion
-      never fails a job. The test suite runs with it off (`ACS_NO_MOTION`), except `test_motion`.
-- Cost measured: ~40 s for a hook + callout on this laptop (first launch of the browser dominates); cached
-  repeats are instant. ponytail: one browser launch per layer; batch layers per video if it adds up.
-
-### 19. Later, only if 15-18 land well
-- Model-authored compositions checked by `hyperframes lint` before rendering.
-- Sound design (CC0 whoosh/riser) and hook variants for A/B testing.
-
-Open questions: GSAP 3.15 uses Webflow's "Standard no charge" licence, not an open-source one; read it before
-shipping (HyperFrames also accepts WAAPI and Anime.js, MIT). Edge launched headless from the app may draw Avast's
-attention like the engine did; signing (step 3) covers our exes, Edge is already signed by Microsoft.
-
----
-
-## Phase 3: Written-content quality
-
-### 11. Stronger writing model (built 2026-11-07, quality unjudged)
-- [x] `ai_model` (writing: plans, pieces with their metadata, clip picks and post copy) now defaults to
-      `deepseek-v4-pro`; new `ai_model_fast` (`deepseek-flash`) only scans whole transcripts in clip pass 1.
-      Metadata is written in the same call as the piece, so there is no separate metadata step to put on flash.
-- [x] Default max tokens 4000 -> 8192: both models think by default, and thinking spends the same budget.
-- [x] Settings -> AI shows Writing model and Scanning model. Test pins pass 1 = fast, pass 2 = writer.
-- Names confirmed on api-docs.deepseek.com (2026-11-07). Pro costs about 4.4x flash for input and 3.3x for
-  output: fractions of a cent per piece.
-- Existing installs keep their saved `deepseek-flash`: change Writing model to `deepseek-v4-pro` in Settings.
-- [ ] Generate one batch per genre with a real key and tune `apps/backend/app/creative/prompts.py`.
-- **Done when:** a blind read of pro vs flash output picks pro.
-
-### 11b. One AI key: OpenRouter (done 2026-11-07)
-- [x] The DeepSeek and Groq keys are gone. `OPENROUTER_API_KEY` covers writing, clip selection and transcription
-      (`creative/model.py` `BASE`/`api_key`, `clipper/transcribe.py`). Pexels stays (stock media, not AI);
-      Unsplash is optional.
-- [x] Chat requests send `provider.require_parameters` so OpenRouter only routes to JSON-mode providers.
-- [x] Transcription: `openai/whisper-large-v3-turbo` (~$0.012/audio hour via DeepInfra, ~$0.04 via Groq;
-      OpenRouter picks the provider). Chunks 600 s -> 300 s for OpenRouter's 60 s upstream timeout. If a provider
-      returns no word times, words are estimated inside each segment instead of failing.
-- [x] Saved bare model names (`deepseek-flash`) map to OpenRouter ids on load.
-- Existing installs: the old DeepSeek/Groq keys stay in the encrypted file but are no longer read. Add the
-  OpenRouter key in Settings.
-- **Unverified until a real key:** that the transcription provider OpenRouter picks returns word timestamps.
-
-### 12. Real-key verification (from `.claude/handover.md`)
-Put `OPENROUTER_API_KEY` and `PEXELS_API_KEY` in the repo `.env` (gitignored), or add them in Settings.
-- [ ] Writing: one batch per genre.
-- [ ] Pexels: real searches, check the shot pool variety.
-- [ ] Clips: a real YouTube link end to end (download, transcription with word times, crop, captions).
-- [ ] Buffer: connect, publish now, publish scheduled.
-- [ ] Metricool: inspect the `schedule_post` tool, then wire the UI.
-
----
-
-## Phase 4: Only if needed
-
-Do these only when the earlier phases show the need.
-
-### 13. Speaker-aware crop
-Only if most clip sources are two-person podcasts and the crop picks the wrong face.
-- [ ] Add WhisperX + pyannote diarization (needs a Hugging Face token and accepting the model licences).
-- [ ] Map each word to a speaker, each speaker to a face, and crop to whoever is talking.
-
-### 14. Expressive narration
-Only if a listening test says Kokoro is too flat.
-- [ ] Blind test Kokoro against Chatterbox (MIT) on the same three scripts.
-- [ ] If Chatterbox wins, add it as an optional download (it needs PyTorch, several GB). Keep Kokoro as the default.
-
----
+1-2 backend identity + Avast diagnosis; 5-10 clip quality; 11 + 11b writing model split and one OpenRouter key;
+15-18 HyperFrames motion graphics; this session's UI/TTS/storage changes. Commit `50a4309` message has the detail.
 
 ## Not doing
 
-- Moving to Nuitka or Tauri, or merging Python into Electron: signing fixes the antivirus problem for far less.
-- A local LLM via Ollama: DeepSeek is cheap and writes better.
-- MediaPipe, Dia, Sesame CSM: either they only add a dependency for something the app already covers, or they
-  are too slow for local narration.
+- Nuitka/Tauri or merging Python into Electron: signing fixes the antivirus problem for far less.
+- A local LLM (Ollama) or local TTS: one OpenRouter key is simpler and better; Kokoro was removed on purpose.
+- Remotion (source-available, paid above a small company size). An end card with the quote (the owner removed
+  quote text from videos on 2026-09-20).
 
-The ceiling for written videos is stock footage. Better search queries help; no edit grammar makes repeated
-stock clips look like a real shoot.
+The ceiling for written videos is stock footage; better search queries help, no edit grammar replaces a real shoot.

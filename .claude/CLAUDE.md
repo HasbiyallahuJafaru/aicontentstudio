@@ -5,8 +5,8 @@ TTS, FFmpeg render, per-platform metadata) and exports them for Metricool. Local
 
 - Spec (source of truth for scope and phase order): `Prd.txt`. Product record: `PRODUCT.md`.
 - Dependency/license decisions + machine gotchas: `DECISIONS.md` (update when a dependency changes).
-- **Progress and next steps: `.claude/handover.md`. Read it first in every new chat, and update it at the end of
-  every phase (or before the chat runs out).**
+- **Progress and next steps: `NEXT_STEPS.md` (repo root). Read it first in every new chat, and update it at the
+  end of every phase (or before the chat runs out).** `.claude/handover.md` is the older M1-M8 log.
 
 ## Developer identity (for branding + integrations)
 - Website: https://hasbiyallahu.xyz · GitHub: https://github.com/HasbiyallahuJafaru ·

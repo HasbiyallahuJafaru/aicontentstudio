@@ -8,7 +8,6 @@
 import json
 import warnings
 
-from PyInstaller.utils.hooks import collect_data_files
 from PyInstaller.utils.win32.versioninfo import (FixedFileInfo, StringFileInfo, StringStruct, StringTable,
                                                  VarFileInfo, VarStruct, VSVersionInfo)
 
@@ -45,17 +44,16 @@ a = Analysis(
     ["main.py"],
     pathex=["."],
     binaries=[],
-    datas=datas + collect_data_files("kokoro_onnx"),   # espeak/jieba data the voice engine needs
+    datas=datas,
     hiddenimports=[
         "yt_dlp",                                       # lazy-loads extractors from package data
         "cv2",
-        "kokoro_onnx",
-        "soundfile",
         "PIL._tkinter_finder",
     ],
     hookspath=[],
     runtime_hooks=[],
-    excludes=["tkinter", "matplotlib", "pytest", "tests"],
+    # narration is Gemini TTS over HTTP now: keep the old local voice engine out even if the venv still has it
+    excludes=["tkinter", "matplotlib", "pytest", "tests", "kokoro_onnx", "onnxruntime", "soundfile", "phonemizer"],
 )
 pyz = PYZ(a.pure)
 

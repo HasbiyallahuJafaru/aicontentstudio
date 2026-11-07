@@ -1,5 +1,5 @@
-"""Milestone 5: composition, TTS and the renderers. Uses the real Windows SAPI voices and the real ffmpeg binary
-(both skipped automatically where unavailable); no network."""
+"""Milestone 5: composition, TTS and the renderers. TTS is faked at httpx; uses the real ffmpeg binary (skipped
+automatically where unavailable); no network."""
 import asyncio
 import math
 import os
@@ -66,19 +66,34 @@ class Composition(unittest.TestCase):
 
 
 class TTS(unittest.TestCase):
-    @unittest.skipUnless(sys.platform == "win32", "Windows SAPI voices")
-    def test_windows_tts_speaks(self):
-        result = asyncio.run(tts.WindowsTTS().generate("Discipline begins when motivation ends.", "", 1.0))
-        self.assertTrue(result.path.exists())
-        self.assertGreater(result.duration, 0.5)
+    """Gemini TTS via OpenRouter, faked at httpx: PCM in, a playable WAV out, the read direction sent along."""
 
-    def test_kokoro_without_model_is_human(self):
-        settings.update(tts_provider="kokoro")
-        try:
-            with self.assertRaisesRegex(UserError, "not installed|not downloaded"):
-                tts.get_tts()
-        finally:
-            settings.update(tts_provider="windows")
+    def test_pcm_becomes_a_wav_of_the_right_length_and_bad_voices_fall_back(self):
+        sent = []
+
+        def fake_post(url, json, headers, timeout, verify):
+            sent.append((url, json))
+            return mock.Mock(status_code=200, is_success=True, content=b"\x00\x00" * 24000 * 2,  # 2 s of silence
+                             headers={"content-type": "audio/pcm;rate=24000;channels=1"})
+
+        with mock.patch.dict(config.SECRETS, {"OPENROUTER_API_KEY": "k"}), mock.patch.object(tts.httpx, "post", fake_post):
+            result = asyncio.run(tts.get_tts().generate("Keep going.", "kokoro:af_heart", "calm_reflective"))
+        self.assertAlmostEqual(result.duration, 2.0, places=2)
+        url, body = sent[0]
+        self.assertTrue(url.endswith("/audio/speech"))
+        self.assertEqual((body["model"], body["voice"], body["response_format"]), (tts.MODEL, tts.DEFAULT_VOICE, "pcm"))
+        self.assertIn("calm reflective", body["instructions"])
+
+    def test_missing_key_and_spent_credits_are_human(self):
+        with mock.patch.dict(config.SECRETS, {}, clear=True), self.assertRaisesRegex(UserError, "OpenRouter API key"):
+            asyncio.run(tts.get_tts().generate("x", "Kore"))
+        spent = mock.Mock(status_code=402, is_success=False, text="no credits", content=b"", headers={})
+        with mock.patch.dict(config.SECRETS, {"OPENROUTER_API_KEY": "k"}), \
+             mock.patch.object(tts.httpx, "post", lambda *a, **k: spent), self.assertRaisesRegex(UserError, "out of credits"):
+            asyncio.run(tts.get_tts().generate("x", "Kore"))
+
+    def test_voice_options_are_gemini_voices(self):
+        self.assertIn({"value": "Charon", "label": "Charon · informative"}, tts.voices())
 
 
 def make_source_video(path: str) -> None:

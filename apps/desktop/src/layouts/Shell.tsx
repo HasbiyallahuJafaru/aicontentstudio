@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { Aperture, CornersIn, Export, Folders, GearSix, Images, ListChecks, PlusCircle, SquaresFour, type Icon } from '@phosphor-icons/react'
+import { Aperture, CopySimple, Export, Folders, GearSix, Images, ListChecks, Minus, PlusCircle, SquaresFour, X, type Icon } from '@phosphor-icons/react'
 import { studio, useBackendStatus, useFullScreen } from '../lib/studio'
 import { CreatedBy } from '../components/Branding'
 import { Button, ErrorNote, cx } from '../components/ui'
@@ -58,24 +58,29 @@ function BackendIndicator() {
   )
 }
 
-/** Fullscreen hides the window controls, so this is the only way back out besides F11 and Escape. */
-function ExitFullScreen() {
-  if (!useFullScreen()) return null
+/** Windows hides its own caption buttons in fullscreen (and maximize is fullscreen here), so the bar draws the same
+ * three in the same corner: minimize, restore (leave fullscreen), close. Outside fullscreen the native ones show. */
+function WindowControls() {
+  const cls = 'no-drag grid h-11 w-[46px] place-items-center text-ink-2 transition-colors duration-150 hover:bg-white/[0.08] hover:text-ink'
   return (
-    <Button variant="ghost" onClick={() => studio.exitFullScreen()} className="no-drag h-8 !px-3 !text-xs">
-      <CornersIn size={14} />Exit fullscreen
-    </Button>
+    <div className="flex">
+      <button type="button" aria-label="Minimize" className={cls} onClick={() => studio.minimize()}><Minus size={14} /></button>
+      <button type="button" aria-label="Restore" className={cls} onClick={() => studio.exitFullScreen()}><CopySimple size={14} /></button>
+      <button type="button" aria-label="Close" className={cx(cls, 'hover:bg-[#c42b1c] hover:text-white')} onClick={() => studio.close()}><X size={14} /></button>
+    </div>
   )
 }
 
 export function Shell({ page, onNavigate, children }: { page: Page; onNavigate: (p: Page) => void; children: ReactNode }) {
   const status = useBackendStatus()
+  const full = useFullScreen()
   return (
     <div className="ambient grain grid h-full grid-cols-[76px_minmax(0,1fr)] grid-rows-[44px_minmax(0,1fr)] overflow-hidden">
-      <header className="drag titlebar-inset col-span-2 flex items-center gap-3 pl-5">
+      {/* windowed: room for the native caption buttons; fullscreen: ours sit flush in the top-right corner */}
+      <header className={cx('drag col-span-2 flex items-center gap-3 pl-5', full ? 'pr-0' : 'titlebar-inset')}>
         <Aperture size={20} weight="fill" className="text-accent" />
         <span className="font-display text-[13px] font-semibold tracking-[-0.01em]">AI Social Content Studio</span>
-        <div className="ml-auto flex items-center gap-1"><ExitFullScreen /><BackendIndicator /></div>
+        <div className="ml-auto flex h-full items-center gap-3"><BackendIndicator />{full && <WindowControls />}</div>
       </header>
 
       <nav aria-label="Main" className="mb-3 ml-3 flex flex-col items-center gap-2 rounded-[24px] bg-black/35 py-3 shadow-[inset_0_0_0_1px_rgb(255_244_232/0.06)]">

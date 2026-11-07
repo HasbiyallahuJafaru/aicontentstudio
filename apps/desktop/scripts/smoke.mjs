@@ -19,8 +19,16 @@ const transcription = JSON.stringify({
   segments: [{ start: 0, end: 11.5, text: WORDS.join(' ') }],
   words: WORDS.map((w, i) => ({ word: w, start: i * 0.95, end: i * 0.95 + 0.6 })),
 })
-// Fake OpenRouter: one base URL, routed by path like the real one (chat completions vs audio transcriptions)
+// Fake Gemini TTS: 3 s of 24 kHz 16-bit mono PCM (a quiet tone), the only format the real one returns
+const speech = Buffer.alloc(24000 * 2 * 3)
+for (let i = 0; i < 24000 * 3; i++) speech.writeInt16LE(Math.round(4000 * Math.sin(2 * Math.PI * 220 * i / 24000)), i * 2)
+// Fake OpenRouter: one base URL, routed by path like the real one (chat, transcription, speech)
 const fake = createServer((req, res) => {
+  if (req.url.endsWith('/audio/speech')) {
+    req.on('data', () => {})
+    req.on('end', () => { res.setHeader('Content-Type', 'audio/pcm;rate=24000;channels=1'); res.end(speech) })
+    return
+  }
   if (req.url.endsWith('/audio/transcriptions')) {
     req.on('data', () => {})
     req.on('end', () => res.end(transcription))
@@ -160,19 +168,22 @@ assert.equal(splashLinks, 3, 'three developer links on the splash')
 await shot(win, '0-splash')
 await assertNoHorizontalOverflowOnSplash(win)
 await enterApp(win)
+await win.getByRole('heading', { name: 'Studio' }).waitFor() // the splash opens the Dashboard
+await win.keyboard.press('Control+N')
 await win.getByRole('heading', { name: 'New project' }).waitFor()
+assert.equal(await win.getByRole('listbox').count(), 0, 'no suggestion list pops open on arrival')
 await shot(win, '1-create-empty')
 await assertNoHorizontalOverflow(win, 'create')
 
-// Settings: keys (encrypted) + a default
+// Settings: keys (encrypted) + a plain-language choice
 await win.keyboard.press('Control+,')
 for (const [labelText, value] of [['OpenRouter API key', 'sk-or-smoke'], ['Pexels API key', 'smoke-test-key-123']]) {
   await win.getByLabel(labelText).fill(value)
   await win.getByLabel(labelText).press('Enter')
 }
 await win.getByText('Saved and encrypted on this computer').nth(1).waitFor()
-await win.getByLabel('Quantity').fill('3')
-await win.getByLabel('Asset cooldown').fill('7')
+await win.getByLabel('Quality').click()
+await win.getByText('Standard · smaller files', { exact: true }).click()
 await win.getByRole('button', { name: 'Save changes' }).click()
 await win.getByText('Saved', { exact: true }).waitFor()
 await shot(win, '2-settings')
@@ -190,6 +201,7 @@ await win.keyboard.press('Control+N')
 await win.getByLabel('Topic').fill('discipline')
 await win.getByLabel('Genre').click()
 await win.getByText('Hard Truth — speech edit', { exact: true }).click()
+await win.getByRole('group', { name: 'Quantity' }).getByText('3', { exact: true }).click()
 await win.getByRole('button', { name: 'Next' }).click() // Brief -> Delivery
 await win.getByLabel('Narration voice').waitFor()
 await win.getByRole('button', { name: 'Next' }).click() // Delivery -> Look
@@ -203,7 +215,7 @@ await shot(win, '5-project-written')
 assert.equal(await win.locator('blockquote').count(), 3)
 await assertNoHorizontalOverflow(win, 'project')
 
-// Render: swap the fake downloaded bytes for real clips, set narration speed, render all three pieces
+// Render: swap the fake downloaded bytes for real clips, render all three pieces
 const assetsDir = join(root, 'data', 'media', 'assets')
 // 14s: longer than any duration the fake Pexels metadata advertises, so the renderer's middle-segment
 // seek always lands inside the real file
@@ -212,18 +224,8 @@ for (const f of readdirSync(assetsDir).filter((f) => f.endsWith('.mp4'))) {
     '-c:v', 'libx264', '-preset', 'ultrafast', join(assetsDir, f)], { timeout: 120_000, encoding: 'utf8' })
   assert.equal(r.status, 0, `fixture clip failed: ${r.stderr}`)
 }
-await win.keyboard.press('Control+,')
-await win.getByRole('heading', { name: 'Narration' }).waitFor()
-await win.getByLabel('Voice engine').click()
-await win.getByText('Windows voices (offline)', { exact: true }).click() // kokoro (the default) has no model in the throwaway data dir
-await win.getByLabel('Speed').fill('1.1')
-await win.getByRole('button', { name: 'Save changes' }).click()
-await win.getByText('Saved', { exact: true }).waitFor()
-await win.getByRole('heading', { name: 'Narration' }).scrollIntoViewIfNeeded()
-await shot(win, '5b-settings-narration')
-await win.getByRole('button', { name: 'Projects' }).click()
-await win.getByText('Discipline').click()
-await win.getByRole('button', { name: 'Render', exact: true }).click()
+// still on the project page; Render enables once the visuals job finishes
+await win.getByRole('button', { name: 'Render', exact: true }).click({ timeout: 120_000 })
 const chips = () => win.locator('button[title^="renders/"]')
 try {
   await chips().first().waitFor({ timeout: 240_000 })
@@ -363,10 +365,16 @@ await win.getByRole('button', { name: 'Export', exact: true }).click()
 await win.getByText('Exported', { exact: true }).waitFor({ timeout: 120_000 })
 await shot(win, '8d-clip-exported')
 
-await win.keyboard.press('Control+N')
-await win.keyboard.press('Control+Enter') // Brief -> Delivery, where the quantity lives
-await win.getByRole('radio', { name: '3', exact: true }).waitFor()
-assert.equal(await win.getByRole('radio', { name: '3', exact: true }).isChecked(), true, 'settings survive restart')
+// Settings survive the restart; then Clear all content wipes every project and file, keys and settings stay
+await win.keyboard.press('Control+,')
+assert.match(await win.getByLabel('Quality').textContent(), /Standard/, 'settings survive restart')
+win.once('dialog', (d) => d.accept())
+await win.getByRole('button', { name: 'Clear all content' }).click()
+await win.getByText(/Cleared\. .* freed\./).waitFor({ timeout: 60_000 })
+await shot(win, '9-settings-cleared')
+await assertNoHorizontalOverflow(win, 'settings')
+await win.getByRole('button', { name: 'Projects' }).click()
+await win.getByText('No projects yet').waitFor()
 await app.close()
 fake.close()
 fakePexels.close()

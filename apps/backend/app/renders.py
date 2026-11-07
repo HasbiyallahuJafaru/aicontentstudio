@@ -84,18 +84,18 @@ def render_project(project_id: str, report, piece_ids: list[str] | None = None) 
     if shutil.which(config.FFMPEG) is None and not Path(config.FFMPEG).exists():
         raise UserError("FFmpeg is not installed or not on PATH.", "Install ffmpeg and restart the app.")
 
-    # the brief's narration voice ("engine:voice") overrides the Settings default for this project
-    voice_engine, _, voice_name = (brief.get("voice") or "").partition(":")
-    if voice_engine:
-        engine = tts.get_tts(voice_engine)
-    voice = voice_name or s["tts_voice"]
+    # the project's narration voice; briefs saved before Gemini hold "engine:voice" pairs (kokoro:af_heart),
+    # which fall back to the default voice
+    voice = (brief.get("voice") or "").rpartition(":")[2]
+    voice = voice if voice in tts.VOICES else tts.DEFAULT_VOICE
 
     n = len(pieces)
     for i, piece in enumerate(pieces, 1):
         report(f"Narration {i} of {n}", (i - 0.5) / n)
         content_data = piece["content"]
         try:
-            narration = asyncio.run(engine.generate(content_data["narration"]["text"], voice, s["tts_speed"]))
+            narration = asyncio.run(engine.generate(content_data["narration"]["text"], voice,
+                                                    content_data["narration"].get("delivery", "")))
             pool = _assets_for(piece)
             if not pool:
                 raise UserError("This piece has no visual asset yet.", "Generate visuals, then render again.")

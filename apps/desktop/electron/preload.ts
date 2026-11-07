@@ -16,6 +16,8 @@ const api = {
   setSecret: (name: string, value: string) => ipcRenderer.invoke('secrets:set', name, value),
   isFullScreen: (): Promise<boolean> => ipcRenderer.invoke('app:isFullScreen'),
   exitFullScreen: () => ipcRenderer.invoke('app:exitFullScreen'),
+  minimize: () => ipcRenderer.invoke('app:minimize'),
+  close: () => ipcRenderer.invoke('app:close'),
   onFullScreen: (cb: (on: boolean) => void) => listen('app:fullscreen', cb),
   openDataDir: () => ipcRenderer.invoke('app:openDataDir'),
   openExportPath: (p: string) => ipcRenderer.invoke('app:openExportPath', p),

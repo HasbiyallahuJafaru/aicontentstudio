@@ -50,12 +50,8 @@ class Settings(BaseModel):
     asset_weights: dict[str, float] = Field(
         default_factory=lambda: {"relevance": 0.30, "visual_quality": 0.20, "composition": 0.15, "brand": 0.15,
                                  "color": 0.10, "novelty": 0.05, "motion": 0.05})
-    # PRD §49 TTS: provider, voice, speed, volume. 'kokoro' = the quantized local neural voices (default;
-    # needs `python -m app.tts download` once, see app/tts.py). 'windows' = SAPI voices (always there, offline).
-    tts_provider: Literal["windows", "kokoro"] = "kokoro"
-    tts_voice: str = Field("am_adam", max_length=80)
-    tts_speed: float = Field(1.0, ge=0.5, le=2)
-    tts_volume: float = Field(1.0, ge=0, le=1)
+    # Narration has no settings: Gemini TTS via OpenRouter (app/tts.py), voice picked per project on Create.
+    # Rows saved with the old tts_* fields still load (pydantic ignores unknown keys).
     # PRD §67 music: user-supplied licensed file only; never downloaded. Mixed quietly under the narration.
     music_path: str = Field("", max_length=500)
     music_volume: float = Field(0.15, ge=0, le=0.5)

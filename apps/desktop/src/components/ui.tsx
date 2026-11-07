@@ -264,7 +264,8 @@ export function Autocomplete({ id, value, suggestions, onChange, onFocus, ...res
   return (
     <div ref={ref} className="relative">
       <Input {...rest} id={id} value={value} role="combobox" aria-expanded={open} autoComplete="off"
-        onFocus={(e) => { onFocus?.(e); show() }}
+        // not on focus: the Create page autofocuses this field, and a list popping open on arrival reads as noise
+        onFocus={onFocus}
         onClick={() => show()}
         onChange={(e) => { onChange((e.target as HTMLInputElement).value); show(); setActive(-1) }}
         onKeyDown={onKeyDown} />

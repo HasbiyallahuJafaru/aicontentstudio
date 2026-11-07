@@ -19,7 +19,7 @@ SECRETS: dict[str, str] = {}
 
 def load_dotenv() -> None:
     env = REPO_ROOT / ".env"
-    if env.exists():
+    if env.exists() and not os.environ.get("ACS_NO_DOTENV"):  # the test suite must never see a developer's keys
         for line in env.read_text(encoding="utf-8").splitlines():
             key, sep, value = line.partition("=")
             if sep and not key.strip().startswith("#") and value.strip():

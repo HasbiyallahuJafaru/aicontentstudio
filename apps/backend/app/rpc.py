@@ -5,7 +5,8 @@ from concurrent.futures import ThreadPoolExecutor
 
 from pydantic import ValidationError
 
-from app import assets, clips, config, content, database, export, jobs, projects, queue, renders, settings, tts
+from app import (assets, clips, config, content, database, export, jobs, projects, queue, renders, settings, storage,
+                 tts)
 from app.publish import buffer as buffer_publish, host as publish_host, metricool
 from app.errors import UserError
 from app.events import emit, send
@@ -27,6 +28,8 @@ METHODS = {
     "settings.get": settings.get,
     "settings.update": settings.update,
     "tts.voices": tts.voices,
+    "storage.usage": storage.usage,
+    "storage.clear": storage.clear,
     "projects.create": projects.create,
     "projects.list": projects.list_,
     "projects.get": projects.get,

@@ -65,7 +65,6 @@ export type Settings = {
   ai_model: string; ai_model_fast: string; ai_temperature: number; ai_max_tokens: number
   default_topic: string; default_tone: Tone; default_quantity: number
   asset_cooldown_days: number; asset_weights: Record<string, number>
-  tts_provider: 'windows' | 'kokoro'; tts_voice: string; tts_speed: number; tts_volume: number
   music_path: string; music_volume: number
   render_crf: number; render_audio_bitrate: string; render_width: number; render_height: number
   ytdlp_cookies: string; motion_graphics: boolean
@@ -85,7 +84,9 @@ export type QueueData = {
 export type ExportRun = { id: string; project_id: string; dir: string; path: string; pieces: number
   created_at: string; project: string }
 export type BackendStatus = { state: 'starting' | 'ready' | 'crashed' | 'stopped'; message?: string; detail?: string }
-export type VoiceList = { kokoro: string[]; windows: string[] }
+export type VoiceList = { value: string; label: string }[]
+/** Narration picker options: Gemini voices from tts.voices, empty = the studio default (Charon). */
+export const voiceOptions = (voices?: VoiceList) => [{ value: '', label: 'Default · Charon' }, ...(voices ?? [])]
 export type SecretName = 'OPENROUTER_API_KEY' | 'PEXELS_API_KEY' | 'UNSPLASH_ACCESS_KEY' | 'METRICOOL_API_KEY'
 
 export const TOPICS = ['Motivation', 'Discipline', 'Personal growth', 'Mindset', 'Productivity', 'Relationships',
@@ -123,7 +124,12 @@ export function useFullScreen() {
   const [full, setFull] = useState(false)
   useEffect(() => {
     studio.isFullScreen().then(setFull)
-    return studio.onFullScreen((on) => setFull(on))
+    // Fullscreen entered from the maximize handler doesn't reliably emit enter-full-screen on Windows, but it
+    // always resizes the page: ask again on every resize, keep the event as the fast path.
+    const check = () => { studio.isFullScreen().then(setFull) }
+    window.addEventListener('resize', check)
+    const off = studio.onFullScreen((on) => setFull(on))
+    return () => { window.removeEventListener('resize', check); off() }
   }, [])
   return full
 }

@@ -69,7 +69,7 @@ still in progress, so treat output quality claims as unproven until you have run
 - `apps/desktop` - Electron 44, React 19, TypeScript, Tailwind CSS 4. The renderer is sandboxed and reaches the
   backend through a single preload bridge (`window.studio`). It never sees an API key. Keys are encrypted at rest
   with the OS (safeStorage / DPAPI).
-- `apps/backend` - Python 3.12, stdlib plus pydantic, httpx, Pillow, opencv-python, yt-dlp, kokoro-onnx. JSON
+- `apps/backend` - Python 3.12, stdlib plus pydantic, httpx, Pillow, opencv-python, yt-dlp. JSON
   lines over stdio, one module per area, SQLite with plain SQL migrations. All pipeline logic lives here; the UI
   never duplicates it.
 - `app/edit.py` is the edit grammar, `app/renders.py` plans the shots, `app/render.py` drives ffmpeg.
@@ -111,7 +111,7 @@ Open Settings on first run. Nothing is required to launch the app, and each key 
 
 | Key | Unlocks |
 |---|---|
-| OpenRouter | Every AI call: writing (batch plans, quotes, narration, per-platform copy), clip selection, and Whisper transcription for clips and karaoke word timings |
+| OpenRouter | Every AI call: writing (batch plans, quotes, narration, per-platform copy), clip selection, Whisper transcription for clips and karaoke word timings, and the narration voice |
 | Pexels (Unsplash optional) | Stock footage and photos for written pieces |
 | Buffer | Scheduling and publishing, via OAuth. Optional |
 | Metricool | Publishing through the Metricool MCP. Optional |
@@ -119,7 +119,8 @@ Open Settings on first run. Nothing is required to launch the app, and each key 
 Models are set in Settings → AI as OpenRouter ids: `deepseek/deepseek-v4-pro` writes, `deepseek/deepseek-v4.1-flash`
 scans transcripts. Transcription uses `openai/whisper-large-v3-turbo`, the cheapest Whisper on OpenRouter.
 
-Narration is local and free by default (Kokoro, an 82M on-device voice model), with Windows SAPI as a fallback.
+Narration is Google's Gemini TTS (`google/gemini-3.8-flash-tts`) through the same OpenRouter key: pick a voice per
+project on Create, and each piece is read in the delivery it was written for. A 30 s narration costs well under a cent.
 Keys are stored encrypted in your user profile and are only ever decrypted by the app itself.
 
 ## Documentation

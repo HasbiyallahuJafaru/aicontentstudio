@@ -1,5 +1,9 @@
 # Handover
 
+> **Superseded 2026-11-07: read `NEXT_STEPS.md` at the repo root first.** It has the current state, how to run,
+> what changed (OpenRouter for every AI call, Gemini TTS, clip tightening, HyperFrames motion graphics, plain
+> Settings) and what is left. This file is the older milestone log (M1-M8); where they disagree, NEXT_STEPS wins.
+
 Last updated: 2026-09-20 (Milestone 7 complete + user feedback rounds 1-3 + crash fixes — everything committed
 and pushed to `main` through the "director-cut renders" commit. Full `npm test` green: 115 backend tests, tsc,
 build, smoke synced to the wizard Create flow and video_image defaults. Next: real-key verification rounds,

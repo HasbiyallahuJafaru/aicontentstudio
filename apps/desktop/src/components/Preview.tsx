@@ -4,7 +4,7 @@
 // control are on screen at once. Only the rail's middle band ever scrolls.
 import { useState } from 'react'
 import { ArrowClockwise, Check, Export, X } from '@phosphor-icons/react'
-import { call, label, mediaUrl, useQuery, type Asset, type Piece, type Render, type VoiceList } from '../lib/studio'
+import { call, label, mediaUrl, useQuery, voiceOptions, type Asset, type Piece, type Render, type VoiceList } from '../lib/studio'
 import { Button, Dialog, ErrorNote, Select, cx } from './ui'
 
 const SCOPES = ['quote', 'narration', 'visual', 'design'] as const
@@ -114,11 +114,7 @@ export function Preview({ piece, renders, assets, voice, onClose, onChanged }: {
                 await call('projects.set_voice', { project_id: piece.project_id, voice: v })
                 await call('jobs.start', { project_id: piece.project_id, kind: 'render', piece_ids: [piece.id] })
               })}
-              options={[
-                { value: '', label: 'Studio default (Settings)' },
-                ...(voices?.kokoro ?? []).map((v) => ({ value: `kokoro:${v}`, label: `Kokoro · ${v}` })),
-                ...(voices?.windows ?? []).map((v) => ({ value: `windows:${v}`, label: `Windows · ${v}` })),
-              ]} />
+              options={voiceOptions(voices)} />
             <p className="text-2xs text-ink-3">Swapping re-renders this piece's video with the new voice.</p>
           </div>
         </div>

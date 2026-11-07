@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { CaretRight, Scissors } from '@phosphor-icons/react'
-import { call, FORMATS, GENRES, hasKey, label, PLATFORMS, TOPICS, useQuery, BackendError,
+import { call, FORMATS, GENRES, hasKey, label, PLATFORMS, TOPICS, useQuery, voiceOptions, BackendError,
   type Brief, type Project, type Settings, type VoiceList } from '../lib/studio'
 import { Button, Autocomplete, Choices, ErrorNote, Field, Input, PageHeader, Select, cx } from '../components/ui'
 
@@ -185,11 +185,6 @@ function WriteForm({ brief, setBrief, custom, setCustom, keySet, error, saving, 
   // Step 1 only owns the topic and quantity; platforms move to step 2, so Next must not wait on them.
   const canLeaveStep = step === 0 ? !!brief.topic.trim() && brief.quantity >= 1 && brief.quantity <= 20 : !!valid
   const last = step === STEPS.length - 1
-  const voiceOptions = [
-    { value: '', label: 'Studio default (Settings)' },
-    ...(voices?.kokoro ?? []).map((v) => ({ value: `kokoro:${v}`, label: `Kokoro \u00b7 ${v}` })),
-    ...(voices?.windows ?? []).map((v) => ({ value: `windows:${v}`, label: `Windows \u00b7 ${v}` })),
-  ]
   return (
     <div className="grid gap-7">
       <StepBar step={step} setStep={setStep} />
@@ -246,9 +241,9 @@ function WriteForm({ brief, setBrief, custom, setCustom, keySet, error, saving, 
             <Choices legend="Platforms" multiple value={brief.platforms} onChange={(v) => set('platforms', v)} options={PLATFORMS} />
             {!brief.platforms.length && <p className="-mt-5 text-xs text-danger">Choose at least one platform.</p>}
 
-            <Field label="Narration voice" hint="Kokoro voices are local neural voices. Empty uses the Settings default.">
+            <Field label="Narration voice" hint="Google's Gemini voices, read in the delivery each piece is written for.">
               {(id) => (
-                <Select id={id} value={brief.voice} onChange={(v) => set('voice', v)} options={voiceOptions} />
+                <Select id={id} value={brief.voice} onChange={(v) => set('voice', v)} options={voiceOptions(voices)} />
               )}
             </Field>
 

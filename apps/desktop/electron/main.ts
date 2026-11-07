@@ -44,10 +44,11 @@ function createWindow() {
   win.webContents.on('will-navigate', (e) => e.preventDefault())
 
   // Maximize (WCO button or double-click on the bar) means fullscreen: the user expects the app to fill the
-  // screen. F11 toggles fullscreen; Escape leaves it. In fullscreen the overlay controls are hidden, so these
-  // keys are the only way back out.
-  win.on('maximize', () => { if (!win.isFullScreen()) win.setFullScreen(true) })
-  // In fullscreen the overlay controls are gone, so the renderer draws its own way out and needs the state.
+  // screen. F11 toggles fullscreen; Escape leaves it.
+  // Un-maximize first: leaving fullscreen restores the state it was entered from, and a restored "maximized" would
+  // fire this handler again and bounce straight back into fullscreen (Restore/Escape/F11 would never work).
+  win.on('maximize', () => { if (!win.isFullScreen()) { win.unmaximize(); win.setFullScreen(true) } })
+  // Windows hides the overlay controls in fullscreen, so the renderer draws its own (Shell WindowControls).
   const fullScreenChanged = () => broadcast('app:fullscreen', win.isFullScreen())
   win.on('enter-full-screen', fullScreenChanged)
   win.on('leave-full-screen', fullScreenChanged)
@@ -102,6 +103,8 @@ app.whenReady().then(() => {
   })
   ipcMain.handle('app:isFullScreen', () => BrowserWindow.getAllWindows()[0]?.isFullScreen() ?? false)
   ipcMain.handle('app:exitFullScreen', () => BrowserWindow.getAllWindows()[0]?.setFullScreen(false))
+  ipcMain.handle('app:minimize', () => BrowserWindow.getAllWindows()[0]?.minimize())
+  ipcMain.handle('app:close', () => BrowserWindow.getAllWindows()[0]?.close())
   ipcMain.handle('app:openDataDir', () => shell.openPath(dataDir))
   // Only export folders may be opened by path (PRD §47 "open export folder"); nothing else from the renderer.
   ipcMain.handle('app:openExportPath', (_e, p: string) => {

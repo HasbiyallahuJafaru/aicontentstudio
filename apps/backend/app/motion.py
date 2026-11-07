@@ -130,6 +130,7 @@ def overlay_graph(base: str, layers_: list[dict], first_input: int) -> tuple[lis
 
 
 def anchor_time(words: list[dict], anchor: str) -> float | None:
-    """When the narration says `anchor` (first match): that's where its callout lands."""
-    want = bare(anchor)
+    """When the narration says `anchor` (first match): that's where its callout lands. A multi-word anchor
+    ("human being", seen from the real writer) lands on its first word."""
+    want = bare(anchor.split()[0]) if anchor.split() else ""
     return next((w["start"] for w in words if bare(w["word"]) == want), None)

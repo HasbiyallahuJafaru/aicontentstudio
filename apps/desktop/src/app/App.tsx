@@ -27,7 +27,7 @@ export function App() {
     return () => window.removeEventListener('keydown', onKey)
   }, [entered])
 
-  if (!entered) return <Splash onCreate={() => { setEntered(true); setPage('create') }} />
+  if (!entered) return <Splash onCreate={() => setEntered(true)} />
 
   return (
     <Shell page={page} onNavigate={setPage}>
