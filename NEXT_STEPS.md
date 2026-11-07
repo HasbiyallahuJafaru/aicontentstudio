@@ -125,7 +125,7 @@ npm run smoke:packaged  # launches the built exe, checks every exe's signature, 
 
 | # | What | Waiting on |
 |---|---|---|
-| A | Commit the uncommitted work; merge `quality-motion-openrouter` into `main` (PR or direct) | Owner's go-ahead to push/merge |
+| A | Merge `quality-motion-openrouter` into `main` (PR or direct); everything is committed and pushed | Owner's go-ahead to merge |
 | 12 | Real-footage verification (below), starting with re-rendering the owner's failed project | The owner; a video for the clip half (a local file avoids YouTube's bot check) |
 | 12b | Real Pexels search through "Choose the footage": thumbnails load, picks swap, only picks download, one palette across the batch | Step 12 |
 | P | `npm run package` + `npm run smoke:packaged` to prove `curl_cffi` and the new UI survive freezing | Owner's go-ahead (long build) |
