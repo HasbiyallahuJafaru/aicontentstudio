@@ -2,10 +2,26 @@
 from app.errors import UserError
 
 IG_CAPTION_MAX = 2200  # instagram + tiktok share the caption limit
+MAX_TAGS = 5  # platforms treat hashtags as labels, not reach: 3-5 niche tags beat a wall (vyral content-skills)
+# attached to billions of posts, so they carry no signal and read as bait
+DEAD_TAGS = {"fyp", "foryou", "foryoupage", "viral", "trending", "explore", "explorepage", "instagood", "love",
+             "reels", "tiktok"}
 
 
-def _tags(meta: dict) -> str:
-    return " ".join(f"#{t.lstrip('#')}" for t in meta["hashtags"])
+def tags(meta: dict, first: tuple[str, ...] = ()) -> list[str]:
+    """The piece's hashtags, normalised: '#'-prefixed, deduplicated, generic reach-bait dropped, capped at
+    MAX_TAGS after any platform-required `first` tags."""
+    out, seen = [], set()
+    for t in (*first, *meta["hashtags"]):
+        bare = t.strip().lstrip("#").replace(" ", "")
+        if bare and bare.lower() not in seen and (bare in first or bare.lower() not in DEAD_TAGS):
+            seen.add(bare.lower())
+            out.append(f"#{bare}")
+    return out[:MAX_TAGS + len(first)]
+
+
+def _tags(meta: dict, first: tuple[str, ...] = ()) -> str:
+    return " ".join(tags(meta, first))
 
 
 def _platform(files: dict, want: str) -> str:
@@ -18,7 +34,8 @@ def _platform(files: dict, want: str) -> str:
 
 def youtube_shorts(meta: dict, files: dict) -> dict:
     """PRD 70: title (<=100 chars), description carrying the hashtags, keywords."""
-    return {"title": meta["title"][:100], "description": f'{meta["description"]}\n\n{_tags(meta)}',
+    # #Shorts is the one tag YouTube asks for: it marks the upload for the Shorts feed
+    return {"title": meta["title"][:100], "description": f'{meta["description"]}\n\n{_tags(meta, ("Shorts",))}',
             "keywords": meta["keywords"], "file": _platform(files, "video_9x16.mp4"), "cover": "thumbnail.jpg",
             "suggested_time": "17:00"}
 
@@ -26,7 +43,7 @@ def youtube_shorts(meta: dict, files: dict) -> dict:
 def instagram(meta: dict, files: dict, want: str) -> dict:
     """PRD 71/72: reels take the 9:16 video, feed takes the 4:5 image; caption + hashtags within 2200 chars."""
     return {"caption": f'{meta["caption"]}\n\n{_tags(meta)}'[:IG_CAPTION_MAX],
-            "hashtags": [f"#{t.lstrip('#')}" for t in meta["hashtags"]], "alt_text": meta["alt_text"],
+            "hashtags": tags(meta), "alt_text": meta["alt_text"],
             "file": _platform(files, want), "cover": "thumbnail.jpg", "suggested_time": "11:00"}
 
 

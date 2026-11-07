@@ -1,8 +1,11 @@
-import type { ReactNode } from 'react'
+import { lazy, Suspense, type CSSProperties, type ReactNode } from 'react'
 import { Aperture, CopySimple, Export, Folders, GearSix, Images, ListChecks, Minus, PlusCircle, SquaresFour, X, type Icon } from '@phosphor-icons/react'
-import { studio, useBackendStatus, useFullScreen } from '../lib/studio'
+import { studio, useBackendStatus, useBusy, useFullScreen } from '../lib/studio'
 import { CreatedBy } from '../components/Branding'
 import { Button, ErrorNote, cx } from '../components/ui'
+
+// three.js loads in its own chunk, after the shell has painted
+const Ember = lazy(() => import('../components/Ember'))
 
 export type Page = 'dashboard' | 'create' | 'projects' | 'project' | 'library' | 'queue' | 'exports' | 'settings'
 
@@ -15,9 +18,10 @@ const NAV: { id: Page; label: string; icon: Icon }[] = [
   { id: 'exports', label: 'Exports', icon: Export },
 ]
 
-function RailItem({ id, label, icon: I, active, onClick }: { id: Page; label: string; icon: Icon; active: boolean; onClick: (p: Page) => void }) {
+function RailItem({ id, label, icon: I, active, onClick, i = 0 }: { id: Page; label: string; icon: Icon; active: boolean; onClick: (p: Page) => void; i?: number }) {
   return (
     <button
+      style={{ '--i': i } as CSSProperties}
       onClick={() => onClick(id)}
       aria-label={label}
       aria-current={active ? 'page' : undefined}
@@ -74,23 +78,28 @@ function WindowControls() {
 export function Shell({ page, onNavigate, children }: { page: Page; onNavigate: (p: Page) => void; children: ReactNode }) {
   const status = useBackendStatus()
   const full = useFullScreen()
+  const busy = useBusy()
   return (
-    <div className="ambient grain grid h-full grid-cols-[76px_minmax(0,1fr)] grid-rows-[44px_minmax(0,1fr)] overflow-hidden">
+    <div className="ambient grain relative isolate grid h-full grid-cols-[76px_minmax(0,1fr)] grid-rows-[44px_minmax(0,1fr)] overflow-hidden">
+      {/* the studio lamp itself, alive: a still frame while idle, drifting light and rising embers while a job runs */}
+      <div aria-hidden className="pointer-events-none absolute inset-0 -z-10">
+        <Suspense fallback={null}><Ember live={busy} embers={busy} /></Suspense>
+      </div>
       {/* windowed: room for the native caption buttons; fullscreen: ours sit flush in the top-right corner */}
-      <header className={cx('drag col-span-2 flex items-center gap-3 pl-5', full ? 'pr-0' : 'titlebar-inset')}>
+      <header className={cx('anim-shell-head drag col-span-2 flex items-center gap-3 pl-5', full ? 'pr-0' : 'titlebar-inset')}>
         <Aperture size={20} weight="fill" className="text-accent" />
         <span className="font-display text-[13px] font-semibold tracking-[-0.01em]">AI Social Content Studio</span>
         <div className="ml-auto flex h-full items-center gap-3"><BackendIndicator />{full && <WindowControls />}</div>
       </header>
 
-      <nav aria-label="Main" className="mb-3 ml-3 flex flex-col items-center gap-2 rounded-[24px] bg-black/35 py-3 shadow-[inset_0_0_0_1px_rgb(255_244_232/0.06)]">
-        {NAV.map((n) => <RailItem key={n.id} {...n} active={page === n.id || (n.id === 'projects' && page === 'project')} onClick={onNavigate} />)}
-        <div className="mt-auto">
+      <nav aria-label="Main" className="anim-shell-rail mb-3 ml-3 flex flex-col items-center gap-2 rounded-[24px] bg-black/35 py-3 shadow-[inset_0_0_0_1px_rgb(255_244_232/0.06)]">
+        {NAV.map((n, i) => <RailItem key={n.id} {...n} i={i} active={page === n.id || (n.id === 'projects' && page === 'project')} onClick={onNavigate} />)}
+        <div className="mt-auto" style={{ '--i': NAV.length } as CSSProperties}>
           <RailItem id="settings" label="Settings" icon={GearSix} active={page === 'settings'} onClick={onNavigate} />
         </div>
       </nav>
 
-      <main className="relative mx-3 mb-3 min-w-0 overflow-x-hidden overflow-y-auto rounded-[30px] bg-white/[0.025] shadow-[inset_0_0_0_1px_rgb(255_244_232/0.06)]">
+      <main className="anim-shell-main relative mx-3 mb-3 min-w-0 overflow-x-hidden overflow-y-auto rounded-[30px] bg-white/[0.025] shadow-[inset_0_0_0_1px_rgb(255_244_232/0.06)]">
         <div className="mx-auto flex min-h-full max-w-[1240px] flex-col px-10 pt-9 pb-6">
           {status.message && status.state !== 'ready' && (
             <div className="mb-6">

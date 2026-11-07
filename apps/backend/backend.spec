@@ -47,6 +47,7 @@ a = Analysis(
     datas=datas,
     hiddenimports=[
         "yt_dlp",                                       # lazy-loads extractors from package data
+        "curl_cffi",                                    # yt-dlp imports it lazily for browser impersonation
         "cv2",
         "PIL._tkinter_finder",
     ],

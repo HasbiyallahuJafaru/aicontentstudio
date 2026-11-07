@@ -85,9 +85,18 @@ class FakeProvider2(FakeProvider):  # distinct thumbs per pid: a1 striped, a2 so
         return thumb_for(a.provider_asset_id)
 
 
+def _reviewing(project_id: str) -> bool:
+    return any(pc["content"].get("review") for pc in content.pieces(project_id))
+
+
 def assign_sync(brief, pieces, providers, notes: list):
+    """The whole visual flow with the AI's picks confirmed as-is: propose (thumbnails only), then download."""
+    report = lambda stage, p: notes.append((stage, round(p, 2)))  # noqa: E731
     with mock.patch.object(assets, "get_providers", lambda: providers):
-        assets.assign(brief, pieces, lambda stage, p: notes.append((stage, round(p, 2))))
+        assets.propose(brief, pieces, report)
+        for project_id in {pc["project_id"] for pc in pieces if "project_id" in pc}:
+            if _reviewing(project_id):
+                assets.download_picks(project_id, report)
 
 
 def asset_row(pid: str) -> dict | None:
@@ -145,8 +154,8 @@ class Selection(unittest.TestCase):
         assign_sync(BRIEF, [piece_row(p["id"])], [prov], notes)
         # one distinct visual per query: the piece is cut between them instead of seeking around inside one
         self.assertEqual(prov.downloads, ["a1", "a2"])
-        self.assertEqual(prov.thumb_downloads, ["a1", "a2", "a2"])  # thumbnails first (PRD §64); a1 is stored by then
-        self.assertIn("Finding visual 1 of 1", notes[0][0])
+        self.assertEqual(prov.thumb_downloads, ["a1", "a2"])  # thumbnails first (PRD §64), each fetched once
+        self.assertIn("Finding footage options 1 of 1", notes[0][0])
         row = asset_row("a1")
         self.assertEqual((row["provider"], row["asset_type"], row["creator"], row["license"]),
                          ("pexels", "video", "C", "Test License"))
@@ -195,10 +204,13 @@ class Selection(unittest.TestCase):
                          "VALUES ('db1', 'pexels', 'old1', 'video', 'assets/x.mp4', ?)", (assets.dhash(bmp(STRIPES)),))
             conn.execute("INSERT INTO asset_usage (asset_id, piece_id) VALUES ('db1', ?)", (piece["id"],))
         prov = FakeProvider2([cand("a1")])
-        assign_sync(BRIEF, [piece], [prov], [])
-        stored = content.pieces(p["id"])[0]["content"]
-        self.assertNotIn("asset", stored)
-        self.assertIn("No usable video", stored["visual_error"])
+        with mock.patch.object(assets, "get_providers", lambda: [prov]):
+            assets.propose(BRIEF, [piece], lambda s, pr: None)
+            with self.assertRaises(UserError):  # nothing pre-picked: the user has to choose before anything downloads
+                assets.download_picks(p["id"], lambda s, pr: None)
+        review = content.pieces(p["id"])[0]["content"]["review"]
+        self.assertEqual(review["picked"], [], "a look-alike of recent footage is shown, never chosen for the user")
+        self.assertEqual([o["note"] for o in review["options"]], ["similar"])
         self.assertEqual(prov.downloads, [])
 
     def test_different_looking_asset_passes_cooldown(self):
@@ -253,21 +265,93 @@ class Selection(unittest.TestCase):
         p = projects.create(BRIEF)
         notes: list = []
         with mock.patch.dict(config.SECRETS, {}, clear=True):
-            assets.assign(BRIEF, [piece_row(p["id"])], lambda s, pr: notes.append(s))
+            assets.propose(BRIEF, [piece_row(p["id"])], lambda s, pr: notes.append(s))
         self.assertIn("Pexels or Unsplash key", notes[0])
         self.assertEqual(assets.list_assets(), [])
 
 
+def _wait(job: dict) -> dict:
+    for _ in range(300):
+        job = jobs.get(job["id"])
+        if job["status"] not in ("queued", "running"):
+            return job
+        time.sleep(0.02)
+    raise AssertionError("job did not finish")
+
+
 def run_job_with(providers, model, project_id) -> dict:
+    """Generate, then confirm the AI's footage picks as the user would with one click (the "visuals" job)."""
     with mock.patch.object(content, "get_model", lambda: model), \
             mock.patch.object(assets, "get_providers", lambda: providers), mock.patch.object(jobs, "emit"):
-        job = jobs.start(project_id)
-        for _ in range(300):
-            job = jobs.get(job["id"])
-            if job["status"] not in ("queued", "running"):
-                return job
-            time.sleep(0.02)
-    raise AssertionError("job did not finish")
+        job = _wait(jobs.start(project_id))
+        if job["status"] == "completed" and _reviewing(project_id):
+            job = _wait(jobs.start(project_id, "visuals"))
+        return job
+
+
+class Review(unittest.TestCase):
+    """Owner decision 2026-11-07: nothing full-size downloads until the user has seen the options and confirmed."""
+
+    @classmethod
+    def setUpClass(cls):
+        database.migrate()
+
+    def setUp(self):
+        with assets.connect() as conn:
+            conn.execute("DELETE FROM asset_usage")
+            conn.execute("DELETE FROM assets")
+
+    def test_propose_fetches_thumbnails_only_and_prepicks(self):
+        p = projects.create(BRIEF)
+        make_thumbs("a1", solid=("a2",))
+        prov = FakeProvider2([cand("a1"), cand("a2")])
+        with mock.patch.object(assets, "get_providers", lambda: [prov]):
+            assets.propose(BRIEF, [piece_row(p["id"])], lambda s, pr: None)
+        review = content.pieces(p["id"])[0]["content"]["review"]
+        self.assertEqual(prov.downloads, [], "no full file before the user confirms")
+        self.assertEqual({o["key"] for o in review["options"]}, {"pexels:a1", "pexels:a2"})
+        self.assertTrue(review["picked"], "the AI's choice arrives pre-selected")
+        for o in review["options"]:
+            self.assertTrue((config.MEDIA_DIR / o["thumb"]).exists(), "every option has a preview to show")
+        self.assertEqual(assets.list_assets(), [], "options are not library assets until downloaded")
+
+    def test_the_users_pick_is_what_downloads(self):
+        p = projects.create(BRIEF)
+        make_thumbs("b1", solid=("b2",))
+        prov = FakeProvider2([cand("b1"), cand("b2")])
+        piece = piece_row(p["id"])
+        with mock.patch.object(assets, "get_providers", lambda: [prov]):
+            assets.propose(BRIEF, [piece], lambda s, pr: None)
+            self.assertEqual(assets.pick(piece["id"], ["pexels:b2", "pexels:nope"]), {"picked": ["pexels:b2"]})
+            assets.download_picks(p["id"], lambda s, pr: None)
+        self.assertEqual(prov.downloads, ["b2"])
+        c = content.pieces(p["id"])[0]["content"]
+        self.assertNotIn("review", c)
+        self.assertEqual([a["id"] for a in c["assets"]], [asset_row("b2")["id"]])
+        self.assertFalse(any((config.MEDIA_DIR / "candidates").glob("pexels-b1.*")), "unpicked previews are cleaned up")
+        with self.assertRaises(UserError):
+            assets.pick(piece["id"], ["pexels:b1"])  # nothing left to pick once downloaded
+
+    def test_picking_nothing_is_refused(self):
+        p = projects.create(BRIEF)
+        make_thumbs("a1")
+        piece = piece_row(p["id"])
+        with mock.patch.object(assets, "get_providers", lambda: [FakeProvider2([cand("a1")])]):
+            assets.propose(BRIEF, [piece], lambda s, pr: None)
+        with self.assertRaises(UserError):
+            assets.pick(piece["id"], [])
+
+    def test_every_piece_shares_one_palette(self):
+        p = projects.create({**BRIEF, "quantity": 2})
+        make_thumbs("a1", inverted=("a2",))
+        a, b = piece_row(p["id"], 1, "image"), piece_row(p["id"], 2, "image")
+        with mock.patch.object(assets, "get_providers", lambda: [FakeProvider2([cand("a1", "image"), cand("a2", "image")])]):
+            assets.propose({**BRIEF, "format": "image"}, [a, b], lambda s, pr: None)
+            assets.pick(a["id"], ["pexels:a1"])
+            assets.pick(b["id"], ["pexels:a2"])
+            assets.download_picks(p["id"], lambda s, pr: None)
+        palettes = [pc["content"]["palette"] for pc in content.pieces(p["id"])]
+        self.assertEqual(palettes[0], palettes[1], "one palette per project")
 
 
 class JobIntegration(unittest.TestCase):

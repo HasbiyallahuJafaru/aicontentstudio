@@ -1,10 +1,13 @@
+import type { CSSProperties } from 'react'
 import { useEffect, useRef, useState } from 'react'
-import { ArrowLeft, Export, Play, Sparkle, Trash } from '@phosphor-icons/react'
+import { ArrowLeft, Export, Play, Sparkle, Trash, X } from '@phosphor-icons/react'
 import { call, formatDate, FORMATS, hasKey, label, PLATFORMS, useJob, useQuery, BackendError,
   type Asset, type Piece, type Project as P, type Render } from '../lib/studio'
 import { Preview } from '../components/Preview'
 import { ClipWorkspace } from '../components/Clips'
-import { Button, ErrorNote, cx } from '../components/ui'
+import { Button, ErrorNote, cx, Reveal } from '../components/ui'
+import { Cover } from '../components/Cover'
+import { FootageReview } from '../components/FootageReview'
 
 export function Project({ id, onBack, onSettings }: { id: string; onBack: () => void; onSettings: () => void }) {
   const { data: project, error: loadError, reload: reloadProject } = useQuery<P>('projects.get', { id })
@@ -24,14 +27,17 @@ export function Project({ id, onBack, onSettings }: { id: string; onBack: () => 
 
   // bring the finished pieces into view when a job completes (they render below the progress bar)
   const listRef = useRef<HTMLOListElement>(null)
-  useEffect(() => {
-    if (job?.status === 'completed') listRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-  }, [job?.status])
+  const reviewRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {  // footage waiting for a pick is the next thing to do, so it wins the scroll over the list
+    if (job?.status === 'completed') (reviewRef.current ?? listRef.current)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }, [job?.status, pieces?.some((p) => p.content.review)])
 
   useEffect(() => { hasKey('OPENROUTER_API_KEY').then(setKeySet) }, [])
   useEffect(() => { if (job && !running) reloadProject() }, [job?.status])
 
-  const renderable = !!pieces?.some((p) => p.status !== 'failed' && p.content.asset)
+  const reviewing = pieces?.filter((p) => p.content.review) ?? []
+  // footage waiting for the user's pick blocks rendering: nothing renders on footage nobody confirmed
+  const renderable = !reviewing.length && !!pieces?.some((p) => p.status !== 'failed' && p.content.asset)
 
   async function generate() {
     if (running || !keySet) return
@@ -76,8 +82,8 @@ export function Project({ id, onBack, onSettings }: { id: string; onBack: () => 
         <div><Button variant="ghost" onClick={onBack} className="-ml-3"><ArrowLeft size={14} />Projects</Button></div>
         <div className="flex items-end justify-between gap-6">
           <div className="min-w-0">
-            <h1 className="font-display text-title font-semibold tracking-[-0.03em]">{project.name}</h1>
-            <p className="mt-1 text-[13px] text-ink-3">{meta.join('  /  ')}</p>
+            <h1 key={project.name} className="font-display text-title font-semibold tracking-[-0.03em]"><Reveal text={project.name} /></h1>
+            <p className="anim-drift mt-1 text-[13px] text-ink-3" style={{ '--d': '200ms' } as CSSProperties}>{meta.join('  /  ')}</p>
           </div>
           <div className="flex shrink-0 items-center gap-2">
             <Button variant="ghost" onClick={remove} aria-label="Delete project"><Trash size={15} /></Button>
@@ -87,7 +93,7 @@ export function Project({ id, onBack, onSettings }: { id: string; onBack: () => 
               </Button>
             )}
             <Button onClick={render} disabled={running || !renderable}
-              title={renderable ? 'Narrate and render every piece' : 'Generate pieces with visuals first'}>
+              title={reviewing.length ? 'Choose the footage first' : renderable ? 'Narrate and render every piece' : 'Generate pieces with visuals first'}>
               <Play size={13} weight="fill" />Render
             </Button>
             <Button variant="primary" onClick={generate} disabled={running || !keySet} kbd="Ctrl Enter">
@@ -126,10 +132,16 @@ export function Project({ id, onBack, onSettings }: { id: string; onBack: () => 
         </section>
       )}
 
+      {!!reviewing.length && !running && (
+        <div ref={reviewRef} className="scroll-mt-6">
+          <FootageReview key={reviewing.map((p) => p.id).join()} pieces={reviewing} onStarted={reloadJob} />
+        </div>
+      )}
+
       <ol ref={listRef} className={cx('grid', (!!pieces?.length || running) && 'glass px-8 py-2')}>
         {pieces?.map((p) => (
           <PieceRow key={p.id} piece={p} renders={renders?.filter((r) => r.piece_id === p.id)}
-            onPreview={() => setPreview(p.id)} />
+            onPreview={() => setPreview(p.id)} busy={running} onChanged={refresh} onError={setError} />
         ))}
         {running && (pieces?.length ?? 0) < b.quantity && job?.stage.startsWith('Writing') && (
           <li className="grid grid-cols-[56px_minmax(0,1fr)] gap-6 border-t border-line py-7 first:border-t-0" aria-hidden>
@@ -149,21 +161,40 @@ export function Project({ id, onBack, onSettings }: { id: string; onBack: () => 
   )
 }
 
-function PieceRow({ piece: p, renders, onPreview }: { piece: Piece; renders?: Render[]; onPreview: () => void }) {
+function PieceRow({ piece: p, renders, onPreview, busy, onChanged, onError }: {
+  piece: Piece; renders?: Render[]; onPreview: () => void; busy?: boolean; onChanged: () => void
+  onError: (e: BackendError) => void
+}) {
   const c = p.content
+  const tag = String(p.idx).padStart(3, '0')
+  async function drop(method: string, params: object, question: string) {
+    if (!confirm(question)) return
+    try { await call(method, params); onChanged() } catch (e) { onError(e as BackendError) }
+  }
+  const deletePiece = (
+    <Button variant="ghost" className="!px-2" disabled={busy} aria-label={`Delete piece ${tag}`}
+      title="Delete this piece and its renders"
+      onClick={() => drop('pieces.delete', { piece_id: p.id }, `Delete piece ${tag} and its renders? This can't be undone.`)}>
+      <Trash size={13} />
+    </Button>
+  )
+  const image = renders?.find((r) => r.kind === 'image')?.local_path
   if (p.status === 'failed') {
     return (
       <li className="grid grid-cols-[56px_minmax(0,1fr)] gap-6 border-t border-line py-7 first:border-t-0">
         <span className="tnum pt-1 text-xs text-ink-3">{String(p.idx).padStart(3, '0')}</span>
-        <div className="grid gap-1">
-          <p className="text-[13px] text-ink-2">{p.angle}</p>
-          <p className="text-[13px] text-danger">{c.error}</p>
+        <div className="flex items-start justify-between gap-4">
+          <div className="grid gap-1">
+            <p className="text-[13px] text-ink-2">{p.angle}</p>
+            <p className="text-[13px] text-danger">{c.error}</p>
+          </div>
+          {deletePiece}
         </div>
       </li>
     )
   }
   return (
-    <li className="anim-slot grid grid-cols-[56px_minmax(0,1fr)] gap-6 border-t border-line py-7 first:border-t-0">
+    <li className="anim-slot grid grid-cols-[56px_minmax(0,1fr)_172px] gap-6 border-t border-line py-7 first:border-t-0 max-[1100px]:grid-cols-[56px_minmax(0,1fr)]">
       <span className="tnum pt-2 font-display text-xs text-accent">{String(p.idx).padStart(3, '0')}</span>
       <div className="grid gap-4">
         <div className="grid gap-2">
@@ -177,15 +208,23 @@ function PieceRow({ piece: p, renders, onPreview }: { piece: Piece; renders?: Re
               {!!renders?.length && (
                 <>
                   {renders.map((r) => (
-                    <button key={r.id} onClick={onPreview} title={r.local_path}
-                      className="inline-flex items-center gap-1 rounded-full bg-accent/15 px-2.5 py-0.5 text-2xs font-medium text-accent hover:bg-accent/25">
-                      {r.kind === 'video' ? <Play size={8} weight="fill" /> : null}
-                      {label(r.kind)}{r.duration ? ` ${r.duration.toFixed(1)}s` : ''}
-                    </button>
+                    <span key={r.id} className="group/chip inline-flex items-center rounded-full bg-accent/15 text-2xs font-medium text-accent">
+                      <button onClick={onPreview} title={r.local_path}
+                        className="inline-flex items-center gap-1 rounded-full py-0.5 pl-2.5 pr-1.5 hover:text-ink">
+                        {r.kind === 'video' ? <Play size={8} weight="fill" /> : null}
+                        {label(r.kind)}{r.duration ? ` ${r.duration.toFixed(1)}s` : ''}
+                      </button>
+                      <button disabled={busy} aria-label={`Delete the ${r.kind} render of piece ${tag}`}
+                        onClick={() => drop('renders.delete', { render_id: r.id }, `Delete the ${r.kind} render of piece ${tag}? You can render it again.`)}
+                        className="mr-1 grid size-4 place-items-center rounded-full opacity-60 hover:bg-accent/30 hover:opacity-100 disabled:opacity-30">
+                        <X size={9} weight="bold" />
+                      </button>
+                    </span>
                   ))}
                   <Button variant="ghost" className="!px-2 !text-xs" onClick={onPreview}>Preview</Button>
                 </>
               )}
+              {deletePiece}
             </div>
           </div>
           <blockquote data-selectable className="max-w-[34ch] font-display text-[24px] leading-[1.25] font-semibold tracking-[-0.025em] text-balance">
@@ -215,6 +254,11 @@ function PieceRow({ piece: p, renders, onPreview }: { piece: Piece; renders?: Re
           </dl>
         </details>
       </div>
+      {/* the piece's face: its rendered 4:5 once it exists (click to preview), its line on a frame until then */}
+      <button onClick={onPreview} disabled={!renders?.length} aria-label={renders?.length ? 'Preview this piece' : undefined}
+        className="group self-start rounded-[18px] disabled:cursor-default max-[1100px]:hidden">
+        <Cover src={image} quote={c.quote.text} className="transition-transform duration-300 ease-[var(--ease-premium)] group-enabled:group-hover:-translate-y-1" />
+      </button>
     </li>
   )
 }

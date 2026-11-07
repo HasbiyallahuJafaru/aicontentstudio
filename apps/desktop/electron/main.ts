@@ -52,6 +52,8 @@ function createWindow() {
   const fullScreenChanged = () => broadcast('app:fullscreen', win.isFullScreen())
   win.on('enter-full-screen', fullScreenChanged)
   win.on('leave-full-screen', fullScreenChanged)
+  // the events above can be skipped on Windows; a settled resize always tells the truth
+  win.on('resize', () => setTimeout(() => { if (!win.isDestroyed()) fullScreenChanged() }, 120))
   win.webContents.on('before-input-event', (_e, input) => {
     if (input.type !== 'keyDown') return
     if (input.key === 'F11') {

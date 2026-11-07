@@ -1,6 +1,6 @@
 // The small shared component set. Every screen builds from these; no one-off button or input styles.
-import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode } from 'react'
-import { useEffect, useId, useRef, useState } from 'react'
+import type { ButtonHTMLAttributes, CSSProperties, InputHTMLAttributes, ReactNode } from 'react'
+import { Fragment, useEffect, useId, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { CaretDown, Check } from '@phosphor-icons/react'
 
@@ -143,11 +143,29 @@ export function Dialog({ label, width, onClose, className, children }: {
   )
 }
 
+/** Text that arrives word by word: each word rises into place from behind its own mask, coming into focus.
+ *  `delay` (ms) starts the line; `step` (ms) staggers the words (kept short: a whole line lands inside ~0.5 s). */
+export function Reveal({ text, delay = 0, step = 55 }: { text: string; delay?: number; step?: number }) {
+  const words = text.split(/\s+/).filter(Boolean)
+  return (
+    <>
+      {words.map((w, i) => (
+        <Fragment key={i}>
+          <span className="reveal-word"><span style={{ '--d': `${delay + i * step}ms` } as CSSProperties}>{w}</span></span>
+          {i < words.length - 1 && ' '}
+        </Fragment>
+      ))}
+    </>
+  )
+}
+
+/** A page's header: the title's words drift up into place, its actions follow a beat later. Keyed by title, so a
+ *  new page (or a renamed one) replays the entrance. */
 export function PageHeader({ title, children }: { title: string; children?: ReactNode }) {
   return (
     <header className="flex items-end justify-between gap-6 pb-8">
-      <h1 className="font-display text-title font-semibold tracking-[-0.03em]">{title}</h1>
-      <div className="flex items-center gap-2">{children}</div>
+      <h1 key={title} className="font-display text-title font-semibold tracking-[-0.03em]"><Reveal text={title} /></h1>
+      <div className="anim-drift flex items-center gap-2" style={{ '--d': '220ms' } as CSSProperties}>{children}</div>
     </header>
   )
 }

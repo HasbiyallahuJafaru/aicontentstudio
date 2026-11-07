@@ -87,8 +87,17 @@ def set_voice(project_id: str, voice: str) -> dict:
 
 def list_(limit: int = 200) -> list[dict]:
     with connect() as conn:
-        rows = conn.execute("SELECT p.*, (SELECT count(*) FROM content_pieces c WHERE c.project_id = p.id AND c.status != 'failed')"
-                            " AS pieces_written FROM projects p ORDER BY created_at DESC, rowid DESC LIMIT ?", (limit,)).fetchall()
+        # cover: the newest rendered 4:5 image, else the first clip's cover frame; quote: the lead piece's line.
+        # Real output only, so a project with nothing rendered yet shows its words, never a stand-in picture.
+        rows = conn.execute("""SELECT p.*,
+            (SELECT count(*) FROM content_pieces c WHERE c.project_id = p.id AND c.status != 'failed') AS pieces_written,
+            (SELECT count(DISTINCT r.piece_id) FROM renders r WHERE r.project_id = p.id) AS rendered,
+            COALESCE((SELECT r.local_path FROM renders r WHERE r.project_id = p.id AND r.kind = 'image'
+                      ORDER BY r.created_at DESC LIMIT 1),
+                     (SELECT k.cover_path FROM clips k WHERE k.project_id = p.id ORDER BY k.idx LIMIT 1)) AS cover,
+            (SELECT c.quote FROM content_pieces c WHERE c.project_id = p.id AND c.status != 'failed'
+             ORDER BY c.idx LIMIT 1) AS quote
+            FROM projects p ORDER BY created_at DESC, rowid DESC LIMIT ?""", (limit,)).fetchall()
     return [_row(r) for r in rows]
 
 

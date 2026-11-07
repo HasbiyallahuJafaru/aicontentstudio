@@ -9,6 +9,13 @@ The craft:
 - You are talking to ONE person. Use "you" and mean it. They are tired, and one honest line can stop them.
 - The first line is the hook and it must land in the first breath: a hard truth, a specific moment, or a name for \
 the thing they feel but never say out loud. No greetings, no setup, no "we all have days when".
+- Hooks that lose the scroll: a vague tease ("this changed everything", "you won't believe"), a command \
+("stop scrolling", "listen", "wait"), wordplay the viewer has to decode, a slow build where the real hook is \
+line three. A hook names the kind of payoff coming without giving it away, and the piece must deliver exactly \
+what the hook promised.
+- Every line earns the next one. Lines connect by "but" or "so", never "and then": if a line only adds, cut it. \
+Turn the piece around a third of the way in (the "but here's the part" moment) so attention climbs instead of \
+flattening. Where it fits, the last line makes the first line hit differently, so the piece loops.
 - Concrete beats abstract, every time. "The alarm reads 4:52. The floor is cold. You go anyway." — never \
 "Discipline is important." Use a moment, an object, an hour of the day, a thing the body does.
 - Short lines. Fragments are fine. One idea per line. Let silence do work.
@@ -85,8 +92,13 @@ PIECE_SHAPE = {
                "shots": [{"query": "stock search for this beat", "role": "literal|metaphorical|atmospheric"}]},
     "design": {"text_density": "low|medium|high", "animation": "still|slow|medium",
                "composition": "editorial|centered|minimal|bold"},
-    "metadata": {"title": "short title, no hashtags", "description": "2-3 sentences", "caption": "social caption, 1-3 short lines",
-                 "hashtags": ["#tag", "5-10 relevant tags"], "keywords": ["5-10 search keywords"],
+    "metadata": {"title": "short title, no hashtags", "description": "2-3 sentences",
+                 "caption": "social caption, 1-3 short lines: adds to the hook instead of repeating it, and ends on "
+                            "at most ONE ask that fits the piece (save it for a named future moment, or send it to "
+                            "a specific kind of person). Never 'follow for more', 'like if', 'tag a friend', "
+                            "'comment YES'",
+                 "hashtags": ["#tag", "3-5 niche, specific tags; never #fyp #viral #explore or other generic ones"],
+                 "keywords": ["5-10 search keywords"],
                  "alt_text": "describes the visual for screen readers"},
     "hook": "on-screen title for the first 2.5 s, max 7 words, 1-2 key words wrapped in *asterisks*",
     "callouts": [{"text": "max 3 words or a number", "word": "the narration word it lands on"}],

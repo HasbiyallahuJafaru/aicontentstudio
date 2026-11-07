@@ -7,7 +7,7 @@ import logging
 import threading
 import uuid
 
-from app import clips, content, export, renders
+from app import assets, clips, content, export, renders
 from app.database import connect
 from app.errors import UserError
 from app.events import emit
@@ -52,7 +52,7 @@ def _project_status(project_id: str, status: str) -> None:
 
 
 def start(project_id: str, kind: str = "generate", piece_ids: list[str] | None = None) -> dict:
-    if kind not in ("generate", "render", "export", "clip"):
+    if kind not in ("generate", "render", "export", "clip", "visuals"):
         raise UserError("Unknown job kind.", kind)
     running = latest(project_id)
     if running and running["status"] in ("queued", "running"):
@@ -69,6 +69,13 @@ def start(project_id: str, kind: str = "generate", piece_ids: list[str] | None =
     return get(job_id)
 
 
+def ensure_idle(project_id: str) -> None:
+    """Refuse a delete while a job works on the project: ffmpeg may be reading the very files."""
+    running = latest(project_id)
+    if running and running["status"] in ("queued", "running"):
+        raise UserError("This project has a job running. Wait for it to finish (or cancel it) before deleting.")
+
+
 def cancel(id: str) -> dict:
     _cancelled.add(id)  # checked between pipeline steps; an in-flight API call finishes first
     return {"cancelling": id}
@@ -80,13 +87,16 @@ def _run(job_id: str, project_id: str, kind: str = "generate", piece_ids: list[s
             raise Cancelled
         _set(job_id, "job.progress", stage=stage, progress=round(progress, 3))
 
-    stage = {"generate": "Generating", "render": "Rendering", "export": "Exporting", "clip": "Clipping"}[kind]
+    stage = {"generate": "Generating", "render": "Rendering", "export": "Exporting", "clip": "Clipping",
+             "visuals": "Downloading footage"}[kind]
     _set(job_id, "job.started", status="running", stage=stage)
     try:
         if kind == "export":
             export.export_project(project_id, report, piece_ids)
         elif kind == "clip":
             clips.run(project_id, report)
+        elif kind == "visuals":
+            assets.download_picks(project_id, report)
         elif kind == "render":
             renders.render_project(project_id, report, piece_ids)
         else:

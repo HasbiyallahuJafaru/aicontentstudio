@@ -1,8 +1,16 @@
 # Handover
 
-> **Superseded 2026-11-07: read `NEXT_STEPS.md` at the repo root first.** It has the current state, how to run,
-> what changed (OpenRouter for every AI call, Gemini TTS, clip tightening, HyperFrames motion graphics, plain
-> Settings) and what is left. This file is the older milestone log (M1-M8); where they disagree, NEXT_STEPS wins.
+> **Superseded: read `NEXT_STEPS.md` at the repo root first** (updated 2026-11-07, late). It has the current state,
+> how to run, every change and what is left. This file is the older milestone log (M1-M8); where they disagree,
+> NEXT_STEPS wins. Binding owner decisions live in `.claude/CLAUDE.md` ("Owner decisions").
+>
+> Since this log stopped (all in NEXT_STEPS, newest last): OpenRouter for every AI call, Gemini TTS, clip
+> tightening, HyperFrames motion graphics, plain Settings (committed); then, uncommitted on 2026-11-07: an
+> editing-skills pass (verified pauses, jump-cut zoom, cleaned captions, hook/CTA/hashtag rules), the three.js
+> living background (ember silk wave, splash locked by the owner), premium page/text/step motion, a redesign of
+> every page around real output, the fullscreen title-bar fix, the render crash fix (`motion` shadowed in
+> `render.py`), "Choose the footage" (no full download before the user picks), one palette per project,
+> individual deletes, and `curl_cffi` from the owner's ClipperAi repo.
 
 Last updated: 2026-09-20 (Milestone 7 complete + user feedback rounds 1-3 + crash fixes — everything committed
 and pushed to `main` through the "director-cut renders" commit. Full `npm test` green: 115 backend tests, tsc,

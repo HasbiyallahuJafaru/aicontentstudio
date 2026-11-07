@@ -30,6 +30,10 @@
   --text-hero--line-height: 1.05;
 
   --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  /* Motion identity (motion-design skill, "Premium"): one decelerating curve for every entrance, an accelerating one
+     for exits, exits shorter than entrances, and nothing ever only fades: it rises and comes into focus. */
+  --ease-premium: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-exit: cubic-bezier(0.55, 0, 1, 0.45);
   --duration-fast: 150ms;
   --duration-base: 260ms;
 }
@@ -103,10 +107,7 @@
   from { opacity: 0; transform: translateY(8px) scale(0.98); }
   to { opacity: 1; transform: none; }
 }
-@keyframes page-in {
-  from { opacity: 0; transform: translateY(6px); filter: blur(4px); }
-  to { opacity: 1; transform: none; filter: none; }
-}
+@keyframes fade-in { from { opacity: 0; } }
 /* Tips left, back to centre, right, back to centre.
    Uses `rotate` rather than `transform` so it never fights an inline `scale`. */
 @keyframes icon-vibrate {
@@ -114,9 +115,73 @@
   25% { rotate: -45deg; }
   75% { rotate: 45deg; }
 }
+@keyframes drift-in {
+  from { opacity: 0; transform: translate3d(0, 14px, 0); filter: blur(8px); }
+}
+@keyframes drift-down {
+  from { opacity: 0; transform: translate3d(0, -10px, 0); filter: blur(6px); }
+}
+@keyframes word-rise {
+  from { opacity: 0; transform: translate3d(0, 105%, 0) rotate(2deg); filter: blur(6px); }
+}
+/* transform only: an ancestor animating opacity or filter cuts its glass panels off from the background behind
+   them (a backdrop root), and the frost would pop back in when the animation ends */
+@keyframes rise {
+  from { transform: translate3d(0, 16px, 0); }
+}
+@keyframes land {
+  from { transform: translate3d(0, 18px, 0) scale(0.985); }
+}
+@keyframes page-out {
+  to { opacity: 0; transform: translate3d(0, -10px, 0); filter: blur(6px); }
+}
+@keyframes rail-in {
+  from { opacity: 0; transform: translate3d(-16px, 0, 0); filter: blur(6px); }
+}
+@keyframes step-in-next {
+  from { opacity: 0; transform: translate3d(32px, 0, 0); filter: blur(8px); }
+}
+@keyframes step-in-back {
+  from { opacity: 0; transform: translate3d(-32px, 0, 0); filter: blur(8px); }
+}
+@keyframes splash-out {
+  to { opacity: 0; transform: translate3d(0, -16px, 0) scale(0.98); filter: blur(10px); }
+}
+@keyframes splash-bg-out {
+  to { opacity: 0; transform: scale(1.08); }
+}
+
+/* A heading's words rise one by one from behind a mask (Reveal in ui.tsx). The mask is the word's own box, padded
+   so descenders aren't clipped. */
+.reveal-word { display: inline-block; overflow: clip; overflow-clip-margin: 0.2em; padding-bottom: 0.08em; margin-bottom: -0.08em; vertical-align: top; }
+.reveal-word > span { display: inline-block; }
+
 @media (prefers-reduced-motion: no-preference) {
   .anim-slot { animation: slot-in var(--duration-base) var(--ease-out-expo) both; animation-delay: calc(var(--i, 0) * 35ms); }
-  .anim-page { animation: page-in 320ms var(--ease-out-expo) both; }
+  .anim-fade { animation: fade-in 1.6s var(--ease-out-expo) both; }
   /* Delayed so the shake starts once the icon has finished growing. */
   .anim-vibrate { animation: icon-vibrate 1s ease-in-out 0.45s; }
+
+  /* Pages: the body rises into focus while the header's words reveal; panels follow in a short cascade. */
+  .anim-page { animation: rise 620ms var(--ease-premium) both; }
+  .anim-page .glass { animation: drift-in 620ms var(--ease-premium) both; animation-delay: 140ms; }
+  .anim-page .glass ~ .glass { animation-delay: 200ms; }
+  .anim-page .glass ~ .glass ~ .glass { animation-delay: 260ms; }
+  .anim-page-out { animation: page-out 190ms var(--ease-exit) both; pointer-events: none; }
+  .reveal-word > span { animation: word-rise 720ms var(--ease-premium) both; animation-delay: var(--d, 0ms); }
+  .anim-drift { animation: drift-in 600ms var(--ease-premium) both; animation-delay: var(--d, 0ms); }
+
+  /* Entering the studio from the splash: the bar settles down, the rail slides in, the main panel lands. */
+  .anim-shell-head { animation: drift-down 600ms var(--ease-premium) 80ms both; }
+  .anim-shell-rail { animation: rail-in 640ms var(--ease-premium) 120ms both; }
+  .anim-shell-rail > * { animation: rail-in 520ms var(--ease-premium) both; animation-delay: calc(200ms + var(--i, 0) * 40ms); }
+  .anim-shell-main { animation: land 760ms var(--ease-premium) 60ms both; }
+
+  /* Wizard steps travel in the direction of travel: forward comes from the right, back from the left. */
+  .anim-step-next { animation: step-in-next 480ms var(--ease-premium) both; }
+  .anim-step-back { animation: step-in-back 480ms var(--ease-premium) both; }
+
+  .anim-splash-out { animation: splash-out 420ms var(--ease-exit) both; pointer-events: none; }
+  .anim-splash-bg-out { animation: splash-bg-out 520ms var(--ease-exit) both; }
 }
+

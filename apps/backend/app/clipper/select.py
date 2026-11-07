@@ -17,6 +17,12 @@ A good clip makes sense on its own: strong opening, one complete thought, clear 
 Prefer insight, story, strong opinion, surprise, humor and practical advice over mere loudness.
 The first 1-2 seconds decide retention: a moment must open on a strong first line (a claim, question or
 story jump), never mid-sentence filler like "so", "and", "anyway" or a back-reference like "like I said".
+Score each moment 0-100 as a weighted sum: hook strength 30% (a bold claim, a curiosity gap with a defined
+answer, a specific number, a named person or tool, "I tried / I spent"), stands alone 25% (no "as I mentioned",
+no pronoun whose person was named earlier, no ending mid-thought), emotional intensity 20% (conviction, surprise,
+humor, honest failure beat calm recitation), value density 15% (an exact method or a counter-intuitive insight
+beats a platitude), payoff 10% (ends on a punchline, reveal or complete thought). Leave out moments under 60.
+The best clips usually run 25-45 seconds.
 Each moment is {min:g}-{max:g} seconds, starts at a segment start, ends at a segment end, and does not overlap others.
 Return json only, up to {n} moments:
 {{"moments": [{{"start": 734.2, "end": 781.6, "score": 80, "reason": "why it works"}}]}}"""
@@ -34,8 +40,16 @@ sentence, give its span as "cold_open_start"/"cold_open_end" (1-4 seconds, insid
 teaser, then the clip runs from the top. Omit both when the clip already opens on its strongest line.
 "emphasis": 2-6 words actually said in the clip that carry its meaning (names, numbers, the key idea); the
 captions colour them.
-Use only what is actually said in each clip. Write natively per platform: TikTok and Instagram casual with a few hashtags,
-YouTube Shorts a searchable description, LinkedIn a professional takeaway, Facebook conversational.
+"hook" is read with the sound off while the first line plays, so it complements that line instead of repeating
+it: name the kind of payoff the clip delivers (with a concrete noun or number) without giving it away. Never a
+vague tease ("you won't believe", "this changed everything"), a command ("stop scrolling", "wait"), or wordplay,
+and never promise more than the clip pays off.
+Use only what is actually said in each clip. Write natively per platform: TikTok and Instagram casual with 3-5
+niche hashtags (never #fyp, #viral or other generic tags), YouTube Shorts a searchable description, LinkedIn a
+professional takeaway, Facebook conversational. A post never repeats the hook word for word, and ends on at most
+one ask that fits the clip: save it (a method, a list), send it to a specific kind of person (a story, a
+recommendation) or comment with a stance (an opinion). Never "follow for more", "like if", "tag a friend" or
+"subscribe".
 Never exceed these lengths in characters: {limits}.
 Return json only, best clip first:
 {{"clips": [{{"id": 3, "score": 94, "hook": "animated on-screen title for the first 2.5 s, max 7 words, the 1-2 key words wrapped in *asterisks*", "title": "short title",

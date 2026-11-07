@@ -42,6 +42,12 @@ export function ClipWorkspace({ project, onBack, onSettings }: { project: P; onB
     try { await call('clips.review', { id, status }); setRev((r) => r + 1) } catch (e) { setError(e as BackendError) }
   }
 
+  const removeClip = async (c: Clip) => {
+    if (!confirm(`Delete clip ${String(c.idx).padStart(2, '0')} "${c.title}"? Its video, cover and captions are removed from disk.`)) return
+    setError(undefined)
+    try { await call('clips.delete', { clip_id: c.id }); setRev((r) => r + 1) } catch (e) { setError(e as BackendError) }
+  }
+
   // bring the finished clips into view when the job completes
   const listRef = useRef<HTMLOListElement>(null)
   useEffect(() => {
@@ -106,7 +112,7 @@ export function ClipWorkspace({ project, onBack, onSettings }: { project: P; onB
         <ol ref={listRef} className="glass px-8 py-2">
           {clips.map((c) => (
             <ClipRow key={c.id} clip={c} onPreview={() => setPreview(c.id)} onPublish={() => setPublishing(c)}
-              onReview={(status) => review(c.id, status)} busy={running} />
+              onReview={(status) => review(c.id, status)} onDelete={() => removeClip(c)} busy={running} />
           ))}
         </ol>
       )}
@@ -121,9 +127,9 @@ export function ClipWorkspace({ project, onBack, onSettings }: { project: P; onB
   )
 }
 
-function ClipRow({ clip: c, onPreview, onPublish, onReview, busy }: {
+function ClipRow({ clip: c, onPreview, onPublish, onReview, onDelete, busy }: {
   clip: Clip; onPreview: () => void; onPublish: () => void
-  onReview: (status: 'approved' | 'ready' | 'rejected') => void; busy: boolean
+  onReview: (status: 'approved' | 'ready' | 'rejected') => void; onDelete: () => void; busy: boolean
 }) {
   return (
     <li className="anim-slot grid grid-cols-[56px_72px_minmax(0,1fr)_auto] items-center gap-6 border-t border-line py-5 first:border-t-0 max-[900px]:grid-cols-[40px_56px_minmax(0,1fr)_auto]">
@@ -155,6 +161,8 @@ function ClipRow({ clip: c, onPreview, onPublish, onReview, busy }: {
           ? <Button variant="ghost" disabled={busy} onClick={() => onReview('ready')}>Restore</Button>
           : <Button variant="ghost" disabled={busy} onClick={() => onReview('rejected')}><X size={13} />Reject</Button>}
         <Button variant="ghost" className="!px-2 !text-xs" onClick={onPreview}>Preview</Button>
+        <Button variant="ghost" className="!px-2" disabled={busy} onClick={onDelete} aria-label={`Delete clip ${c.idx}`}
+          title="Delete this clip"><Trash size={13} /></Button>
       </div>
     </li>
   )

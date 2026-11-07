@@ -1,53 +1,55 @@
-import { useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useState, type CSSProperties } from 'react'
 import { Aperture } from '@phosphor-icons/react'
 import { SocialLinks } from '../components/Branding'
-import { Button } from '../components/ui'
-import splashVideo from '../assets/splash.webm'
+import { Button, Reveal } from '../components/ui'
+
+// three.js loads in its own chunk: the title and button paint first, the living light fades in when ready
+const Ember = lazy(() => import('../components/Ember'))
+const LEAVE_MS = 420  // the content's exit; the studio's entrance takes over from there
+
+const at = (ms: number) => ({ '--d': `${ms}ms` }) as CSSProperties
 
 export function Splash({ onCreate }: { onCreate: () => void }) {
-  const videoRef = useRef<HTMLVideoElement>(null)
-  const [videoOk, setVideoOk] = useState(true)
+  const [leaving, setLeaving] = useState(false)
 
-  useEffect(() => {
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) videoRef.current?.pause()
-  }, [])
+  function enter() {
+    if (leaving) return
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) { onCreate(); return }
+    setLeaving(true)
+    setTimeout(onCreate, LEAVE_MS)
+  }
 
   return (
-    <div className="relative h-full overflow-hidden bg-[#101113]">
-      {videoOk && (
-        <video
-          ref={videoRef}
-          className="absolute inset-0 size-full object-cover"
-          src={splashVideo}
-          autoPlay
-          muted
-          loop
-          playsInline
-          onError={() => setVideoOk(false)}
-        />
-      )}
-      <div className="absolute inset-0 bg-[radial-gradient(120%_90%_at_50%_10%,rgba(10_9_8/0.18),rgba(10_9_8/0.6)_55%,rgba(10_9_8/0.85))]" />
+    <div className="ambient grain relative h-full overflow-hidden">
+      {/* the main page's own background, alive: drifting light and rising embers; it swells away on the way in */}
+      <div aria-hidden className={leaving ? 'anim-splash-bg-out absolute inset-0' : 'anim-fade absolute inset-0'}>
+        <Suspense fallback={null}><Ember live intensity={1.8} wave={0} /></Suspense>
+      </div>
+      {/* a soft vignette keeps the title readable over the brightest light */}
+      <div className="absolute inset-0 bg-[radial-gradient(70%_55%_at_50%_45%,rgba(13_12_11/0.5),rgba(13_12_11/0.1)_70%,transparent)]" />
 
-      <div className="relative grid h-full content-center justify-items-center gap-7 px-10 text-center">
-        <Aperture size={40} weight="fill" className="text-accent drop-shadow-[0_2px_12px_rgba(0,0,0,0.45)]" />
+      <div className={leaving ? 'anim-splash-out relative grid h-full content-center justify-items-center gap-7 px-10 text-center'
+        : 'relative grid h-full content-center justify-items-center gap-7 px-10 text-center'}>
+        <div className="anim-drift" style={at(80)}>
+          <Aperture size={40} weight="fill" className="text-accent drop-shadow-[0_2px_12px_rgba(0,0,0,0.45)]" />
+        </div>
         <div className="grid gap-3">
           <h1 className="font-display text-[40px] leading-[1.05] font-semibold tracking-[-0.03em] text-ink">
-            AI Social Content Studio
+            <Reveal text="AI Social Content Studio" delay={260} step={80} />
           </h1>
-          <p className="mx-auto max-w-[52ch] text-[15px] leading-relaxed text-ink-2">
+          <p className="anim-drift mx-auto max-w-[52ch] text-[15px] leading-relaxed text-ink-2" style={at(640)}>
             A short brief becomes finished social content: quotes, narration, visuals and captions,
             written and kept entirely on your own computer.
           </p>
         </div>
-        <div className="mt-1">
-          <Button variant="primary" onClick={onCreate}>Let&apos;s create content</Button>
+        <div className="anim-drift mt-1" style={at(820)}>
+          <Button variant="primary" onClick={enter}>Let&apos;s create content</Button>
         </div>
       </div>
 
-      <div className="absolute bottom-4 left-5">
+      <div className={leaving ? 'anim-splash-out absolute bottom-4 left-5' : 'anim-drift absolute bottom-4 left-5'} style={at(1000)}>
         <SocialLinks size={17} />
       </div>
-      <p className="absolute bottom-4 right-5 text-2xs text-ink-3">Waves: Adam S. Keck, CC BY-SA 4.0</p>
     </div>
   )
 }

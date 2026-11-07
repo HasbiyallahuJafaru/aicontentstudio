@@ -7,6 +7,7 @@ from pathlib import Path
 
 from app import config, motion, projects, settings
 from app.clipper import acquire, select, tighten, transcribe
+from app.clipper.ff import silences
 from app.clipper.render_clip import ORIENTATIONS, render as render_clip
 from app.clipper.select import snap
 from app.database import connect
@@ -65,8 +66,9 @@ def run(project_id: str, report) -> None:
         cold = tighten.to_words(words, *clip.cold_open) if clip.cold_open else None
         path = out / f"clip{i:02}.mp4"
         layers = motion.layers("clip", *ORIENTATIONS[b["orientation"]][1], hook=clip.hook)  # animated title
+        ranges, zooms = tighten.plan(words, start, end, cold, silences(video, start, end))
         render_clip(video, start, end, path, words, b["burn_captions"], b["orientation"], fps=b["fps"],
-                    ranges=tighten.plan(words, start, end, cold), emphasis=clip.emphasis, layers=layers)
+                    ranges=ranges, zooms=zooms, emphasis=clip.emphasis, layers=layers)
         clip.hook = clip.hook.replace("*", "")  # the keyword marks are for the animation, not the stored copy
         with connect() as conn:
             conn.execute("INSERT INTO clips (id, project_id, idx, start_at, end_at, score, reason, hook, title, "
@@ -79,6 +81,22 @@ def run(project_id: str, report) -> None:
 
 def _rel(path: Path) -> str:
     return path.relative_to(config.MEDIA_DIR).as_posix()
+
+
+def delete(clip_id: str) -> dict:
+    """Delete one clip: its video, cover frame and caption file."""
+    from app import jobs
+    with connect() as conn:
+        row = conn.execute("SELECT * FROM clips WHERE id = ?", (clip_id,)).fetchone()
+    if row is None:
+        raise UserError("This clip no longer exists.", f"clip id {clip_id}")
+    jobs.ensure_idle(row["project_id"])
+    with connect() as conn:
+        conn.execute("DELETE FROM clips WHERE id = ?", (clip_id,))
+    video = config.MEDIA_DIR / row["video_path"]
+    for f in (video, video.with_suffix(".ass"), config.MEDIA_DIR / row["cover_path"]):
+        f.unlink(missing_ok=True)
+    return {"deleted": clip_id}
 
 
 def list_(project_id: str) -> list[dict]:

@@ -138,6 +138,23 @@ class Renderers(unittest.TestCase):
                                           palette=PAL, src_fps=0, src_duration=0, still=True, progress=None)
         self.assertAlmostEqual(info["fps"], 60.0, delta=1.0)
 
+    def test_render_still_with_an_animated_layer(self):
+        """The real-app path (animated titles on): a still with a camera move plus a motion layer composited on
+        top. A local variable named `motion` once shadowed the motion module here and failed every such render;
+        the suite runs with motion off, so only a hand-made layer reaches this code."""
+        layer = config.MEDIA_DIR / "fixtures" / "layer.webm"
+        layer.parent.mkdir(parents=True, exist_ok=True)
+        subprocess.run([config.FFMPEG, "-v", "error", "-y", "-f", "lavfi", "-i",
+                        f"color=c=white@0.5:s={self.w}x{self.h}:d=1,format=yuva420p", "-c:v", "libvpx-vp9",
+                        "-pix_fmt", "yuva420p", str(layer)], check=True, timeout=120, stdin=subprocess.DEVNULL)
+        out = config.MEDIA_DIR / "renders" / "test" / "002b-video.mp4"
+        info = self.renderer.render_video(src=self.still, narration=self.narration, scrim_png=self.scrim_png, out=out,
+                                          quote="The quiet work is the real work.", subject_position="left",
+                                          palette=PAL, src_fps=0, src_duration=0, still=True, progress=None,
+                                          layers=[{"path": layer, "start": 0.2}])
+        self.assertTrue(out.exists())
+        self.assertGreater(info["duration"], 1.0)
+
     def test_render_video_with_look_blur_parallax_and_subtitles(self):
         """The Create page's look effects + subtitles: exercises the whole filter graph syntax."""
         from app.clipper.captions import captions as ass_captions

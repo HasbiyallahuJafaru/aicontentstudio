@@ -1,4 +1,8 @@
-"""Asset pipeline (PRD §16-18, §64): metadata and thumbnails first, score, cool down repeats, download only the winner."""
+"""Asset pipeline (PRD §16-18, §64): metadata and thumbnails first, score, cool down repeats, download only the winner.
+
+Nothing full-size downloads without the user (owner decision 2026-11-07): `propose` searches, fetches thumbnails only,
+scores, and stores every piece's candidates with the AI's picks pre-selected (content["review"]); the user swaps
+picks (`pick`), then the "visuals" job (`download_picks`) downloads exactly those and gives the project one palette."""
 import asyncio
 import hashlib
 import io
@@ -112,55 +116,6 @@ async def _search_all(providers: list[VisualProvider], query: str, wanted: str) 
     return out
 
 
-async def _pick(providers: list[VisualProvider], query: str, wanted: str,
-                ever: dict, recent: list[dict], weights: dict[str, float]) -> tuple[Candidate | None, dict]:
-    """Best eligible candidate for one query, with its freshly fetched thumbnail if it is new. None if nothing qualifies.
-
-    Fallback when this query's pool is exhausted (PRD §18): the least-used suitable asset, oldest use first.
-    """
-    candidates = sorted((c for c in await _search_all(providers, query, wanted) if suitable(c)),
-                        key=lambda c: c.provider)  # stable: keeps each provider's relevance order
-    best: tuple[float, Candidate, dict] | None = None
-    fallback: tuple[list, Candidate] | None = None
-    for _, group in groupby(candidates, key=lambda c: c.provider):
-        block = list(group)
-        provider = next(p for p in providers if p.name == block[0].provider)
-        for rank, c in enumerate(block):
-            with connect() as conn:
-                row = conn.execute("SELECT * FROM assets WHERE provider = ? AND provider_asset_id = ?",
-                                   (c.provider, c.provider_asset_id)).fetchone()
-            used = ever.get((c.provider, c.provider_asset_id), [0, None])
-            phash, themes = (row["perceptual_hash"], row["themes"]) if row else ("", "[]")
-            meta: dict = {}
-            if row:
-                try:  # already in the library: re-analyse its stored thumbnail (also backfills pre-M4 rows)
-                    thumb = (config.MEDIA_DIR / row["thumb_path"]).read_bytes()
-                except OSError:
-                    continue
-                a = visual.analyze(thumb)
-            else:
-                meta["thumb"] = await provider.download_thumb(c)  # metadata + thumbnails first (PRD §64)
-                phash = dhash(meta["thumb"])
-                a = visual.analyze(meta["thumb"])
-                meta["themes"] = json.dumps(visual.themes_from_query(query))
-            if used[0]:
-                if fallback is None or used < fallback[0]:
-                    fallback = (used, c)  # PRD §18: never reuse until the pool is exhausted; then least-used first
-                continue
-            if visual.quality(a) < visual.QUALITY_FLOOR:
-                continue  # PRD §78: technically poor assets are never offered
-            if _cooled_out(phash, json.loads(themes), recent):
-                continue
-            s = score(c, rank, len(block), 0, weights, a)
-            if best is None or s > best[0]:
-                best = (s, c, meta | {"analysis": a})
-    if best:
-        return best[1], best[2]
-    if fallback:  # every candidate was used: the pool for this query is exhausted, fall back per PRD §18
-        return fallback[1], {}
-    return None, {}
-
-
 def _queries(content: dict) -> list[str]:
     """This piece's shot queries. Pieces written before the shot list fall back to their two flat queries."""
     shots = [s["query"] for s in content["visual"].get("shots") or []]
@@ -225,45 +180,110 @@ async def _take(best: Candidate, meta: dict, piece: dict, providers: list[Visual
     return {"id": asset_id, "provider": best.provider, "asset_type": best.asset_type, "analysis": a}
 
 
-async def _assign_one(brief: dict, piece: dict, providers: list[VisualProvider],
-                      ever: dict, recent: list[dict], weights: dict[str, float]) -> None:
-    """Fill the piece's shot pool: one distinct visual per planned shot, so the edit cuts between real locations
-    instead of seeking around inside a single clip. Images only ever need the one."""
-    content = piece["content"]
-    wanted = content["plan"]["visual_type"]  # ponytail: video_image forces per-type asset pairs at export (M6)
-    if brief["format"] in ("video", "image"):
-        wanted = brief["format"]
-    want = SHOTS if wanted == "video" else 1
-    picked: list[dict] = []
-    seen: list[str] = []
-    for query in _queries(content):
-        if len(picked) >= want:
-            break
-        best, meta = await _pick(providers, query, wanted, ever, recent, weights)
-        if best is None:
-            continue
-        entry = await _take(best, meta, piece, providers, seen, ever, recent)
-        if entry:
-            picked.append(entry)
-    if not picked:
-        raise UserError(f'No usable {wanted} turned up for the visual search "{content["visual"]["search_query"]}".')
-
-    with connect() as conn:
-        content["assets"] = [{k: v for k, v in e.items() if k != "analysis"} for e in picked]
-        content["asset"] = content["assets"][0]  # the hero shot, where every existing reader still looks
-        content["palette"] = visual.palette(picked[0]["analysis"]["dominant_colors"])
-        conn.execute("UPDATE content_pieces SET content = ? WHERE id = ?",
-                     (json.dumps(content, ensure_ascii=False), piece["id"]))
-
-
 def _store(rel: str, data: bytes) -> None:
     path = config.MEDIA_DIR / rel
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(data)
 
 
-async def _assign_all(brief: dict, pieces: list[dict], report) -> None:
-    """Fill every piece's shot pool. Written pieces are never lost to a visual failure: it lands in the content."""
+# --- review: propose candidates, the user picks, then download ---------------------------------------------------------
+
+def _wanted(brief: dict, content: dict) -> str:
+    wanted = content["plan"]["visual_type"]  # ponytail: video_image forces per-type asset pairs at export (M6)
+    return brief["format"] if brief["format"] in ("video", "image") else wanted
+
+
+async def _options(providers: list[VisualProvider], query: str, wanted: str, ever: dict, recent: list[dict],
+                   weights: dict[str, float], known: dict[str, dict]) -> list[dict]:
+    """Every suitable candidate for one query, thumbnail stored for the review screen, scored. Technically poor
+    ones are never offered (PRD §78); used or recently similar ones are offered but flagged, and never pre-picked.
+    `known` (key -> option) holds what earlier queries already offered: those only gain this query, no refetch."""
+    out = []
+    candidates = sorted((c for c in await _search_all(providers, query, wanted) if suitable(c)), key=lambda c: c.provider)
+    for _, group in groupby(candidates, key=lambda c: c.provider):
+        block = list(group)
+        provider = next(p for p in providers if p.name == block[0].provider)
+        for rank, c in enumerate(block):
+            key = f"{c.provider}:{c.provider_asset_id}"
+            if key in known:
+                if query not in known[key]["queries"]:
+                    known[key]["queries"].append(query)
+                continue
+            with connect() as conn:
+                row = conn.execute("SELECT * FROM assets WHERE provider = ? AND provider_asset_id = ?",
+                                   (c.provider, c.provider_asset_id)).fetchone()
+            if row:  # already in the library: its stored thumbnail is the preview, nothing to fetch
+                thumb_rel, phash, themes = row["thumb_path"], row["perceptual_hash"], row["themes"]
+                try:
+                    thumb = (config.MEDIA_DIR / thumb_rel).read_bytes()
+                except OSError:
+                    continue
+            else:
+                thumb = await provider.download_thumb(c)  # thumbnails only (PRD §64): the full file waits for the user
+                ext = Image.open(io.BytesIO(thumb)).format.lower()
+                thumb_rel = f"candidates/{c.provider}-{c.provider_asset_id}.{ext}"
+                _store(thumb_rel, thumb)
+                phash, themes = dhash(thumb), json.dumps(visual.themes_from_query(query))
+            a = visual.analyze(thumb)
+            if visual.quality(a) < visual.QUALITY_FLOOR:
+                continue
+            used = ever.get((c.provider, c.provider_asset_id), [0, None])
+            # the category cooldown applies to library assets (their stored themes); a brand-new candidate is judged
+            # by look alone, as before review existed
+            cool_themes = json.loads(themes) if row else []
+            note = "used" if used[0] else "similar" if _cooled_out(phash, cool_themes, recent) else None
+            known[key] = {"key": key, "queries": [query], "candidate": c.model_dump(),
+                        "thumb": thumb_rel, "phash": phash, "themes": themes, "analysis": a, "note": note,
+                        "used": used[0], "score": round(score(c, rank, len(block), 0, weights, a), 4)}
+            out.append(known[key])
+    return out
+
+
+def _prepick(options: list[dict], queries: list[str], want: int) -> list[str]:
+    """The AI's choice, the same rules as before review existed: per planned shot the best fresh candidate, never
+    a near-duplicate of one already picked; a query with no fresh candidate falls back to its least-used one."""
+    picked: list[dict] = []
+    for q in queries:
+        if len(picked) >= want:
+            break
+        pool = [o for o in options if q in o["queries"] and o not in picked
+                and not any(hamming(o["phash"], p["phash"]) <= SIMILAR_BITS for p in picked)]
+        fresh = [o for o in pool if o["note"] is None]
+        # an exhausted pool falls back to its least-used footage (PRD §18); footage that merely looks like something
+        # used recently is shown to the user but never chosen for them
+        used = [o for o in pool if o["note"] == "used"]
+        best = max(fresh, key=lambda o: o["score"]) if fresh else min(used, key=lambda o: o["used"], default=None)
+        if best:
+            picked.append(best)
+    return [o["key"] for o in picked]
+
+
+async def _propose_one(brief: dict, piece: dict, providers: list[VisualProvider], ever: dict, recent: list[dict],
+                       weights: dict[str, float]) -> None:
+    content = piece["content"]
+    wanted = _wanted(brief, content)
+    want = SHOTS if wanted == "video" else 1
+    queries = _queries(content)
+    options: list[dict] = []
+    known: dict[str, dict] = {}  # one asset can answer two shot queries: offered once, fetched once
+    for q in queries:
+        options += await _options(providers, q, wanted, ever, recent, weights, known)
+    if not options:
+        raise UserError(f'No usable {wanted} turned up for the visual search "{content["visual"]["search_query"]}".')
+    picked = _prepick(options, queries, want)
+    for o in options:  # later pieces of this batch see these pre-picks as taken, as if already downloaded (PRD §18)
+        if o["key"] in picked:
+            c = o["candidate"]
+            _remember(c["provider"], c["provider_asset_id"], o["phash"], o["themes"], ever, recent)
+    content["review"] = {"want": want, "type": wanted, "options": options, "picked": picked}
+    content.pop("visual_error", None)
+    with connect() as conn:
+        conn.execute("UPDATE content_pieces SET content = ? WHERE id = ?",
+                     (json.dumps(content, ensure_ascii=False), piece["id"]))
+
+
+async def _propose_all(brief: dict, pieces: list[dict], report) -> None:
+    """Candidates for every piece. Written pieces are never lost to a visual failure: it lands in the content."""
     providers = get_providers()
     n = len(pieces)
     if not providers:
@@ -272,9 +292,9 @@ async def _assign_all(brief: dict, pieces: list[dict], report) -> None:
     s = settings.get()
     ever, recent = _usage_state(s["asset_cooldown_days"])
     for i, piece in enumerate(pieces, 1):
-        report(f"Finding visual {i} of {n}", (n + i) / (2 * n + 1))
+        report(f"Finding footage options {i} of {n}", (n + i) / (2 * n + 1))
         try:
-            await _assign_one(brief, piece, providers, ever, recent, s["asset_weights"])
+            await _propose_one(brief, piece, providers, ever, recent, s["asset_weights"])
         except UserError as e:
             piece["content"]["visual_error"] = str(e)
             with connect() as conn:
@@ -282,9 +302,142 @@ async def _assign_all(brief: dict, pieces: list[dict], report) -> None:
                              (json.dumps(piece["content"], ensure_ascii=False), piece["id"]))
 
 
-def assign(brief: dict, pieces: list[dict], report) -> None:
+def propose(brief: dict, pieces: list[dict], report) -> None:
     """Sync entry point from the generation pipeline (it runs on a plain job thread)."""
-    asyncio.run(_assign_all(brief, pieces, report))
+    asyncio.run(_propose_all(brief, pieces, report))
+
+
+def pick(piece_id: str, keys: list[str]) -> dict:
+    """Save the user's footage choice for one piece (in play order). Saved at once, so it survives a restart."""
+    with connect() as conn:
+        row = conn.execute("SELECT content FROM content_pieces WHERE id = ?", (piece_id,)).fetchone()
+    if row is None:
+        raise UserError("This piece no longer exists.", f"piece id {piece_id}")
+    content = json.loads(row["content"])
+    review = content.get("review")
+    if not review:
+        raise UserError("This piece has no footage waiting to be picked.")
+    offered = {o["key"] for o in review["options"]}
+    keys = list(dict.fromkeys(k for k in keys if k in offered))[: review["want"]]
+    if not keys:
+        raise UserError("Pick at least one shot for this piece.")
+    review["picked"] = keys
+    with connect() as conn:
+        conn.execute("UPDATE content_pieces SET content = ? WHERE id = ?", (json.dumps(content, ensure_ascii=False), piece_id))
+    return {"picked": keys}
+
+
+def _drop_previews(thumbs: set[str]) -> None:
+    """Delete review previews nobody still needs: the library owns its own thumbnails, and a preview another
+    piece (any project) is still choosing from stays until that review is done too."""
+    with connect() as conn:
+        pending = [json.loads(r[0]).get("review") for r in
+                   conn.execute("SELECT content FROM content_pieces WHERE content LIKE '%\"review\"%'")]
+    keep = {o["thumb"] for rv in pending if rv for o in rv["options"]}
+    for t in thumbs - keep:
+        if t.startswith("candidates/"):
+            (config.MEDIA_DIR / t).unlink(missing_ok=True)
+
+
+def _project_palette(project_id: str, pending: set[str]) -> dict | None:
+    """One palette for the whole project (owner decision): pieces confirmed earlier lend the project's palette to
+    the new ones; otherwise it is built from every hero shot's colours across the batch."""
+    with connect() as conn:
+        rows = conn.execute("SELECT id, content FROM content_pieces WHERE project_id = ? ORDER BY idx",
+                            (project_id,)).fetchall()
+        settled = [json.loads(r["content"]).get("palette") for r in rows if r["id"] not in pending]
+        if any(settled):
+            return next(p for p in settled if p)
+        heroes = [(json.loads(r["content"]).get("asset") or {}).get("id") for r in rows]
+        found = [conn.execute("SELECT dominant_colors FROM assets WHERE id = ?", (h,)).fetchone() for h in heroes if h]
+    colors = [json.loads(f["dominant_colors"]) for f in found if f]
+    # interleave: each piece's strongest colour first, so no single piece decides the batch's look
+    mixed = [c[i] for i in range(max(map(len, colors), default=0)) for c in colors if i < len(c)]
+    return visual.palette(mixed) if mixed else None
+
+
+async def _download_all(project_id: str, report) -> None:
+    with connect() as conn:
+        rows = conn.execute("SELECT * FROM content_pieces WHERE project_id = ? ORDER BY idx", (project_id,)).fetchall()
+    pieces = [{**dict(r), "content": json.loads(r["content"])} for r in rows]
+    pieces = [p for p in pieces if p["content"].get("review")]
+    if not pieces:
+        raise UserError("There is no footage waiting to be downloaded in this project.")
+    unpicked = [str(p["idx"]) for p in pieces if not p["content"]["review"]["picked"]]
+    if unpicked:  # checked before any download, so a half-confirmed project never half-downloads
+        raise UserError(f"Pick footage for piece {', '.join(unpicked)} first.")
+    providers = get_providers()
+    if not providers:
+        raise UserError("Add a Pexels or Unsplash key in Settings to download footage.")
+    s = settings.get()
+    ever, recent = _usage_state(s["asset_cooldown_days"])
+    previews = [p["content"]["review"]["options"] for p in pieces]
+    for i, piece in enumerate(pieces, 1):
+        report(f"Downloading footage {i} of {len(pieces)}", (i - 1) / len(pieces))
+        content, review = piece["content"], piece["content"]["review"]
+        by_key = {o["key"]: o for o in review["options"]}
+        picked, seen = [], []
+        for key in review["picked"]:
+            o = by_key[key]
+            meta = {"thumb": (config.MEDIA_DIR / o["thumb"]).read_bytes(), "analysis": o["analysis"],
+                    "themes": o["themes"]}
+            entry = await _take(Candidate(**o["candidate"]), meta, piece, providers, seen, ever, recent)
+            if entry:
+                picked.append(entry)
+        if not picked:
+            raise UserError(f"None of the footage picked for piece {piece['idx']} could be used.")
+        content["assets"] = [{k: v for k, v in e.items() if k != "analysis"} for e in picked]
+        content["asset"] = content["assets"][0]
+        del content["review"]
+        with connect() as conn:  # new footage makes any earlier render of this piece stale
+            conn.execute("DELETE FROM renders WHERE piece_id = ?", (piece["id"],))
+            conn.execute("UPDATE content_pieces SET status = 'written', content = ? WHERE id = ?",
+                         (json.dumps(content, ensure_ascii=False), piece["id"]))
+    _drop_previews({o["thumb"] for opts in previews for o in opts})
+    palette = _project_palette(project_id, {p["id"] for p in pieces})
+    if palette:
+        with connect() as conn:
+            for piece in pieces:
+                c = json.loads(conn.execute("SELECT content FROM content_pieces WHERE id = ?",
+                                            (piece["id"],)).fetchone()[0])
+                c["palette"] = palette
+                conn.execute("UPDATE content_pieces SET content = ? WHERE id = ?",
+                             (json.dumps(c, ensure_ascii=False), piece["id"]))
+    report("Footage ready", 1.0)
+
+
+def download_picks(project_id: str, report) -> None:
+    """The "visuals" job: download exactly the footage the user confirmed, then one palette for the project."""
+    asyncio.run(_download_all(project_id, report))
+
+
+def delete_asset(asset_id: str) -> dict:
+    """Delete one library asset and its files. Finished renders keep their pixels; a piece that used it drops that
+    shot, and a piece left with no footage is told to find another visual (it is never silently broken)."""
+    from app import jobs  # jobs imports assets: resolve at call time
+    with connect() as conn:
+        row = conn.execute("SELECT * FROM assets WHERE id = ?", (asset_id,)).fetchone()
+        if row is None:
+            raise UserError("This asset no longer exists.", f"asset id {asset_id}")
+        users = conn.execute("SELECT c.id, c.project_id, c.content FROM content_pieces c JOIN asset_usage u "
+                             "ON u.piece_id = c.id WHERE u.asset_id = ?", (asset_id,)).fetchall()
+    for u in users:
+        jobs.ensure_idle(u["project_id"])
+    with connect() as conn:
+        for u in users:
+            c = json.loads(u["content"])
+            c["assets"] = [a for a in c.get("assets") or [] if a["id"] != asset_id]
+            if c["assets"]:
+                c["asset"] = c["assets"][0]
+            else:
+                c.pop("assets", None), c.pop("asset", None)
+                c["visual_error"] = "Its footage was deleted from the library. Find another visual."
+            conn.execute("UPDATE content_pieces SET content = ? WHERE id = ?", (json.dumps(c, ensure_ascii=False), u["id"]))
+        conn.execute("DELETE FROM assets WHERE id = ?", (asset_id,))  # usage rows cascade
+    for rel in (row["local_path"], row["thumb_path"]):
+        if rel:
+            (config.MEDIA_DIR / rel).unlink(missing_ok=True)
+    return {"deleted": asset_id}
 
 
 def list_assets() -> list[dict]:

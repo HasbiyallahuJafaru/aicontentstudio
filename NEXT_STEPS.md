@@ -5,18 +5,79 @@ the older milestone log (M1-M8) and is superseded where they disagree. Read this
 
 ## Start here
 
-- Branch `quality-motion-openrouter`, pushed. Last commit `50a4309` (steps 1-11, 15-18). `main` is untouched.
-- **About 24 files are uncommitted** (Dashboard landing, Gemini TTS, plain Settings, Clear content, fullscreen
-  controls; list below). `npm test` was green on them (155 backend tests, typecheck, build, smoke). Commit them
-  first; the owner asked for commit + push of earlier work, so ask before pushing these.
+- Branch `quality-motion-openrouter`, pushed through `e2d747c` (Gemini TTS, plain Settings, Clear content,
+  fullscreen controls). `main` is untouched.
+- **Uncommitted (large): four passes from 2026-11-07, newest first below** (render fix + footage review + project
+  palette + deletes + curl_cffi; UI motion and page redesign; editing-skills pass). `npm test` green on all of it:
+  171 backend tests, typecheck, build, smoke. Ask before committing/pushing.
+- **Owner decisions that now bind every change are in `.claude/CLAUDE.md` "Owner decisions"** (splash locked, silk
+  background, pick footage before download, one palette per project, everything deletable).
 - Repo `.env` (gitignored) holds real `OPENROUTER_API_KEY` and `PEXELS_API_KEY`. Never print them. OpenRouter
   account limit is $4; well under $0.05 has been spent.
-- Next real work: step 12 (render a real piece and clip a real video). It needs a video from the owner.
+- The owner's real data (`data/app.db`) has a project "Communication; anyone can persuade" whose three renders
+  failed on the now-fixed crash: re-render it as the first real check.
+- Next real work: step 12 (render a real piece end to end, clip a real video). It now also checks the footage
+  review with real Pexels results and the editing-skills pass by eye and ear.
 
-Uncommitted files: `NEXT_STEPS.md README.md`, backend `app/{config,motion,renders,rpc,settings,tts,storage*}.py
-backend.spec requirements.txt tests/{__init__,test_render,test_storage*}.py`, desktop `electron/{main,preload}.ts
-scripts/smoke.mjs src/{app/App,components/Preview,components/ui,layouts/Shell,lib/studio,pages/Create,pages/Settings}`
-(* = new).
+## Render fix, footage review, project palette, deletes (2026-11-07, uncommitted)
+
+| Change | Where |
+|---|---|
+| **Render fix:** every render with animated titles on crashed (`'str' object has no attribute 'overlay_graph'`): a local `motion` (a shot's camera move) shadowed the motion module. Renamed `move`; `test_render_still_with_an_animated_layer` covers the path (the suite runs motion off, so nothing reached it). | `render.py`, `tests/test_render.py` |
+| **Footage review (owner decision):** generation stores candidates (thumbnails only, under `media/candidates/`) with the AI's picks pre-selected in `content.review`; nothing full-size downloads. `visuals.pick` saves a piece's pick at once; the `visuals` job (`assets.download_picks`) downloads exactly the picks, refuses up front if a piece has none, and cleans previews no pending review still shows. Pre-picks follow the old rules (fresh first, look-alikes never pre-picked, exhausted pool falls back to least-used) and later pieces avoid earlier pieces' pre-picks. "Find another visual" proposes too; the old footage stays until confirmed. Render is disabled while footage waits. | `assets/__init__.py`, `content.py`, `jobs.py`, `components/FootageReview.tsx`, `pages/Project.tsx` |
+| **One palette per project (owner decision):** built from every piece's hero colours interleaved; pieces confirmed later inherit the project's palette. | `assets._project_palette` |
+| **Individual deletes:** Library assets (pieces that used one drop the shot; a piece left empty is told to find another visual), single pieces, single renders (piece drops to written), clips, exports (only that project's folders in the shared dated folder). All refused while a job runs on the project. | `assets.delete_asset`, `content.delete_piece`, `renders.delete`, `clips.delete`, `export.delete`, `jobs.ensure_idle`, `tests/test_delete.py` |
+| **From the ClipperAi repo** (the owner's clipper; `Video-Agent` is empty): its engine was already ported and ours is ahead (glide crops, tightening, cold open, cleaned captions). Brought over `curl_cffi` so yt-dlp can impersonate a browser (Dailymotion refuses without it); added to `backend.spec` hiddenimports. Its job-level retry was not ported: our network calls already retry with backoff per call. | `requirements.txt`, `backend.spec` |
+
+Verified: 171 backend tests, typecheck, build, smoke (now walks generate → footage review → confirm → render).
+**Not verified:** a real Pexels search through the review screen; a packaged build with `curl_cffi` (run `npm run package` + `npm run smoke:packaged`).
+
+## UI motion and redesign pass (2026-11-07, uncommitted)
+
+Owner asks, in order: three.js animation (CloudAI-X `threejs-skills`, installed in `.claude/skills/` and globally in
+`~/.claude/skills/`), premium page/text/step transitions, a living splash, the wavy app background, title-bar fixes,
+and a redesign of every page's cards. **The splash is owner-approved as is: do not change it.**
+
+| Change | Where |
+|---|---|
+| `Ember.tsx`: plain three.js (React Three Fiber tried and dropped, 2 MB chunk). Layers: the CSS `.ambient` glows as a full-screen shader (a still frame equals the CSS), the ember **silk wave** (`wave` prop), rising embers. Moves only while `live`; the shell is live only while a job runs (`useBusy`, job.* events). Fresh canvas per mount (StrictMode reused a force-lost canvas and painted white in dev); context loss hides the canvas. | `components/Ember.tsx`, `lib/studio.ts useBusy` |
+| Splash: living glow + embers, no wave (`wave={0}`), staged word-by-word entrance, exit into the studio. Waves video no longer shown. | `pages/Splash.tsx` |
+| Motion system (motion-design skill, "Premium"): `--ease-premium` / `--ease-exit`; page exit 190 ms then entrance; headings reveal word by word (`Reveal` in ui.tsx, used by `PageHeader`); shell entrance; wizard steps slide by direction; drawn step bar. Containers holding glass animate transform only (opacity/filter on an ancestor breaks backdrop-filter). Reduced motion turns all of it off. | `styles/index.css`, `app/App.tsx go()`, `components/ui.tsx` |
+| Title bar: fullscreen detected from window geometry as well as the main-process flag (the flag lags on Windows), main re-broadcasts after a settled resize. Fixes missing fullscreen controls and the status dot floating mid-bar. | `lib/studio.ts useFullScreen`, `electron/main.ts` |
+| Redesign (redesign-existing-projects skill): `Cover` shows real output only (rendered 4:5 image, clip cover, or the piece's quote on a lit frame). Dashboard: greeting + one-sentence real activity, "Pick up where you left off" feature card, cover-tile grid, first-run welcome. Queue: pipeline tabs + cover cards + per-stage empty copy. Exports: fanned proof covers, demoted path, Copy confirms. Project: cover per piece (click to preview). Library: glass filter bar, full-bleed asset cards. Create: topic as working title, genre feel, lit frames, deliverables, platform chips. | `components/Cover.tsx`, `pages/*` |
+| Backend for the cards: `projects.list` adds `rendered`, `cover`, `quote`; `queue.list` adds `cover`; `exports.list` adds `covers` (clip frames as fallback). | `projects.py`, `queue.py`, `export.py` |
+
+Silk edges: MSAA on and the display's own pixel ratio (cap 2), mesh 360×200; at 1 CSS pixel without MSAA the fold
+silhouettes stair-stepped on the owner's 1.5x display. Verified on a 1.5x frame crop.
+Queue cards always show the piece's quote (it is its identity); Library cards keep the provider · type line.
+**Verified 2026-11-07 20:05:** `npm test` green (160 backend tests, typecheck, build, smoke), screenshots reviewed.
+
+Smoke note: the smoke window is a real window; clicks in it during a run (the owner exploring the UI) navigated
+away mid-job and caused the two "render timeout" failures. Diagnostics proved no remount and no code path to the
+Dashboard. Run the smoke with nobody touching its windows. The Dashboard heading check now matches the greeting.
+
+## Editing-skills pass (2026-11-07, uncommitted)
+
+Learned from three skill repos and applied where they beat what we had. Sources and licences:
+`appariciojunior/video-editor-skills` (CC BY-NC 4.0: ideas and numbers only, no text copied),
+`vyralcontent/content-skills` (MIT), `AgriciDaniel/claude-shorts` (MIT, its segment-scoring rubric), and the
+`zhuyansen/awesome-claude-video-skills` index (nothing taken directly).
+
+| Change | Why (the lesson) | Where |
+|---|---|---|
+| Long pauses are shortened to 0.3 s of air (40% after / 60% before), only past 0.5 s; was cut to 0.24 s past 0.35 s | Cuts with no breath "pop"; 0.5/0.3 was the setting real viewers liked for talk content | `clipper/tighten.py` |
+| A pause is cut only if 85% of it is silent on the waveform (ffmpeg `silencedetect`, -43 dB, 0.25 s); fillers count as silence | Whisper gaps can hide a laugh or a missed word; cutting there clips speech. No silence found at all (music bed) = trust words, as before | `clipper/ff.py silences`, `tighten.keep` |
+| Jump cuts alternate 100% / 107.5%; the cold open is pushed in to 115% for that line only; the clip opens at 100% | A jump cut with no framing change reads as a glitch; a push-in held past its line drags | `tighten.plan` (returns ranges + zooms), `render_clip.py` |
+| Captions drop fillers, cut-off words ("es-") and doubled words ("I I"), keeping "that that"/"had had" | Captions are for reading, not a court transcript | `clipper/captions.py readable` |
+| Clip pass 1 scores with a weighted rubric (hook 30, stands alone 25, emotion 20, value 15, payoff 10), drops < 60, prefers 25-45 s | Explicit criteria make the fast model's scores comparable | `clipper/select.py PASS1` |
+| Clip hooks complement the first spoken line and name the payoff's kind; no vague teases, commands or wordplay. Posts: one ask (save / send to a named kind of person / comment with a stance), never "follow for more", "tag a friend" | Hook and CTA anti-patterns from content-skills | `select.py PASS2` |
+| Written pieces: same hook anti-patterns, "but/so, never and then" lines, a turn a third of the way in, a looping last line; captions end on one fitting ask | Retention structure from content-skills | `creative/prompts.py` |
+| Hashtags capped at 5, deduplicated, generic tags (#fyp #viral #explore ...) dropped; YouTube gets `#Shorts` first | Hashtags are labels, not reach; `#Shorts` marks Shorts-feed eligibility | `platforms/__init__.py tags` |
+
+Not taken (on purpose): music bed envelope (our sidechain duck already does it), Resolve/Premiere scripting,
+Remotion overlays (licence, see "Not doing"), literal foley (the skill found it cheesy too). Worth doing after
+step 12 if footage shows the need: hook A/B variants (step 19), a punch-in on one mid-clip payoff line, a soft
+riser into the cold-open cut.
 
 ## Run and test
 
@@ -67,11 +128,15 @@ npm run smoke:packaged  # launches the built exe, checks every exe's signature, 
 | # | What | Waiting on |
 |---|---|---|
 | A | Commit the uncommitted work; merge `quality-motion-openrouter` into `main` (PR or direct) | Owner's go-ahead to push/merge |
-| 12 | Real-footage verification (below) | A video from the owner (local file avoids YouTube's bot check) |
+| 12 | Real-footage verification (below), starting with re-rendering the owner's failed project | The owner; a video for the clip half (a local file avoids YouTube's bot check) |
+| 12b | Real Pexels search through "Choose the footage": thumbnails load, picks swap, only picks download, one palette across the batch | Step 12 |
+| P | `npm run package` + `npm run smoke:packaged` to prove `curl_cffi` and the new UI survive freezing | Owner's go-ahead (long build) |
 | 11 | Tune `creative/prompts.py` from step 12 output (callouts: only times, counts, turning words; never decoration) | Step 12 |
 | 3 | Code signing, the fix for Avast sandboxing every new build | A signing certificate |
 | 4 | Clean install test with no Avast exception | Step 3 |
 | — | Read GSAP's licence (Webflow "Standard no charge", not open source) before shipping; HyperFrames also accepts WAAPI/Anime.js (MIT) | Owner |
+| — | Simplify navigation (7 rail icons to 4: Home, Create, Library, Settings; Queue as a tray, Exports per project), proposed 2026-11-07 | Owner's yes on moving pages |
+| — | Small polish seen in review: "Used before" also marks footage only pre-picked by another piece of the same batch; `src/assets/splash.webm` is unused (delete?) | Owner |
 | 13, 19 | Speaker-aware crop; model-written motion, sound design, hook A/B variants | Step 12 showing the need |
 
 ### 12. Real-footage verification

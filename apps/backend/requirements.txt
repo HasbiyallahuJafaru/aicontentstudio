@@ -3,4 +3,7 @@ httpx>=0.28,<1
 pillow>=11,<12
 opencv-python>=4.10,<6
 yt-dlp>=2026.8,<2027
+# yt-dlp needs it to impersonate a browser's TLS fingerprint; Dailymotion and some other hosts refuse without it
+# (from the ClipperAi repo, 2026-11-07)
+curl_cffi>=0.16,<1
 tzdata>=2024.1

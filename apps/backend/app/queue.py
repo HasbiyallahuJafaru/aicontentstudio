@@ -8,7 +8,8 @@ def list_() -> dict:
     with connect() as conn:
         pieces = conn.execute(
             "SELECT c.id, c.idx, c.status, c.quote, c.project_id, p.name AS project, c.created_at, "
-            "(SELECT count(*) FROM renders r WHERE r.piece_id = c.id) AS renders "
+            "(SELECT count(*) FROM renders r WHERE r.piece_id = c.id) AS renders, "
+            "(SELECT r.local_path FROM renders r WHERE r.piece_id = c.id AND r.kind = 'image') AS cover "
             "FROM content_pieces c JOIN projects p ON p.id = c.project_id "
             "ORDER BY c.rowid DESC LIMIT 200").fetchall()
         jobs = conn.execute(

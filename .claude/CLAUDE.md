@@ -51,14 +51,30 @@ Skip long design ceremonies; one screenshot review round per UI phase.
 - `apps/backend/` Python 3.12 (stdlib + pydantic). `main.py` → `app/rpc.py` (method table `METHODS`), one module per
   area (`projects.py`, `settings.py`, `content.py`, `assets/`, `visual.py`, `tts.py`, `render.py`, `renders.py`,
   `export.py`, `queue.py`, `platforms/`), `app/assets/fonts/` (bundled Sora, OFL), `app/migrations/NNN_*.sql`,
-  `tests/`. Milestone 7 adds `app/clipper/` (long-video → shorts engine ported from
-  `C:\Users\USER\Documents\ClipperAi\apps\backend\clipper.py` — that repo is the user's; copying code is fine).
+  `tests/`. `app/clipper/` is the long-video → shorts engine, ported from the user's GitHub repo
+  `HasbiyallahuJafaru/ClipperAi` (`apps/backend/clipper.py`, `downloader.py`; the user may call it "YTClipper";
+  the local clone is gone, copying code is fine). Ours is ahead of it as of 2026-11-07 (glide crops, tightening,
+  cold open, cleaned captions); check it for anything new before reinventing clipper features.
 - `apps/desktop/` Electron + React. `electron/main.ts` (window, IPC allowlist, media:// protocol),
   `electron/backend.ts` (spawn/supervise Python), `electron/secrets.ts` (safeStorage), `electron/preload.ts` (the
   only renderer API: `window.studio`), `src/lib/studio.ts` (typed calls, hooks, shared constants),
   `src/components/ui.tsx` (all primitives), `src/components/Preview.tsx` (piece preview + regenerate/approve),
-  `src/components/Branding.tsx` (developer socials + created-by footer), `src/pages/*` (Splash first, then the
-  Shell pages incl. Queue + Exports), `src/styles/index.css` (design tokens).
+  `src/components/Branding.tsx` (developer socials + created-by footer), `src/components/Ember.tsx` (three.js
+  living background: CSS-ambient glows shader + ember silk wave + embers), `src/components/Cover.tsx` (real-output
+  cover tiles), `src/components/FootageReview.tsx` (pick footage before download), `src/pages/*` (Splash first,
+  then the Shell pages incl. Queue + Exports), `src/styles/index.css` (design tokens + the motion system).
+- `.claude/skills/threejs-*` (CloudAI-X threejs-skills, MIT; also installed globally): read the relevant one
+  before touching `Ember.tsx`.
+
+## Owner decisions (2026-11-07, keep them)
+- **Splash is approved as is: do not change it** (living glow + embers, no wave, staged word-by-word entrance).
+- **App background = the ember silk wave**, vivid, smooth (MSAA, display DPR up to 2). Still while idle, flows with
+  embers only while a job runs (`useBusy`). Never a flat brown background.
+- **No full-size footage downloads before the user picks.** Generation proposes candidates (thumbnails only) with
+  the AI's picks pre-selected; the user confirms on "Choose the footage"; the `visuals` job downloads exactly those.
+- **One colour palette per project** (all pieces share it; later pieces inherit it).
+- **Everything deletable individually:** assets, pieces, renders, clips, exports (refused while a job runs).
+- Pages show real output only (rendered covers, clip frames, the piece's own quote on a lit frame), never stand-ins.
 
 ## Working rules
 - **Ponytail:** laziest solution that works. Stdlib/native first, no one-implementation interfaces unless the PRD
@@ -74,7 +90,16 @@ Skip long design ceremonies; one screenshot review round per UI phase.
 - **Local and free (user decision, Milestone 7):** no accounts, no auth, no billing, no cloud storage — everything
   runs on this machine with local `media/` routes. Publishing integrations connect via API/MCP only (Buffer API,
   Metricool MCP) plus a CLI entry. Copying code from the user's ClipperAi repo is explicitly allowed.
+- **Motion (motion-design skill, "Premium"):** `--ease-premium` in, `--ease-exit` out, exits shorter than entrances,
+  never fade-only. Headings use `Reveal`; pages exit then enter via `App.go()`. A container holding `.glass` panels
+  animates transform only (opacity/filter on an ancestor breaks backdrop-filter). Reduced motion turns it all off.
+- **three.js:** plain `three` (no React Three Fiber, no drei: 2 MB chunk, drei fetches from gstatic). A fresh canvas
+  per mount (StrictMode reuses a force-lost canvas and paints white). The silk/glow canvas is the only WebGL.
+- **Tests run motion off** (`ACS_NO_MOTION=1`), so any code path that only runs with animated titles needs its own
+  test (the 2026-11-07 render crash hid there). In `render.py` never name a local `motion` (it is the module).
+- **Smoke windows are real windows:** nobody may click them during a run; a click navigates away mid-job and fails
+  the run. Ask the owner to leave them alone before running `npm test`.
 - **Every phase ends with:** `npm test` from the repo root (backend unittest + typecheck + build + smoke), a look at
-  the smoke screenshots, `graphify update .`, and an updated `.claude/handover.md`. Never claim something works
-  without running it; say plainly what wasn't verified.
+  the smoke screenshots, `graphify update .`, and an updated `NEXT_STEPS.md` (the current handover; `.claude/handover.md`
+  is the M1-M8 log). Never claim something works without running it; say plainly what wasn't verified.
 - Commit only when the user asks.

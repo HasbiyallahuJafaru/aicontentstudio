@@ -20,13 +20,15 @@
     "@hyperframes/producer": "0.9.20",
     "@phosphor-icons/react": "^2.1.10",
     "react": "^19.2.0",
-    "react-dom": "^19.2.0"
+    "react-dom": "^19.2.0",
+    "three": "^0.186.1"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",
     "@types/node": "^24.0.0",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
+    "@types/three": "^0.186.0",
     "@vitejs/plugin-react": "^5.0.0",
     "electron": "^44.4.3",
     "electron-builder": "^26.15.3",

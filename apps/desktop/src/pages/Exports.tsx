@@ -1,14 +1,18 @@
 // Exports (PRD §47): one row per export run, with the folder the user can open or copy.
-import { Export } from '@phosphor-icons/react'
-import { formatDate, studio, useQuery, type ExportRun } from '../lib/studio'
+import { useState, type CSSProperties } from 'react'
+import { Check, Export, FolderOpen, Trash } from '@phosphor-icons/react'
+import { BackendError, call, formatDate, studio, useQuery, type ExportRun } from '../lib/studio'
 import { Button, ErrorNote, PageHeader } from '../components/ui'
+import { Cover } from '../components/Cover'
 
 export function Exports({ onOpenProject }: { onOpenProject: (id: string) => void }) {
   const { data, error, reload } = useQuery<ExportRun[]>('exports.list')
+  const [deleteError, setDeleteError] = useState<BackendError>()
 
-  async function open(run: ExportRun) {
-    await studio.openExportPath(run.path)
-    reload()
+  async function remove(run: ExportRun) {
+    if (!confirm(`Delete the "${run.project}" export? Its folders are removed from disk; the project and its renders stay.`)) return
+    setDeleteError(undefined)
+    try { await call('exports.delete', { export_id: run.id }); reload() } catch (e) { setDeleteError(e as BackendError) }
   }
 
   return (
@@ -17,6 +21,7 @@ export function Exports({ onOpenProject }: { onOpenProject: (id: string) => void
         <Button variant="ghost" onClick={reload}>Refresh</Button>
       </PageHeader>
       {error && <div className="mb-6"><ErrorNote error={error} action={<Button onClick={reload}>Try again</Button>} /></div>}
+      {deleteError && <div className="mb-6"><ErrorNote error={deleteError} /></div>}
 
       {data?.length === 0 && (
         <section className="grid max-w-md gap-3 py-12">
@@ -26,24 +31,57 @@ export function Exports({ onOpenProject }: { onOpenProject: (id: string) => void
         </section>
       )}
 
-      <ol className="glass px-8 py-2">
-        {data?.map((run) => (
-          <li key={run.id} className="grid grid-cols-[40px_minmax(0,1fr)_auto] items-center gap-6 border-t border-line py-5 first:border-t-0">
-            <span className="grid size-9 place-items-center rounded-2xl bg-accent/15 text-accent"><Export size={16} /></span>
-            <span className="min-w-0">
-              <button onClick={() => onOpenProject(run.project_id)} className="block truncate text-[14px] text-ink hover:underline">
+      <ol className="grid gap-4">
+        {data?.map((run, i) => (
+          <li key={run.id} className="glass anim-slot grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-8 px-7 py-6 max-[900px]:grid-cols-[auto_minmax(0,1fr)]"
+            style={{ '--i': Math.min(i, 10) } as CSSProperties}>
+            <Proofs covers={run.covers} />
+            <div className="grid min-w-0 gap-1.5">
+              <button onClick={() => onOpenProject(run.project_id)}
+                className="w-fit max-w-full truncate text-left font-display text-[18px] font-semibold tracking-[-0.015em] text-ink transition-colors duration-200 hover:text-accent">
                 {run.project}
               </button>
-              <span className="block truncate text-xs text-ink-3">{run.path}</span>
-            </span>
-            <span className="flex shrink-0 items-center gap-2 text-xs text-ink-3">
-              {formatDate(run.created_at)} · {run.pieces} {run.pieces === 1 ? 'piece' : 'pieces'}
-              <Button variant="ghost" onClick={() => studio.openExportPath(run.path)}>Open folder</Button>
-              <Button variant="ghost" onClick={() => navigator.clipboard.writeText(run.path)}>Copy path</Button>
+              <span className="text-[13px] text-ink-2">{run.pieces} {run.pieces === 1 ? 'piece' : 'pieces'} · {formatDate(run.created_at)}</span>
+              <span title={run.path} className="truncate font-mono text-2xs text-ink-3">{run.path}</span>
+            </div>
+            <span className="flex shrink-0 items-center gap-1 max-[900px]:col-span-2">
+              <Button onClick={() => studio.openExportPath(run.path)}><FolderOpen size={14} />Open folder</Button>
+              <CopyPath path={run.path} />
+              <Button variant="ghost" className="!px-2" aria-label={`Delete the ${run.project} export`} title="Delete this export's folders"
+                onClick={() => remove(run)}><Trash size={14} /></Button>
             </span>
           </li>
         ))}
       </ol>
     </>
+  )
+}
+
+/** The export's real output as a small stack of proofs, fanned like prints on a desk. */
+function Proofs({ covers }: { covers: string[] }) {
+  if (!covers.length) return <span className="grid size-16 place-items-center rounded-2xl bg-accent/15 text-accent"><Export size={20} /></span>
+  return (
+    <div aria-hidden className="relative h-[84px]" style={{ width: 56 + (covers.length - 1) * 22 }}>
+      {covers.map((c, i) => (
+        <div key={c} className="absolute top-0 w-[56px]"
+          style={{ left: i * 22, zIndex: covers.length - i, transform: `rotate(${(i - (covers.length - 1) / 2) * 6}deg)` }}>
+          <Cover src={c} size="sm" className="!rounded-[10px]" />
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function CopyPath({ path }: { path: string }) {
+  const [copied, setCopied] = useState(false)
+  async function copy() {
+    await navigator.clipboard.writeText(path)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 1600)
+  }
+  return (
+    <Button variant="ghost" onClick={copy} aria-live="polite">
+      {copied ? <><Check size={13} weight="bold" className="text-ok" />Copied</> : 'Copy path'}
+    </Button>
   )
 }

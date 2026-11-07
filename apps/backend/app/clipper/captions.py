@@ -1,7 +1,7 @@
 """Karaoke captions as ASS subtitles: short word groups, the spoken word highlighted, burned by ffmpeg."""
 from pathlib import Path
 
-from app.clipper.tighten import bare
+from app.clipper.tighten import FILLERS, bare
 
 FONTS = Path(__file__).parent / "assets" / "fonts"  # Montserrat ExtraBold, SIL OFL (assets/fonts/OFL.txt)
 
@@ -29,6 +29,24 @@ def ass_escape(text: str) -> str:
     return text.replace("\\", "").replace("{", "(").replace("}", ")")
 
 
+NOT_REPEATS = {"that", "had", "is"}  # "I know that that is", "had had": real doubled words
+
+
+def readable(words: list[dict]) -> list[dict]:
+    """Captions are for reading, not a court transcript: fillers and cut-off words ("es-", "A--") go, and a word
+    said twice in a row ("I I think") shows once, starting where the first one did."""
+    out = []
+    for w in words:
+        b = bare(w["word"])
+        if not b or b in FILLERS or w["word"].rstrip(".,?!").endswith("-"):
+            continue
+        if out and bare(out[-1]["word"]) == b and b not in NOT_REPEATS and w["start"] - out[-1]["end"] < 0.3:
+            out[-1] = w | {"start": out[-1]["start"]}
+            continue
+        out.append(w)
+    return out
+
+
 def captions(words: list[dict], start: float, end: float, width: int = 1080, height: int = 1920,
              emphasis=()) -> str:
     """ASS subtitles from the real transcript words: short groups that pop in, the spoken word highlighted, the
@@ -42,7 +60,8 @@ def captions(words: list[dict], start: float, end: float, width: int = 1080, hei
         return f"{cs // 360000}:{cs // 6000 % 60:02}:{cs // 100 % 60:02}.{cs % 100:02}"
 
     groups = []
-    for w in (w | {"word": ass_escape(w["word"])} for w in words if start <= w["start"] < end and w["word"]):
+    for w in (w | {"word": ass_escape(w["word"])}
+              for w in readable([w for w in words if start <= w["start"] < end and w["word"]])):
         g = groups[-1] if groups else []
         if (g and len(g) < 3 and len(" ".join(x["word"] for x in g)) + len(w["word"]) < 18
                 and w["start"] - g[-1]["end"] < 0.5 and g[-1]["word"][-1] not in ".?!,"):

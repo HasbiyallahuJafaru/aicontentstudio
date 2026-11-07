@@ -168,7 +168,7 @@ assert.equal(splashLinks, 3, 'three developer links on the splash')
 await shot(win, '0-splash')
 await assertNoHorizontalOverflowOnSplash(win)
 await enterApp(win)
-await win.getByRole('heading', { name: 'Studio' }).waitFor() // the splash opens the Dashboard
+await win.getByRole('heading', { name: /^(Good (morning|afternoon|evening)|Working late)$/ }).waitFor() // the splash opens the Dashboard
 await win.keyboard.press('Control+N')
 await win.getByRole('heading', { name: 'New project' }).waitFor()
 assert.equal(await win.getByRole('listbox').count(), 0, 'no suggestion list pops open on arrival')
@@ -215,8 +215,20 @@ await shot(win, '5-project-written')
 assert.equal(await win.locator('blockquote').count(), 3)
 await assertNoHorizontalOverflow(win, 'project')
 
-// Render: swap the fake downloaded bytes for real clips, render all three pieces
+// Footage review: nothing full-size downloads until the picks are confirmed (owner decision 2026-11-07)
 const assetsDir = join(root, 'data', 'media', 'assets')
+const fullFiles = () => { try { return readdirSync(assetsDir).filter((f) => f.endsWith('.mp4')).length } catch { return 0 } }
+await win.getByRole('heading', { name: 'Choose the footage' }).waitFor()
+assert.equal(fullFiles(), 0, 'no footage downloaded before the user confirms')
+await shot(win, '5a-footage-review')
+await win.getByRole('button', { name: /^Download \d+ shots? and continue$/ }).click()
+await win.getByRole('heading', { name: 'Choose the footage' }).waitFor({ state: 'detached', timeout: 60_000 })
+// the download job runs; Render enables once every piece has its confirmed footage
+await win.waitForFunction(() => [...document.querySelectorAll('button')].some((b) => b.textContent.trim() === 'Render' && !b.disabled),
+  undefined, { timeout: 120_000 })
+assert.ok(fullFiles() > 0, 'confirmed footage is downloaded')
+
+// Render: swap the fake downloaded bytes for real clips, render all three pieces
 // 14s: longer than any duration the fake Pexels metadata advertises, so the renderer's middle-segment
 // seek always lands inside the real file
 for (const f of readdirSync(assetsDir).filter((f) => f.endsWith('.mp4'))) {

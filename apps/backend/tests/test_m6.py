@@ -23,9 +23,14 @@ class Platforms(unittest.TestCase):
     def test_youtube_shorts_adapts_title_and_description(self):
         out = platforms.adapt("youtube_shorts", {**self.META, "title": "x" * 120}, {"video_9x16.mp4": "v.mp4"})
         self.assertLessEqual(len(out["title"]), 100)
-        self.assertIn("#a #b", out["description"])
+        self.assertIn("#Shorts #a #b", out["description"])
         self.assertEqual(out["file"], "video_9x16.mp4")
         self.assertIn("suggested_time", out)
+
+    def test_hashtags_are_few_niche_and_deduplicated(self):
+        meta = {**self.META, "hashtags": ["#FYP", "stoicism", "#Stoicism", "viral", "#a", "#b", "#c", "#d", "#e"]}
+        self.assertEqual(platforms.tags(meta), ["#stoicism", "#a", "#b", "#c", "#d"])
+        self.assertEqual(platforms.tags(meta, ("Shorts",))[:2], ["#Shorts", "#stoicism"])
 
     def test_instagram_captions_within_limit(self):
         meta = {**self.META, "caption": "c" * 3000}
@@ -70,8 +75,15 @@ class Regenerate(unittest.TestCase):
         before = self.piece()
         with database.connect() as conn:  # wipe so the fresh candidate isn't cooled out by earlier tests
             conn.execute("DELETE FROM asset_usage")
-        with mock.patch.object(content.assets, "get_providers", lambda: [FakeProvider2([cand("a2")])]):
-            fresh = content.regenerate(before["id"], "visual")
+        prov = FakeProvider2([cand("a2")])
+        with mock.patch.object(content.assets, "get_providers", lambda: [prov]):
+            offered = content.regenerate(before["id"], "visual")
+            # fresh options to review; the current footage stays until the user confirms (owner decision 2026-11-07)
+            self.assertEqual(offered["content"]["asset"]["id"], before["content"]["asset"]["id"])
+            self.assertEqual(offered["content"]["review"]["picked"], ["pexels:a2"])
+            self.assertEqual(prov.downloads, [])
+            content.assets.download_picks(self.p["id"], lambda s, pr: None)
+        fresh = self.piece()
         self.assertNotEqual(fresh["content"]["asset"]["id"], before["content"]["asset"]["id"])
         self.assertNotEqual(fresh["content"]["palette"], before["content"]["palette"])  # §43: reanalyzed -> new palette
 

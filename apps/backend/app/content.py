@@ -5,7 +5,7 @@ import uuid
 from difflib import SequenceMatcher
 from typing import Callable
 
-from app import assets, projects
+from app import assets, config, projects
 from app.creative.model import get_model
 from app.creative.schemas import BatchPlan, PlanItem
 from app.database import connect
@@ -75,7 +75,8 @@ def generate(project_id: str, report: Callable[[str, float], None]) -> None:
             batch.append(piece.quote.text)
             written.append({"id": _insert(project_id, i, item.angle, piece.quote.text, content), "content": content})
     if written:
-        assets.assign(brief, written, report)  # same (stage, 0..1) scale: it counts the same total steps
+        # footage options only (thumbnails): nothing full-size downloads until the user confirms the picks
+        assets.propose(brief, written, report)  # same (stage, 0..1) scale: it counts the same total steps
     report("Done", 1.0)
 
 
@@ -103,6 +104,19 @@ def _rewrite(piece: dict, status: str) -> None:
                       json.dumps(piece["content"], ensure_ascii=False), piece["id"]))
 
 
+def delete_piece(piece_id: str) -> dict:
+    """Delete one piece: its writing, its render files and its usage records (the project and the others stay)."""
+    from app import jobs
+    piece = _piece(piece_id)
+    jobs.ensure_idle(piece["project_id"])
+    with connect() as conn:
+        files = [r["local_path"] for r in conn.execute("SELECT local_path FROM renders WHERE piece_id = ?", (piece_id,))]
+        conn.execute("DELETE FROM content_pieces WHERE id = ?", (piece_id,))  # renders + usage cascade
+    for rel in files:
+        (config.MEDIA_DIR / rel).unlink(missing_ok=True)
+    return {"deleted": piece_id}
+
+
 def regenerate(piece_id: str, scope: str) -> dict:
     """§43: redo exactly one component (quote/narration/design/visual). Everything else is left untouched."""
     piece = _piece(piece_id)
@@ -111,12 +125,10 @@ def regenerate(piece_id: str, scope: str) -> dict:
     content_data = piece["content"]
     brief = projects.get(piece["project_id"])["brief"]
 
-    if scope == "visual":  # find another visual: the cooldown pushes away from the current asset (PRD §18)
-        old_asset = (content_data.get("asset") or {}).get("id")
-        assets.assign(brief, [{"id": piece_id, "content": content_data}], lambda stage, p: None)
-        if (content_data.get("asset") or {}).get("id") == old_asset:
-            raise UserError("The visual pool for this search is exhausted; every candidate is already in use.",
-                            content_data["visual"]["search_query"])
+    if scope == "visual":  # fresh footage options for review; the current footage stays until the user confirms
+        assets.propose(brief, [{"id": piece_id, "content": content_data}], lambda stage, p: None)
+        if content_data.get("visual_error"):
+            raise UserError(content_data["visual_error"])
     elif scope in ("quote", "narration", "design"):
         model = get_model()
         item = PlanItem.model_validate(content_data["plan"])

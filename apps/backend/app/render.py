@@ -193,10 +193,12 @@ class FFmpegRenderer:
 
         if not shots:
             seek = round(max((src_duration - duration) / 2, 0), 3) if src_duration > duration + 2 else 0.0
-            motion = "push" if (still or parallax) else None
-            shots = [{"src": str(src), "seek": seek, "length": duration, "still": still, "motion": motion,
+            move = "push" if (still or parallax) else None
+            shots = [{"src": str(src), "seek": seek, "length": duration, "still": still, "motion": move,
                       "blur": blur_background}]
 
+        # each shot's camera move is `move`: a local named `motion` shadowed the motion module and crashed every
+        # render with animated titles on (2026-11-07)
         args = [config.FFMPEG, "-y", "-nostdin", "-nostats", "-progress", "pipe:1", "-hide_banner"]
         chain = []
         for i, shot in enumerate(shots):
@@ -205,14 +207,14 @@ class FFmpegRenderer:
             speed = 1.0 if shot.get("still") or shot.get("blur") else float(shot.get("speed", 1.0))
             if shot.get("still"):
                 args += ["-loop", "1", "-t", f"{length:.3f}", "-i", str(shot["src"])]
-                motion = shot.get("motion") or "push"
+                move = shot.get("motion") or "push"
             else:
                 if shot.get("loop"):  # shorter than the edit: loop the source instead of running out mid-shot
                     args += ["-stream_loop", "-1"]
                 if shot.get("seek"):
                     args += ["-ss", f"{shot['seek']:.3f}"]
                 args += ["-t", f"{length / speed:.3f}", "-i", str(shot["src"])]
-                motion = shot.get("motion")
+                move = shot.get("motion")
             frames = max(round(length * fps), 1)
             ramp = f",setpts={speed:g}*PTS" if speed != 1.0 else ""
             if shot.get("blur"):
@@ -235,7 +237,7 @@ class FFmpegRenderer:
                     "out": f",zoompan=z='max(1.08-0.08*on/{frames:g},1.0)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'"
                            f":d=1:s={self.w}x{self.h}:fps={fps:g}",
                     "pan": f",zoompan=z='1.1':x='(iw-iw/zoom)*on/{frames:g}':y='ih/2-(ih/zoom/2)'"
-                           f":d=1:s={self.w}x{self.h}:fps={fps:g}"}.get(motion, "")
+                           f":d=1:s={self.w}x{self.h}:fps={fps:g}"}.get(move, "")
             if not zoom:  # a locked-off shot still has to land on the canvas at the timeline's frame rate
                 zoom = f",scale={self.w}:{self.h},fps={fps:g}"
             chain.append(f"[{i}:v]{geom}{zoom}{ramp},setsar=1[v{i}]")

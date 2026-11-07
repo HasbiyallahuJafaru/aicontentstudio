@@ -219,7 +219,29 @@ class Tightening(unittest.TestCase):
                  self.w("um,", 2.4, 2.7),  # filler inside a long pause: the whole stretch goes
                  self.w("quit.", 3.5, 3.9), self.w("Early.", 5.0, 5.4)]  # 1.1 s pause: cut
         self.assertEqual(tighten.keep(words, 0.9, 5.6),
-                         [(0.9, 1.92), (3.38, 4.02), (4.88, 5.52)])
+                         [(0.9, 1.92), (3.32, 4.02), (4.82, 5.52)], "long pauses keep 0.3 s of air")
+
+    def test_a_gap_with_sound_in_it_is_not_a_pause(self):
+        words = [self.w("Most", 1.0, 1.3), self.w("um,", 1.5, 1.7), self.w("quit.", 2.8, 3.2),
+                 self.w("Early.", 4.0, 4.4)]
+        # 1.3-2.8 is silent apart from the filler; 3.2-4.0 has an unlabelled sound (a laugh) in the middle
+        silent = [(1.3, 1.5), (1.7, 2.8), (3.2, 3.35), (3.85, 4.0)]
+        self.assertEqual(tighten.keep(words, 0.9, 4.6, silent), [(0.9, 1.42), (2.62, 4.52)])
+        self.assertEqual(len(tighten.keep(words, 0.9, 4.6)), 3, "no audio evidence: trust the word timings")
+
+    def test_jump_cuts_alternate_zoom_and_the_cold_open_punches_in(self):
+        words = [self.w("One.", 0.0, 0.4), self.w("Two.", 1.5, 1.9), self.w("Three.", 3.0, 3.4)]
+        ranges, zooms = tighten.plan(words, 0.0, 3.4, cold_open=(3.0, 3.4))
+        self.assertEqual(len(ranges), 4)
+        self.assertEqual(zooms, [tighten.PUNCH, 1.0, tighten.JUMP, 1.0], "the clip opens at 100% after the teaser")
+
+    def test_captions_read_clean(self):
+        from app.clipper.captions import readable
+        words = [self.w("I", 0.0, 0.1), self.w("I", 0.2, 0.3), self.w("es--", 0.4, 0.5), self.w("um,", 0.6, 0.7),
+                 self.w("know", 0.8, 1.0), self.w("that", 1.1, 1.2), self.w("that", 1.25, 1.4)]
+        out = readable(words)
+        self.assertEqual([(w["word"], w["start"]) for w in out],
+                         [("I", 0.0), ("know", 0.8), ("that", 1.1), ("that", 1.25)])
 
     def test_lead_in_silence_trimmed_and_no_words_keeps_span(self):
         self.assertEqual(tighten.keep([self.w("Go.", 3.0, 3.4)], 0.0, 4.0), [(2.88, 3.52)])
@@ -227,11 +249,11 @@ class Tightening(unittest.TestCase):
 
     def test_cold_open_plays_first_and_captions_follow_the_joined_timeline(self):
         words = [self.w("Start.", 0.0, 0.5), self.w("Payoff!", 4.0, 4.6)]
-        ranges = tighten.plan(words, 0.0, 4.6, cold_open=(4.0, 4.6))
-        self.assertEqual(ranges, [(3.88, 4.72), (0.0, 0.62), (3.88, 4.6)], "teaser first, padded; then the clip")
+        ranges, _ = tighten.plan(words, 0.0, 4.6, cold_open=(4.0, 4.6))
+        self.assertEqual(ranges, [(3.88, 4.72), (0.0, 0.62), (3.82, 4.6)], "teaser first, padded; then the clip")
         timed = tighten.retime(words, ranges)
         self.assertEqual([(x["word"], x["start"]) for x in timed],
-                         [("Payoff!", 0.12), ("Start.", 0.84), ("Payoff!", 1.58)])
+                         [("Payoff!", 0.12), ("Start.", 0.84), ("Payoff!", 1.64)])
 
     def test_cold_open_must_sit_inside_the_clip_and_not_be_its_opening(self):
         posts = dict.fromkeys(["tiktok", "instagram", "youtube", "linkedin", "facebook", "x"], "c")
@@ -296,11 +318,25 @@ class ClipRender(unittest.TestCase):
             src = Path(tmp) / "talk.mp4"
             make_talking_head(str(src), 6)
             out = Path(tmp) / "tight.mp4"
-            render(src, 0, 6, out, [{"word": "HI", "start": 4.2, "end": 4.6}], ranges=[(4.0, 5.0), (0.5, 2.0), (3.0, 4.5)])
+            render(src, 0, 6, out, [{"word": "HI", "start": 4.2, "end": 4.6}], ranges=[(4.0, 5.0), (0.5, 2.0), (3.0, 4.5)],
+                   zooms=[tighten.PUNCH, 1.0, tighten.JUMP])  # push-ins keep the graph valid and the size
             self.assertAlmostEqual(transcribe.duration_of(out), 4.0, delta=0.15)
             self.assertFalse(out.with_suffix(".graph").exists(), "the filter script is cleaned up")
             first = [x for x in out.with_suffix(".ass").read_text(encoding="utf-8").splitlines() if "HI" in x][0]
             self.assertIn("0:00:00.20", first, "captions follow the joined timeline")
+
+    def test_silence_probe_finds_the_real_gap(self):
+        from app.clipper.ff import silences
+        with tempfile.TemporaryDirectory() as tmp:
+            src = Path(tmp) / "gap.wav"  # tone, 1 s of silence from 1.0 s, tone
+            subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i",
+                            r"aevalsrc=if(between(t\,1\,2)\,0\,0.5*sin(2*PI*440*t)):d=3", str(src)],
+                           check=True, timeout=60)
+            found = silences(src, 0.5, 3.0)
+            self.assertEqual(len(found), 1)
+            self.assertAlmostEqual(found[0][0], 1.0, delta=0.05)
+            self.assertAlmostEqual(found[0][1], 2.0, delta=0.05)
+            self.assertIsNone(silences(Path(tmp) / "missing.wav", 0, 1), "a failed probe means no evidence")
 
     def test_orientations_render_their_own_size_and_playres(self):
         with tempfile.TemporaryDirectory() as tmp:

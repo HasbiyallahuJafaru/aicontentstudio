@@ -132,6 +132,6 @@ Keys are stored encrypted in your user profile and are only ever decrypted by th
 
 ## The splash
 
-The intro clip is open water at 60fps, bundled locally so the app works offline. Credit: "Waves off of dock at
-Boston harbor" by Adam S. Keck, [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/), via Wikimedia
-Commons (re-encoded excerpt).
+The splash is the studio's own background brought to life: the warm lamp, plum and floor glows drift through slow
+noise with embers rising, rendered live with three.js (`apps/desktop/src/components/Ember.tsx`). Inside the app the
+same light holds still and only moves while a job is running.

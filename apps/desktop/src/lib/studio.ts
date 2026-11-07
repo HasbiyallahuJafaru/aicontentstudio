@@ -25,7 +25,8 @@ export type ClipBrief = {
   kind: 'clip'; source: string; n: number | null; min_len: number; max_len: number
   orientation: '9:16' | '16:9' | '1:1'; burn_captions: boolean; fps: number
 }
-export type Project = { id: string; name: string; status: string; brief: Brief | ClipBrief; created_at: string; updated_at: string; pieces_written?: number }
+export type Project = { id: string; name: string; status: string; brief: Brief | ClipBrief; created_at: string; updated_at: string; pieces_written?: number
+  rendered?: number; cover?: string | null; quote?: string | null }  // list-only: real output for cards
 export type Clip = {
   id: string; project_id: string; idx: number; start_at: number; end_at: number; score: number
   reason: string; hook: string; title: string; description: string; hashtags: string[]
@@ -51,8 +52,14 @@ export type PieceContent = {
   metadata: { title: string; description: string; caption: string; hashtags: string[]; keywords: string[]; alt_text: string }
   asset?: { id: string; provider: string; asset_type: string }
   visual_error?: string
+  review?: FootageReview  // footage options waiting for the user's pick; nothing full-size downloaded yet
   error?: string
 }
+export type FootageOption = {
+  key: string; queries: string[]; thumb: string; note: 'used' | 'similar' | null
+  candidate: { provider: string; asset_type: 'video' | 'image'; creator: string; duration: number; width: number; height: number }
+}
+export type FootageReview = { want: number; type: 'video' | 'image'; picked: string[]; options: FootageOption[] }
 export type PieceStatus = 'written' | 'rendering' | 'ready' | 'approved' | 'exported' | 'failed'
 export type Piece = { id: string; idx: number; status: PieceStatus; angle: string; quote: string; project_id: string; content: PieceContent }
 export type Asset = {
@@ -78,11 +85,11 @@ export type Render = {
 }
 export type QueueData = {
   pieces: { id: string; idx: number; status: PieceStatus; quote: string; project_id: string; project: string
-    created_at: string; renders: number }[]
+    created_at: string; renders: number; cover: string | null }[]
   jobs: (Job & { project: string })[]
 }
 export type ExportRun = { id: string; project_id: string; dir: string; path: string; pieces: number
-  created_at: string; project: string }
+  created_at: string; project: string; covers: string[] }
 export type BackendStatus = { state: 'starting' | 'ready' | 'crashed' | 'stopped'; message?: string; detail?: string }
 export type VoiceList = { value: string; label: string }[]
 /** Narration picker options: Gemini voices from tts.voices, empty = the studio default (Charon). */
@@ -121,17 +128,21 @@ export function useBackendStatus() {
 
 /** Whether the window is fullscreen. Fullscreen hides the system controls, so the UI draws its own exit. */
 export function useFullScreen() {
-  const [full, setFull] = useState(false)
+  const [flag, setFlag] = useState(false)
+  const [fills, setFills] = useState(false)
   useEffect(() => {
-    studio.isFullScreen().then(setFull)
-    // Fullscreen entered from the maximize handler doesn't reliably emit enter-full-screen on Windows, but it
-    // always resizes the page: ask again on every resize, keep the event as the fast path.
-    const check = () => { studio.isFullScreen().then(setFull) }
+    // Two sources, either one is enough. The main process's flag can lag the resize (enter-full-screen doesn't
+    // reliably fire on Windows, and a resize can land before isFullScreen flips), so the page also checks its own
+    // geometry: a window exactly the size of the screen is fullscreen, and that answer is instant.
+    const geometry = () => setFills(window.innerWidth >= screen.width && window.innerHeight >= screen.height)
+    const ask = () => { studio.isFullScreen().then(setFlag) }
+    const check = () => { geometry(); ask(); setTimeout(ask, 250) }
+    check()
     window.addEventListener('resize', check)
-    const off = studio.onFullScreen((on) => setFull(on))
+    const off = studio.onFullScreen((on) => setFlag(on))
     return () => { window.removeEventListener('resize', check); off() }
   }, [])
-  return full
+  return flag || fills
 }
 
 /** Load data from the backend; reloads when the backend (re)becomes ready or `refresh` changes. */
@@ -173,6 +184,24 @@ export function useJob(projectId: string) {
   }), [projectId])
   useEffect(() => setLive(undefined), [data])
   return { job: live !== undefined ? live : data, reload }
+}
+
+/** Whether any job (writing, rendering, clipping) is running right now: the stats answer at load, then the live
+ *  job.* events keep it current. Drives the ambient motion, so the app only moves while it really works. */
+export function useBusy() {
+  const stats = useQuery<{ generating: number }>('app.stats').data
+  const [running, setRunning] = useState<Set<string>>()
+  useEffect(() => studio.onEvent((event, d) => {
+    if (!event.startsWith('job.')) return
+    const job = d as Job
+    setRunning((prev) => {
+      const next = new Set(prev)
+      if (job.status === 'queued' || job.status === 'running') next.add(job.id)
+      else next.delete(job.id)
+      return next
+    })
+  }), [])
+  return running ? running.size > 0 : (stats?.generating ?? 0) > 0
 }
 
 export const hasKey = async (name: SecretName) => ((await studio.secretsStatus()) as Record<SecretName, boolean>)[name]

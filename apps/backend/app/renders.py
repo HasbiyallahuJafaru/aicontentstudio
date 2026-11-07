@@ -172,6 +172,23 @@ def _subtitles_ass(piece: dict, words: list[dict], duration: float, w: int, h: i
     return path
 
 
+def delete(render_id: str) -> dict:
+    """Delete one rendered file (frees disk; the piece drops back to 'written' when nothing rendered is left)."""
+    from app import jobs
+    with connect() as conn:
+        row = conn.execute("SELECT * FROM renders WHERE id = ?", (render_id,)).fetchone()
+    if row is None:
+        raise UserError("This render no longer exists.", f"render id {render_id}")
+    jobs.ensure_idle(row["project_id"])
+    with connect() as conn:
+        conn.execute("DELETE FROM renders WHERE id = ?", (render_id,))
+        if not conn.execute("SELECT 1 FROM renders WHERE piece_id = ?", (row["piece_id"],)).fetchone():
+            conn.execute("UPDATE content_pieces SET status = 'written' WHERE id = ? AND status IN ('ready', 'approved')",
+                         (row["piece_id"],))
+    (config.MEDIA_DIR / row["local_path"]).unlink(missing_ok=True)
+    return {"deleted": render_id}
+
+
 def list_(project_id: str) -> list[dict]:
     with connect() as conn:
         rows = conn.execute("SELECT r.id, r.piece_id, r.kind, r.local_path, r.duration, r.fps, r.width, r.height, "

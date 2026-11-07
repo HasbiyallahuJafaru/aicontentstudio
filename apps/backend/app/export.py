@@ -119,9 +119,41 @@ def _export_clips(project_id: str, report) -> dict:
     return {"dir": str(abs_root), "pieces": n}
 
 
+def delete(export_id: str) -> dict:
+    """Delete one export: only this project's folders inside the dated export folder (other projects exported the
+    same day share that folder and keep their files), and every record of this project in it."""
+    with connect() as conn:
+        row = conn.execute("SELECT * FROM exports WHERE id = ?", (export_id,)).fetchone()
+        if row is None:
+            raise UserError("This export no longer exists.", f"export id {export_id}")
+        project = conn.execute("SELECT name FROM projects WHERE id = ?", (row["project_id"],)).fetchone()
+        titles = [r["title"] for r in conn.execute("SELECT title FROM clips WHERE project_id = ?", (row["project_id"],))]
+    root = (config.DATA_DIR / row["dir"]).resolve()
+    if config.DATA_DIR.resolve() not in root.parents:
+        raise UserError("This export's folder is outside the app's data folder.", str(root))
+    suffixes = {f"_{_slug(project['name'])}"} | {f"_{_slug(t)}" for t in titles}
+    if root.is_dir():
+        for folder in root.iterdir():
+            if folder.is_dir() and folder.name[:3].isdigit() and any(folder.name.endswith(s) for s in suffixes):
+                shutil.rmtree(folder)
+        if not any(root.iterdir()):
+            root.rmdir()
+    with connect() as conn:  # a re-export the same day wrote into the same folders: those records go too
+        conn.execute("DELETE FROM exports WHERE project_id = ? AND dir = ?", (row["project_id"], row["dir"]))
+    return {"deleted": export_id}
+
+
 def list_(limit: int = 100) -> list[dict]:
     with connect() as conn:
         rows = conn.execute("SELECT e.id, e.project_id, e.dir, e.pieces, e.created_at, p.name AS project "
                             "FROM exports e JOIN projects p ON p.id = e.project_id "
                             "ORDER BY e.created_at DESC LIMIT ?", (limit,)).fetchall()
-    return [{**dict(r), "path": str(config.DATA_DIR / r["dir"])} for r in rows]
+        # up to three of the project's rendered 4:5 images: the export shows what went out, not a folder icon
+        # (a clip project has no image renders: its clips' cover frames stand in)
+        def first3(pid):
+            return [c[0] for c in conn.execute(
+                "SELECT local_path FROM renders WHERE project_id = ? AND kind = 'image' ORDER BY created_at DESC LIMIT 3",
+                (pid,)).fetchall()] or [c[0] for c in conn.execute(
+                "SELECT cover_path FROM clips WHERE project_id = ? ORDER BY idx LIMIT 3", (pid,)).fetchall()]
+        covers = {pid: first3(pid) for pid in {r["project_id"] for r in rows}}
+    return [{**dict(r), "path": str(config.DATA_DIR / r["dir"]), "covers": covers[r["project_id"]]} for r in rows]

@@ -1,7 +1,8 @@
 import { FORMATS, formatDate, label, type Project } from '../lib/studio'
 import { cx } from './ui'
+import { Cover } from './Cover'
 
-const state = (p: Project) =>
+export const projectState = (p: Project) =>
   p.status === 'draft' ? 'Draft'
     : p.status === 'generating' ? (p.brief.kind === 'clip' ? 'Clipping' : 'Generating')
     : p.status === 'failed' ? 'Failed'
@@ -24,10 +25,11 @@ export function ProjectList({ projects, selected, onSelect, onDelete }: {
             onKeyDown={(e) => e.key === 'Delete' && onDelete?.(p.id)}
             aria-current={selected === p.id || undefined}
             className={cx(
-              'grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-6 rounded-[16px] px-3 py-3 text-left transition-colors duration-150',
+              'group grid w-full grid-cols-[44px_minmax(0,1fr)_auto] items-center gap-4 rounded-[16px] px-3 py-2.5 text-left transition-colors duration-150',
               selected === p.id ? 'bg-white/[0.08]' : 'hover:bg-white/[0.05]',
             )}
           >
+            <Cover src={p.cover} quote={p.quote} size="sm" className="!rounded-[10px]" />
             <span className="min-w-0">
               <span className="block truncate text-[13px] font-medium text-ink">{p.name}</span>
               <span className="block truncate text-xs text-ink-3">
@@ -37,7 +39,7 @@ export function ProjectList({ projects, selected, onSelect, onDelete }: {
               </span>
             </span>
             <span className="tnum grid justify-items-end text-xs">
-              <span className={p.status === 'failed' ? 'text-danger' : p.status === 'generating' ? 'text-accent' : 'text-ink-2'}>{state(p)}</span>
+              <span className={p.status === 'failed' ? 'text-danger' : p.status === 'generating' ? 'text-accent' : 'text-ink-2'}>{projectState(p)}</span>
               <span className="text-ink-3">{formatDate(p.created_at)}</span>
             </span>
           </button>

@@ -16,12 +16,14 @@ FADE = 0.01  # seconds of audio fade at every join: a hard cut mid-waveform clic
 
 def render(video, start: float, end: float, out: Path, words: list[dict], burn: bool = True,
            orientation: str = "9:16", fps: int | None = None, ranges: list[tuple[float, float]] | None = None,
-           emphasis: list[str] = (), layers: list[dict] = ()) -> None:
+           emphasis: list[str] = (), layers: list[dict] = (), zooms: list[float] | None = None) -> None:
     """Write out (mp4), its .ass captions and a .jpg cover. `ranges`: the source spans to keep, in play order
-    (tighten.plan); default the whole [start, end]. `burn`: draw the captions into the video (off when the source
-    already has its own); the .ass file is written either way. `fps`: force 30/60 output (else the source's own)."""
+    (tighten.plan); default the whole [start, end]. `zooms`: each range's push-in (1.0 = the tracked crop as is).
+    `burn`: draw the captions into the video (off when the source already has its own); the .ass file is written
+    either way. `fps`: force 30/60 output (else the source's own)."""
     (rw, rh), (width, height) = ORIENTATIONS[orientation]
     ranges = ranges or [(start, end)]
+    zooms = zooms or [1.0] * len(ranges)
     out = out.resolve()
     timed = retime(words, ranges)
     total = sum(b - a for a, b in ranges)
@@ -30,10 +32,12 @@ def render(video, start: float, end: float, out: Path, words: list[dict], burn: 
     # one input seek to the earliest kept second, then every range is trimmed relative to it
     s0, s1 = min(a for a, _ in ranges), max(b for _, b in ranges)
     graph, joins = [], ""
-    for i, (a, b) in enumerate(ranges):
+    for i, ((a, b), z) in enumerate(zip(ranges, zooms)):
         d = b - a
+        # push-in centred across, a little above centre down: the face sits in the upper half, keep its headroom
+        push = f",crop=iw/{z:.3f}:ih/{z:.3f}:(iw-iw/{z:.3f})/2:(ih-ih/{z:.3f})*0.4" if z > 1.001 else ""
         graph.append(f"[0:v]trim=start={a - s0:.3f}:end={b - s0:.3f},setpts=PTS-STARTPTS,"
-                     f"{crop_filter(video, a, b, (rw, rh))},scale={width}:{height},setsar=1[v{i}]")
+                     f"{crop_filter(video, a, b, (rw, rh))}{push},scale={width}:{height},setsar=1[v{i}]")
         graph.append(f"[0:a]atrim=start={a - s0:.3f}:end={b - s0:.3f},asetpts=PTS-STARTPTS,"
                      f"afade=t=in:d={FADE},afade=t=out:st={max(0, d - FADE):.3f}:d={FADE}[a{i}]")
         joins += f"[v{i}][a{i}]"
