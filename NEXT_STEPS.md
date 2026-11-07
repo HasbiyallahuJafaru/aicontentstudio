@@ -5,11 +5,9 @@ the older milestone log (M1-M8) and is superseded where they disagree. Read this
 
 ## Start here
 
-- Branch `quality-motion-openrouter`, pushed through `e2d747c` (Gemini TTS, plain Settings, Clear content,
-  fullscreen controls). `main` is untouched.
-- **Uncommitted (large): four passes from 2026-11-07, newest first below** (render fix + footage review + project
-  palette + deletes + curl_cffi; UI motion and page redesign; editing-skills pass). `npm test` green on all of it:
-  171 backend tests, typecheck, build, smoke. Ask before committing/pushing.
+- Branch `quality-motion-openrouter`, pushed through `ce2ca5a` (2026-11-07: render fix, footage review, project
+  palette, deletes, curl_cffi, three.js background, motion system, page redesign, editing-skills pass; the earlier
+  `e2d747c` went up with it). `npm test` green: 171 backend tests, typecheck, build, smoke. `main` is untouched.
 - **Owner decisions that now bind every change are in `.claude/CLAUDE.md` "Owner decisions"** (splash locked, silk
   background, pick footage before download, one palette per project, everything deletable).
 - Repo `.env` (gitignored) holds real `OPENROUTER_API_KEY` and `PEXELS_API_KEY`. Never print them. OpenRouter
@@ -19,7 +17,7 @@ the older milestone log (M1-M8) and is superseded where they disagree. Read this
 - Next real work: step 12 (render a real piece end to end, clip a real video). It now also checks the footage
   review with real Pexels results and the editing-skills pass by eye and ear.
 
-## Render fix, footage review, project palette, deletes (2026-11-07, uncommitted)
+## Render fix, footage review, project palette, deletes (2026-11-07, in `ce2ca5a`)
 
 | Change | Where |
 |---|---|
@@ -32,7 +30,7 @@ the older milestone log (M1-M8) and is superseded where they disagree. Read this
 Verified: 171 backend tests, typecheck, build, smoke (now walks generate → footage review → confirm → render).
 **Not verified:** a real Pexels search through the review screen; a packaged build with `curl_cffi` (run `npm run package` + `npm run smoke:packaged`).
 
-## UI motion and redesign pass (2026-11-07, uncommitted)
+## UI motion and redesign pass (2026-11-07, in `ce2ca5a`)
 
 Owner asks, in order: three.js animation (CloudAI-X `threejs-skills`, installed in `.claude/skills/` and globally in
 `~/.claude/skills/`), premium page/text/step transitions, a living splash, the wavy app background, title-bar fixes,
@@ -56,7 +54,7 @@ Smoke note: the smoke window is a real window; clicks in it during a run (the ow
 away mid-job and caused the two "render timeout" failures. Diagnostics proved no remount and no code path to the
 Dashboard. Run the smoke with nobody touching its windows. The Dashboard heading check now matches the greeting.
 
-## Editing-skills pass (2026-11-07, uncommitted)
+## Editing-skills pass (2026-11-07, in `ce2ca5a`)
 
 Learned from three skill repos and applied where they beat what we had. Sources and licences:
 `appariciojunior/video-editor-skills` (CC BY-NC 4.0: ideas and numbers only, no text copied),
