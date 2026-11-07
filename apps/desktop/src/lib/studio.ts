@@ -62,12 +62,13 @@ export type Asset = {
   times_used: number; last_used_at: string | null
 }
 export type Settings = {
-  ai_model: string; ai_temperature: number; ai_max_tokens: number
+  ai_model: string; ai_model_fast: string; ai_temperature: number; ai_max_tokens: number
   default_topic: string; default_tone: Tone; default_quantity: number
   asset_cooldown_days: number; asset_weights: Record<string, number>
   tts_provider: 'windows' | 'kokoro'; tts_voice: string; tts_speed: number; tts_volume: number
   music_path: string; music_volume: number
   render_crf: number; render_audio_bitrate: string; render_width: number; render_height: number
+  ytdlp_cookies: string; motion_graphics: boolean
   buffer_client_id: string
   publish_host_endpoint: string; publish_host_bucket: string; publish_host_public_url: string; publish_host_region: string
 }
@@ -85,7 +86,7 @@ export type ExportRun = { id: string; project_id: string; dir: string; path: str
   created_at: string; project: string }
 export type BackendStatus = { state: 'starting' | 'ready' | 'crashed' | 'stopped'; message?: string; detail?: string }
 export type VoiceList = { kokoro: string[]; windows: string[] }
-export type SecretName = 'DEEPSEEK_API_KEY' | 'PEXELS_API_KEY' | 'UNSPLASH_ACCESS_KEY' | 'GROQ_API_KEY' | 'METRICOOL_API_KEY'
+export type SecretName = 'OPENROUTER_API_KEY' | 'PEXELS_API_KEY' | 'UNSPLASH_ACCESS_KEY' | 'METRICOOL_API_KEY'
 
 export const TOPICS = ['Motivation', 'Discipline', 'Personal growth', 'Mindset', 'Productivity', 'Relationships',
   'Reflection', 'Confidence', 'Success', 'Resilience']

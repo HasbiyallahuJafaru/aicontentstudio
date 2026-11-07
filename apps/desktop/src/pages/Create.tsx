@@ -25,9 +25,8 @@ export function Create({ onCreated }: { onCreated: (id: string) => void }) {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<BackendError>()
   const [keySet, setKeySet] = useState<boolean>()
-  const [groqSet, setGroqSet] = useState<boolean>()
 
-  useEffect(() => { hasKey('DEEPSEEK_API_KEY').then(setKeySet); hasKey('GROQ_API_KEY').then(setGroqSet) }, [])
+  useEffect(() => { hasKey('OPENROUTER_API_KEY').then(setKeySet) }, [])
 
   useEffect(() => {
     if (settings && !brief) {
@@ -140,9 +139,9 @@ export function Create({ onCreated }: { onCreated: (id: string) => void }) {
                 <div><Button variant="primary" type="submit" disabled={!clipSourceOk || saving} kbd="Ctrl Enter">
                   <Scissors size={14} />{saving ? 'Starting' : 'Clip this video'}</Button></div>
                 <p className="text-xs text-ink-3">
-                  {groqSet && keySet
-                    ? 'Groq transcribes the video, DeepSeek picks the moments. You can cancel at any time.'
-                    : 'Add a Groq API key (transcription) and a DeepSeek API key (selection) in Settings to clip.'}
+                  {keySet
+                    ? 'The video is transcribed, then the AI picks the moments. You can cancel at any time.'
+                    : 'Add your OpenRouter API key in Settings to clip.'}
                 </p>
               </div>
             </>
@@ -151,7 +150,7 @@ export function Create({ onCreated }: { onCreated: (id: string) => void }) {
 
         {mode === 'write'
           ? <BatchPreview brief={brief} />
-          : <ClipPreviewPanel form={clip} groqSet={!!groqSet} deepseekSet={!!keySet} />}
+          : <ClipPreviewPanel form={clip} ready={!!keySet} />}
       </div>
     </form>
   )
@@ -308,8 +307,8 @@ function WriteForm({ brief, setBrief, custom, setCustom, keySet, error, saving, 
         </div>
         <p className="text-xs text-ink-3">
           {!last ? `${STEPS[step + 1]} next. Everything here has a working default, so you can skip ahead.`
-            : keySet ? 'DeepSeek plans the batch, then writes each piece. You can cancel at any time.'
-              : 'Add your DeepSeek API key in Settings to generate. The brief is saved as a draft until then.'}
+            : keySet ? 'The AI plans the batch, then writes each piece. You can cancel at any time.'
+              : 'Add your OpenRouter API key in Settings to generate. The brief is saved as a draft until then.'}
         </p>
       </div>
     </div>
@@ -317,9 +316,8 @@ function WriteForm({ brief, setBrief, custom, setCustom, keySet, error, saving, 
 }
 
 /** What clipping produces: one 9:16 frame per clip and the pipeline in words. */
-function ClipPreviewPanel({ form, groqSet, deepseekSet }: { form: ClipForm; groqSet: boolean; deepseekSet: boolean }) {
+function ClipPreviewPanel({ form, ready }: { form: ClipForm; ready: boolean }) {
   const [w, h] = form.orientation === '16:9' ? [16, 9] : form.orientation === '1:1' ? [1, 1] : [9, 16]
-  const ready = groqSet && deepseekSet
   return (
     <section aria-label="Clip preview" className="glass relative isolate sticky top-0 self-start overflow-hidden p-7">
       <div aria-hidden className="absolute inset-0 -z-10 bg-[radial-gradient(80%_60%_at_80%_0%,rgb(240_135_58/0.18),transparent_70%)]" />
@@ -338,13 +336,13 @@ function ClipPreviewPanel({ form, groqSet, deepseekSet }: { form: ClipForm; groq
       </div>
       <ol className="grid gap-2.5 pt-6 text-[13px] text-ink-2">
         <li>1. The video downloads (or a local file is used as-is).</li>
-        <li>2. Groq transcribes every word with timestamps.</li>
-        <li>3. DeepSeek finds the {form.min_len}-{form.max_len}s moments that stand alone and writes per-platform post copy.</li>
+        <li>2. Whisper transcribes every word with timestamps.</li>
+        <li>3. The AI finds the {form.min_len}-{form.max_len}s moments that stand alone and writes per-platform post copy.</li>
         <li>4. Each clip is cropped to the speaker, captioned{form.burn_captions ? ', captions burned in,' : ''} and rendered as {form.orientation} MP4.</li>
       </ol>
       <p className="pt-5 text-xs text-ink-3">
         {ready ? 'Every clip keeps its caption file, cover frame and post copy for review here.'
-          : 'Needs a Groq key and a DeepSeek key in Settings before clipping can start.'}
+          : 'Needs an OpenRouter key in Settings before clipping can start.'}
       </p>
     </section>
   )

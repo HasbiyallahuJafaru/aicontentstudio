@@ -82,9 +82,23 @@ class Metadata(BaseModel):
         return list(dict.fromkeys(tags))
 
 
+class Callout(BaseModel):
+    """A short phrase or number that punches on screen when the narration says `word`."""
+    text: Annotated[str, capped(24)] = Field(min_length=1)
+    word: Annotated[str, capped(30)] = Field(min_length=1)
+
+
 class PieceContent(BaseModel):
     quote: Quote
     narration: Narration
     visual: Visual
     design: DesignHints
     metadata: Metadata
+    # on-screen motion text (app/motion.py). Optional: pieces written before motion graphics still load.
+    hook: Annotated[str, capped(70)] = ""
+    callouts: list[Callout] = Field(default_factory=list)
+
+    @field_validator("callouts")
+    @classmethod
+    def _two_at_most(cls, v: list) -> list:
+        return v[:2]  # more is clutter; trimmed, not rejected, like every other over-long model field

@@ -88,6 +88,8 @@ PIECE_SHAPE = {
     "metadata": {"title": "short title, no hashtags", "description": "2-3 sentences", "caption": "social caption, 1-3 short lines",
                  "hashtags": ["#tag", "5-10 relevant tags"], "keywords": ["5-10 search keywords"],
                  "alt_text": "describes the visual for screen readers"},
+    "hook": "on-screen title for the first 2.5 s, max 7 words, 1-2 key words wrapped in *asterisks*",
+    "callouts": [{"text": "max 3 words or a number", "word": "the narration word it lands on"}],
 }
 
 
@@ -144,7 +146,10 @@ Batch theme: {plan.batch_theme}
 This piece: angle "{item.angle}", visual subject "{item.visual_subject}", preferred visual {item.visual_type}, \
 intensity {item.intensity}, narration style {item.narration_style}.
 The narration's FIRST line is the hook — write it last if you have to, but open on it. The quote is the line people \
-screenshot. Other pieces in the batch cover: {", ".join(siblings) or "none"}. Stay on this piece's angle.{_avoid(avoid)}
+screenshot. The "hook" is the animated title on screen while the first line is spoken: it is read with the sound \
+off, so it must stop the scroll alone (not a copy of the first line; a sharper promise or question). "callouts": 0-2 \
+short phrases or numbers worth seeing (a time, a count, a turning word), each tied to one word the narration \
+actually says; leave it empty rather than decorate. Other pieces in the batch cover: {", ".join(siblings) or "none"}. Stay on this piece's angle.{_avoid(avoid)}
 
 Write this piece. Return JSON shaped like: {json.dumps(PIECE_SHAPE)}"""},
     ]

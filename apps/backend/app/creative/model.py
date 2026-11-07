@@ -1,4 +1,6 @@
-"""The creative director. Provider-neutral interface + the DeepSeek implementation (OpenAI-compatible chat API)."""
+"""The creative director. Provider-neutral interface + the OpenRouter implementation (OpenAI-compatible chat API).
+One OpenRouter key covers every model call in the app: writing, clip selection (here) and transcription
+(app/clipper/transcribe.py)."""
 import logging
 import os
 import ssl
@@ -14,6 +16,15 @@ from app.errors import UserError
 
 log = logging.getLogger("creative")
 
+BASE = os.environ.get("ACS_OPENROUTER_URL", "https://openrouter.ai/api/v1")  # env: tests/proxies
+
+
+def api_key(action: str) -> str:
+    key = config.SECRETS.get("OPENROUTER_API_KEY")
+    if not key:
+        raise UserError(f"Add your OpenRouter API key in Settings to {action}.")
+    return key
+
 
 class CreativeModel:
     """PRD §7: providers are swappable. Implementations return validated schema objects or raise UserError."""
@@ -23,8 +34,8 @@ class CreativeModel:
     def write_piece(self, brief: dict, plan: BatchPlan, item: PlanItem, avoid: list[str]) -> PieceContent: ...
 
 
-class DeepSeekModel(CreativeModel):
-    URL = os.environ.get("ACS_DEEPSEEK_URL", "https://api.deepseek.com") + "/chat/completions"  # env: tests/proxies
+class OpenRouterModel(CreativeModel):
+    URL = BASE + "/chat/completions"
     RETRIES = 3  # PRD §79: API calls, exponential backoff
 
     def __init__(self, api_key: str, model: str, temperature: float, max_tokens: int, transport=None):
@@ -36,7 +47,7 @@ class DeepSeekModel(CreativeModel):
     def plan_batch(self, brief, avoid):
         plan = self._json(prompts.plan(brief, avoid), BatchPlan)
         if len(plan.pieces) != brief["quantity"]:
-            raise UserError("DeepSeek returned a plan with the wrong number of pieces.",
+            raise UserError("The AI returned a plan with the wrong number of pieces.",
                             f"asked {brief['quantity']}, got {len(plan.pieces)}")
         return plan
 
@@ -57,24 +68,26 @@ class DeepSeekModel(CreativeModel):
             except ValidationError as e:
                 last = str(e)
                 log.warning("invalid %s from model (attempt %d): %s", schema.__name__, i + 1, last[:300])
-        raise UserError("DeepSeek kept returning content in the wrong shape.", last)
+        raise UserError("The AI kept returning content in the wrong shape.", last)
 
     def _chat(self, messages: list[dict]) -> str:
         body = {"model": self.model, "messages": messages, "temperature": self.temperature,
-                "max_tokens": self.max_tokens, "response_format": {"type": "json_object"}}
+                "max_tokens": self.max_tokens, "response_format": {"type": "json_object"},
+                # only route to providers that honour JSON mode: without it a provider may ignore response_format
+                "provider": {"require_parameters": True}}
         for attempt in range(self.RETRIES + 1):
             try:
                 r = self.http.post(self.URL, json=body)
             except httpx.HTTPError as e:
                 if attempt == self.RETRIES:
-                    raise UserError("Couldn't reach DeepSeek. Check your internet connection.", repr(e))
+                    raise UserError("Couldn't reach OpenRouter. Check your internet connection.", repr(e))
             else:
                 if r.status_code == 401:
-                    raise UserError("DeepSeek authentication failed. Check your DeepSeek API key in Settings.", r.text[:500])
+                    raise UserError("OpenRouter authentication failed. Check your OpenRouter API key in Settings.", r.text[:500])
                 if r.status_code == 402:
-                    raise UserError("Your DeepSeek account is out of balance. Top it up, then try again.", r.text[:500])
-                if r.status_code in (400, 422):
-                    raise UserError("DeepSeek rejected the request. Check the model name in Settings.", r.text[:500])
+                    raise UserError("Your OpenRouter account is out of credits. Top it up, then try again.", r.text[:500])
+                if r.status_code in (400, 404, 422):
+                    raise UserError("OpenRouter rejected the request. Check the model names in Settings.", r.text[:500])
                 if r.is_success:
                     reply = r.json()
                     choice = reply["choices"][0]
@@ -89,16 +102,13 @@ class DeepSeekModel(CreativeModel):
                     if content:  # JSON mode occasionally returns empty content: retry
                         return content
                 elif attempt == self.RETRIES:
-                    raise UserError("DeepSeek is having trouble right now. Try again in a few minutes.",
+                    raise UserError("The AI service is having trouble right now. Try again in a few minutes.",
                                     f"HTTP {r.status_code}: {r.text[:500]}")
             if attempt < self.RETRIES:
                 time.sleep(2 ** attempt)
-        raise UserError("DeepSeek returned empty responses.", "empty content after retries")
+        raise UserError("The AI returned empty responses.", "empty content after retries")
 
 
 def get_model() -> CreativeModel:
-    key = config.SECRETS.get("DEEPSEEK_API_KEY")
-    if not key:
-        raise UserError("Add your DeepSeek API key in Settings to generate content.")
     s = settings.get()
-    return DeepSeekModel(key, s["ai_model"], s["ai_temperature"], s["ai_max_tokens"])
+    return OpenRouterModel(api_key("generate content"), s["ai_model"], s["ai_temperature"], s["ai_max_tokens"])

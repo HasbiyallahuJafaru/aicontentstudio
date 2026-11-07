@@ -16,12 +16,9 @@ export function ClipWorkspace({ project, onBack, onSettings }: { project: P; onB
   const [preview, setPreview] = useState<string>()
   const [publishing, setPublishing] = useState<Clip>()
   const [error, setError] = useState<BackendError>()
-  const [keys, setKeys] = useState<Record<string, boolean>>()
+  const [keySet, setKeySet] = useState<boolean>()
 
-  useEffect(() => {
-    Promise.all([hasKey('GROQ_API_KEY'), hasKey('DEEPSEEK_API_KEY')])
-      .then(([groq, deepseek]) => setKeys({ groq, deepseek }))
-  }, [])
+  useEffect(() => { hasKey('OPENROUTER_API_KEY').then(setKeySet) }, [])
   useEffect(() => { if (job && !running) setRev((r) => r + 1) }, [job?.status])
 
   const b = project.brief.kind === 'clip' ? project.brief : null
@@ -75,8 +72,8 @@ export function ClipWorkspace({ project, onBack, onSettings }: { project: P; onB
         </div>
       </header>
 
-      {keys && (keys.groq === false || keys.deepseek === false) && (
-        <div className="mb-6"><ErrorNote error={{ message: 'Clipping needs a Groq key (transcription) and a DeepSeek key (selection). Add them in Settings.' }}
+      {keySet === false && (
+        <div className="mb-6"><ErrorNote error={{ message: 'Clipping needs your OpenRouter API key. Add it in Settings.' }}
           action={<Button onClick={onSettings}>Open Settings</Button>} /></div>
       )}
       {error && <div className="mb-6"><ErrorNote error={error} /></div>}
@@ -100,7 +97,7 @@ export function ClipWorkspace({ project, onBack, onSettings }: { project: P; onB
       {!clips?.length && !running && (
         <section className="grid max-w-md gap-3 py-12">
           <h2 className="text-base font-semibold">No clips yet</h2>
-          <p className="text-ink-2">Clipping downloads the video, transcribes it with Groq, asks DeepSeek to pick the
+          <p className="text-ink-2">Clipping downloads the video, transcribes it, asks the AI to pick the
             moments that stand alone, then renders face-framed {b.orientation} clips with karaoke captions.</p>
         </section>
       )}

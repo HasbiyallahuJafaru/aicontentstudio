@@ -1,4 +1,4 @@
-"""Milestone 2: generation pipeline, jobs, dedup and the DeepSeek client. No network: fake model + httpx.MockTransport."""
+"""Milestone 2: generation pipeline, jobs, dedup and the OpenRouter client. No network: fake model + httpx.MockTransport."""
 import json
 import os
 import tempfile
@@ -101,7 +101,7 @@ class Generation(unittest.TestCase):
                 if job["status"] == "failed":
                     break
                 time.sleep(0.02)
-        self.assertEqual(job["error"]["message"], "Add your DeepSeek API key in Settings to generate content.")
+        self.assertEqual(job["error"]["message"], "Add your OpenRouter API key in Settings to generate content.")
         self.assertEqual(projects.get(p["id"])["status"], "failed")
 
     def test_recover_marks_interrupted_jobs(self):
@@ -120,8 +120,8 @@ class Generation(unittest.TestCase):
             BatchPlan.model_validate(bad)
 
 
-def deepseek(replies: list, calls: list):
-    """DeepSeekModel whose HTTP layer returns the given (status, content) replies in order."""
+def openrouter(replies: list, calls: list):
+    """OpenRouterModel whose HTTP layer returns the given (status, content) replies in order."""
     it = iter(replies)
 
     def handler(request: httpx.Request):
@@ -129,42 +129,53 @@ def deepseek(replies: list, calls: list):
         status, text = next(it)
         return httpx.Response(status, json={"choices": [{"message": {"content": text}}]})
 
-    return creative.DeepSeekModel("k", "deepseek-flash", 1.0, 2000, transport=httpx.MockTransport(handler))
+    return creative.OpenRouterModel("k", "deepseek/deepseek-v4.1-flash", 1.0, 2000, transport=httpx.MockTransport(handler))
 
 
-class DeepSeekClient(unittest.TestCase):
+class OpenRouterClient(unittest.TestCase):
     def setUp(self):
         mock.patch("time.sleep").start()
         self.addCleanup(mock.patch.stopall)
 
     def test_invalid_json_is_repaired_once(self):
         calls = []
-        m = deepseek([(200, '{"quote": "oops"}'), (200, json.dumps(piece_json("Keep going when it is boring.")))], calls)
+        m = openrouter([(200, '{"quote": "oops"}'), (200, json.dumps(piece_json("Keep going when it is boring.")))], calls)
         plan = BatchPlan.model_validate(plan_json(1))
         piece = m.write_piece(BRIEF, plan, plan.pieces[0], [])
         self.assertEqual(piece.quote.text, "Keep going when it is boring.")
         self.assertEqual(len(calls), 2)
         self.assertIn("did not match the required JSON shape", calls[1]["messages"][-1]["content"])
         self.assertEqual(calls[0]["response_format"], {"type": "json_object"})
+        self.assertEqual(calls[0]["provider"], {"require_parameters": True}, "only JSON-mode providers")
+
+    def test_out_of_credits_is_human(self):
+        with self.assertRaisesRegex(UserError, "out of credits"):
+            openrouter([(402, "")], []).plan_batch(BRIEF, [])
+
+    def test_bare_model_names_from_the_deepseek_era_map_to_openrouter_ids(self):
+        from app.settings import Settings
+        old = Settings(ai_model="deepseek-v4-pro", ai_model_fast="deepseek-flash")
+        self.assertEqual((old.ai_model, old.ai_model_fast), ("deepseek/deepseek-v4-pro", "deepseek/deepseek-v4.1-flash"))
+        self.assertEqual(Settings(ai_model="anthropic/claude-opus-5.5").ai_model, "anthropic/claude-opus-5.5")
 
     def test_gives_up_after_repair_and_regenerate(self):
-        m = deepseek([(200, "not json")] * 3, [])
+        m = openrouter([(200, "not json")] * 3, [])
         with self.assertRaisesRegex(UserError, "wrong shape"):
             m.plan_batch({**BRIEF, "quantity": 1}, [])
 
     def test_auth_error_is_human(self):
-        m = deepseek([(401, "")], [])
-        with self.assertRaisesRegex(UserError, "DeepSeek authentication failed"):
+        m = openrouter([(401, "")], [])
+        with self.assertRaisesRegex(UserError, "OpenRouter authentication failed"):
             m.plan_batch(BRIEF, [])
 
     def test_empty_and_server_errors_retry(self):
         calls = []
-        m = deepseek([(500, ""), (200, ""), (200, json.dumps(plan_json(3)))], calls)
+        m = openrouter([(500, ""), (200, ""), (200, json.dumps(plan_json(3)))], calls)
         self.assertEqual(len(m.plan_batch(BRIEF, []).pieces), 3)
         self.assertEqual(len(calls), 3)
 
     def test_wrong_piece_count_rejected(self):
-        m = deepseek([(200, json.dumps(plan_json(2)))], [])
+        m = openrouter([(200, json.dumps(plan_json(2)))], [])
         with self.assertRaisesRegex(UserError, "wrong number"):
             m.plan_batch(BRIEF, [])
 

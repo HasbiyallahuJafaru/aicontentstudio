@@ -13,7 +13,7 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont, UnidentifiedImageError
 
-from app import config, edit
+from app import config, edit, motion
 from app.errors import UserError
 
 FONT_PATH = Path(__file__).resolve().parents[1] / "assets" / "fonts" / "Sora-Variable.ttf"
@@ -176,7 +176,8 @@ class FFmpegRenderer:
                      src_duration: float, still: bool, progress, out_fps: float | None = None,
                      scrim_png: Path | None = None, quote: str | None = None, palette: dict | None = None,
                      look: str = "none", duck: float = 6.0, blur_background: bool = False, parallax: bool = False,
-                     subtitles: Path | None = None, shots: list[dict] | None = None) -> dict:
+                     subtitles: Path | None = None, shots: list[dict] | None = None,
+                     layers: list[dict] | None = None) -> dict:
         """Edits a finished video the way the top motivational studios do: the footage is cut into motion shots
         (zoom in / zoom out / pan / push-in), a still cutaway can be merged between video shots, the whole
         timeline is graded with the look preset and dressed with vignette + film grain, narration is normalised
@@ -285,6 +286,11 @@ class FFmpegRenderer:
             chain += [f"[{narr_idx}:v]format=rgba[scr]", f"[{prev}][scr]overlay=0:0[o0]"]
             prev = "o0"
             narr_idx += 1
+        if layers:  # animated hook title / callouts (app/motion.py), over the subtitles
+            motion_args, motion_chain, prev = motion.overlay_graph(prev, layers, narr_idx)
+            args += motion_args
+            chain += motion_chain
+            narr_idx += len(layers)
         args += ["-i", str(narration)]
         if quote:
             where = placement(quote, subject_position, "video", self.w, self.h)
@@ -315,7 +321,8 @@ class FFmpegRenderer:
 
 
         args += ["-filter_complex", ";".join(chain) + ";" + a_chain, "-map", "[vout]", "-map", "[aout]",
-                 "-c:v", "libx264", "-crf", str(self.crf), "-preset", "veryfast", "-c:a", "aac",
+                 "-c:v", "libx264", "-crf", str(self.crf), "-preset", "veryfast", "-c:a", "aac",  # CRF sets quality; medium here
+                # more than doubles a director-cut render (smoke: >240 s vs 98 s) for mostly a smaller file
                  "-b:a", self.audio_bitrate, "-movflags", "+faststart", "-t", f"{duration}", str(out)]
 
         # §32 control: stderr goes to a temp file, never a pipe - a stderr pipe here deadlocks or makes

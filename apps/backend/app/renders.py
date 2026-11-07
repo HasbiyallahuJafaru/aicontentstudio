@@ -8,7 +8,7 @@ import shutil
 import uuid
 from pathlib import Path
 
-from app import config, content, edit, projects, render, settings, tts
+from app import config, content, edit, motion, projects, render, settings, tts
 from app.database import connect
 from app.errors import UserError
 
@@ -40,22 +40,15 @@ def _wanted_kinds(brief: dict, piece: dict) -> list[str]:
 
 
 def _words(text: str, audio, duration: float) -> list[dict]:
-    """Word timings for the narration. Real ones when a Groq key is set (the same STT the clip engine uses),
+    """Word timings for the narration. Real ones when an OpenRouter key is set (the same STT the clip engine uses),
     estimated from word length otherwise. They drive both the karaoke captions and where the edit cuts."""
-    if config.SECRETS.get("GROQ_API_KEY"):
+    from app.clipper.transcribe import estimate_words, transcribe
+    if config.SECRETS.get("OPENROUTER_API_KEY"):
         try:
-            from app.clipper.transcribe import transcribe
             return transcribe(audio, config.MEDIA_DIR / "tmp" / "narration")["words"]
         except UserError:
             pass  # STT is a nicety here, not the job: fall back rather than fail a render over it
-    tokens = [w for w in text.split() if w]
-    total = sum(len(w) + 1 for w in tokens) or 1
-    words, t = [], 0.0
-    for w in tokens:
-        span = duration * (len(w) + 1) / total
-        words.append({"word": w, "start": round(t, 3), "end": round(min(t + span * 0.9, duration), 3)})
-        t += span
-    return words
+    return estimate_words(text, 0.0, duration)
 
 
 def _shots_for(assets: list[dict], duration: float, words: list[dict], tone: str) -> list[dict]:
@@ -122,6 +115,11 @@ def render_project(project_id: str, report, piece_ids: list[str] | None = None) 
                                               renderer.w, renderer.h) if brief["subtitles"] else None
                         cut = edit.cut_for(brief["tone"])
                         look = cut["look"] if brief["look_filter"] == "auto" else brief["look_filter"]
+                        report(f"Animating titles {i} of {n}", i / n)
+                        callouts = [(c["text"], t) for c in content_data.get("callouts") or []
+                                    if (t := motion.anchor_time(words, c["word"])) is not None]
+                        layers = motion.layers(brief["tone"], renderer.w, renderer.h,
+                                               content_data.get("hook") or "", callouts)
                         info = renderer.render_video(src=config.MEDIA_DIR / asset["local_path"],
                                                      narration=narration.path, out=full_out,
                                                      subject_position=asset["subject_position"] or "center",
@@ -130,7 +128,8 @@ def render_project(project_id: str, report, piece_ids: list[str] | None = None) 
                                                      out_fps=brief["fps"], look=look, duck=cut["duck"],
                                                      blur_background=brief["blur_background"],
                                                      parallax=brief["parallax"], subtitles=subs,
-                                                     shots=_shots_for(pool, timeline, words, brief["tone"]))
+                                                     shots=_shots_for(pool, timeline, words, brief["tone"]),
+                                                     layers=layers)
                         duration, fps, w, h = info["duration"], info["fps"], renderer.w, renderer.h
                     else:
                         image_src = config.MEDIA_DIR / asset["local_path"]

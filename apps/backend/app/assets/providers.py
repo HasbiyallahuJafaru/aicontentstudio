@@ -44,7 +44,7 @@ class VisualProvider:
 
 
 class _Http:
-    """Shared plumbing: Windows cert store (see DeepSeekModel), bounded retries, human errors (PRD §79)."""
+    """Shared plumbing: Windows cert store (see OpenRouterModel), bounded retries, human errors (PRD §79)."""
     RETRIES = 2
 
     def __init__(self, label: str, headers: dict, transport: httpx.AsyncBaseTransport | None = None):

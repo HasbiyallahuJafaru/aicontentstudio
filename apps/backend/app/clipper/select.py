@@ -1,4 +1,4 @@
-"""Two-pass DeepSeek selection: pass 1 scans the whole transcript for candidate moments, pass 2 reads those
+"""Two-pass AI selection (fast scanning model, then the writing model): pass 1 scans the whole transcript for candidate moments, pass 2 reads those
 candidates with a little surrounding context, drops the ones that don't stand alone, picks the best diverse set
 and writes hooks, titles and per-platform posts. Timestamps always stay property of pass 1."""
 import logging
@@ -6,8 +6,8 @@ import math
 
 from pydantic import BaseModel, model_validator
 
-from app import config, settings
-from app.creative.model import DeepSeekModel
+from app import settings
+from app.creative.model import OpenRouterModel, api_key
 from app.errors import UserError
 
 log = logging.getLogger("clipper.select")
@@ -29,12 +29,18 @@ Prefer clips whose first sentence is a hook strong enough to stop a scroll, and 
 candidate that makes the same point as one you already picked.
 You may trim a clip's edges to the nearest complete sentence by giving a tighter "start"/"end" (seconds,
 within the candidate's own bounds); omit them to keep the candidate as-is.
+Cold open: if the clip's single most gripping sentence (the payoff, the surprising claim) is NOT its first
+sentence, give its span as "cold_open_start"/"cold_open_end" (1-4 seconds, inside the clip). It plays first as a
+teaser, then the clip runs from the top. Omit both when the clip already opens on its strongest line.
+"emphasis": 2-6 words actually said in the clip that carry its meaning (names, numbers, the key idea); the
+captions colour them.
 Use only what is actually said in each clip. Write natively per platform: TikTok and Instagram casual with a few hashtags,
 YouTube Shorts a searchable description, LinkedIn a professional takeaway, Facebook conversational.
 Never exceed these lengths in characters: {limits}.
 Return json only, best clip first:
-{{"clips": [{{"id": 3, "score": 94, "hook": "on-screen opening line, max 8 words", "title": "short title",
-"description": "1-2 sentence summary", "hashtags": ["#example"],
+{{"clips": [{{"id": 3, "score": 94, "hook": "animated on-screen title for the first 2.5 s, max 7 words, the 1-2 key words wrapped in *asterisks*", "title": "short title",
+"description": "1-2 sentence summary", "hashtags": ["#example"], "emphasis": ["word"],
+"cold_open_start": 752.1, "cold_open_end": 754.9,
 "posts": {{"tiktok": "...", "instagram": "...", "youtube": "...", "linkedin": "...", "facebook": "...", "x": "..."}}}}]}}"""
 
 # Longest post each network takes, in characters (checked 2026-09-18). Conservative where a network's cap depends
@@ -86,6 +92,9 @@ class Pick(BaseModel):
     posts: Posts
     start: float | None = None  # optional trim: must sit inside the candidate
     end: float | None = None
+    cold_open_start: float | None = None  # optional teaser line: must sit inside the final clip
+    cold_open_end: float | None = None
+    emphasis: list[str] = []
 
 
 class Picks(BaseModel):
@@ -102,22 +111,21 @@ class Clip(BaseModel):
     description: str
     hashtags: list[str]
     posts: Posts
+    cold_open: tuple[float, float] | None = None
+    emphasis: list[str] = []
 
 
-def _ask(system: str, user: str, parse) -> object:
-    """Call the model in JSON mode, up to 3 tries; `parse` validates (raises ValueError on bad output)."""
-    key = config.SECRETS.get("DEEPSEEK_API_KEY")
-    if not key:
-        raise UserError("Add your DeepSeek API key in Settings to clip videos.")
-    deepseek = DeepSeekModel(key, settings.get()["ai_model"], 1.0, 64000)  # 30 clips of copy ~12K tokens plus thinking
+def _ask(system: str, user: str, parse, model: str) -> object:
+    """Call `model` in JSON mode, up to 3 tries; `parse` validates (raises ValueError on bad output)."""
+    ai = OpenRouterModel(api_key("clip videos"), model, 1.0, 64000)  # 30 clips of copy ~12K tokens plus thinking
     messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]
     for attempt in range(1, 4):
-        text = deepseek._chat(messages)
+        text = ai._chat(messages)
         try:
             return parse(text)
         except ValueError as e:  # pydantic's ValidationError is a ValueError
             log.warning("rejected model output (attempt %d): %s", attempt, e)
-    raise UserError("DeepSeek kept returning unusable clip selections. Try again in a few minutes.")
+    raise UserError("The AI kept returning unusable clip selections. Try again in a few minutes.")
 
 
 def parse_moments(content: str, duration: float, min_len: float, max_len: float) -> list[Moment]:
@@ -146,7 +154,14 @@ def parse_picks(content: str, moments: list[Moment], n: int, min_len: float = 0,
             if p.start is not None and p.end is not None and m.start <= p.start < p.end <= m.end \
                     and min_len * 0.8 <= p.end - p.start <= max_len * 1.2:
                 start, end = p.start, p.end
-            clips.append(Clip(start=start, end=end, reason=m.reason, **p.model_dump(exclude={"id", "start", "end"})))
+            cold = None  # a teaser that is the clip's own opening line would just play it twice in a row
+            if p.cold_open_start is not None and p.cold_open_end is not None \
+                    and start + 1.5 <= p.cold_open_start < p.cold_open_end <= end \
+                    and 0.8 <= p.cold_open_end - p.cold_open_start <= 4.5:
+                cold = (p.cold_open_start, p.cold_open_end)
+            clips.append(Clip(start=start, end=end, reason=m.reason, cold_open=cold, emphasis=p.emphasis[:6],
+                              **p.model_dump(exclude={"id", "start", "end", "cold_open_start", "cold_open_end",
+                                                      "emphasis"})))
     if not clips:
         raise ValueError("no valid candidate ids")
     return clips[:n]
@@ -155,8 +170,9 @@ def parse_picks(content: str, moments: list[Moment], n: int, min_len: float = 0,
 def find_clips(transcript: dict, n: int, min_len: float, max_len: float) -> list[Clip]:
     segments, words = transcript["segments"], transcript["words"]
     lines = "\n".join(f"[{s['start']:.1f}-{s['end']:.1f}] {s['text']}" for s in segments)
-    moments = _ask(PASS1.format(min=min_len, max=max_len, n=min(3 * n, 90)), lines,
-                   lambda c: parse_moments(c, segments[-1]["end"], min_len, max_len))
+    s = settings.get()
+    moments = _ask(PASS1.format(min=min_len, max=max_len, n=min(3 * n, 90)), lines,  # the whole transcript: fast
+                   lambda c: parse_moments(c, segments[-1]["end"], min_len, max_len), s["ai_model_fast"])
     said = lambda a, b: " ".join(w["word"] for w in words if a <= w["start"] < b)
     candidates = "\n\n".join(
         f"#{i} ({m.end - m.start:.0f}s) {m.reason}\n"
@@ -166,7 +182,7 @@ def find_clips(transcript: dict, n: int, min_len: float, max_len: float) -> list
         for i, m in enumerate(moments))
     limits = ", ".join(f"{network} {cap}" for network, cap in LIMITS.items())
     return _ask(PASS2.format(n=n, limits=limits), candidates,
-                lambda c: parse_picks(c, moments, n, min_len, max_len))
+                lambda c: parse_picks(c, moments, n, min_len, max_len), s["ai_model"])  # judgment + copy
 
 
 def snap(start: float, end: float, words: list[dict]) -> tuple[float, float]:

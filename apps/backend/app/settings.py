@@ -15,9 +15,21 @@ _LEGACY_TONES = {"cinematic": "cinema", "reflective": "hope", "calm": "stoic", "
 
 
 class Settings(BaseModel):
-    ai_model: str = Field("deepseek-flash", min_length=1, max_length=64)
+    # OpenRouter model ids. The writer: batch plans, pieces (with their metadata), clip picks and post copy.
+    ai_model: str = Field("deepseek/deepseek-v4-pro", min_length=1, max_length=80)
+    # The scanner: clip pass 1 reads a whole transcript (huge input, simple job), so the cheap model does it.
+    ai_model_fast: str = Field("deepseek/deepseek-v4.1-flash", min_length=1, max_length=80)
+
+    @field_validator("ai_model", "ai_model_fast", mode="before")
+    @classmethod
+    def _openrouter_id(cls, v):
+        """Rows saved when the app called DeepSeek directly hold bare names; OpenRouter ids carry the vendor."""
+        if isinstance(v, str) and v and "/" not in v:
+            return {"deepseek-flash": "deepseek/deepseek-v4.1-flash"}.get(v, f"deepseek/{v}")
+        return v
+
     ai_temperature: float = Field(1.0, ge=0, le=2)
-    ai_max_tokens: int = Field(4000, ge=256, le=8192)  # a piece + its metadata, with room for a thinking model
+    ai_max_tokens: int = Field(8192, ge=256, le=8192)  # a piece + its metadata, with room for a thinking model
     default_topic: str = Field("", max_length=60)  # blank: the Create page starts empty
     default_tone: Genre = "hope"
 
@@ -48,12 +60,16 @@ class Settings(BaseModel):
     music_path: str = Field("", max_length=500)
     music_volume: float = Field(0.15, ge=0, le=0.5)
     # PRD §20: quality configurable under Advanced Settings. CRF 18-32 (lower = better, bigger files).
-    render_crf: int = Field(22, ge=14, le=32)
+    render_crf: int = Field(18, ge=14, le=32)  # platforms re-encode on upload: give them a clean master
     render_audio_bitrate: str = Field("192k", pattern=r"^\d+k$")
     render_width: int = Field(1080, ge=360, le=2160)
     render_height: int = Field(1920, ge=640, le=3840)
     # Milestone 7 Phase C: publishing. Buffer's public OAuth client id (no secret — PKCE), and the user's own
     # S3-compatible host for the videos Buffer publishes from (its keys live in the credentials table).
+    # Animated hook titles and callouts (HyperFrames through Edge/Chrome). Off = plain edit, same as no browser.
+    motion_graphics: bool = True
+    # Clip downloads: a browser name (firefox, chrome, edge, ...) or a cookies.txt path, for YouTube's bot check.
+    ytdlp_cookies: str = Field("", max_length=500)
     buffer_client_id: str = Field("", max_length=120)
     publish_host_endpoint: str = Field("", max_length=300)
     publish_host_bucket: str = Field("", max_length=200)

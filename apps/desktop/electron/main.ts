@@ -80,6 +80,7 @@ app.whenReady().then(() => {
     backendDir: dev ? resolve(app.getAppPath(), '../backend') : join(process.resourcesPath, 'backend'),
     dataDir,
     ffmpegDir: dev ? undefined : join(process.resourcesPath, 'ffmpeg'),
+    motionRunner: join(dev ? app.getAppPath() : join(process.resourcesPath, 'app.asar.unpacked'), 'motion', 'render.mjs'),
     dev,
     onStatus: (s) => broadcast('backend:status', (status = s)),
     onEvent: (event, data) => broadcast('backend:event', event, data),

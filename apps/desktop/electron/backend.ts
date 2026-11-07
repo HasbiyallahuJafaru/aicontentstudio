@@ -11,6 +11,7 @@ type Options = {
   backendDir: string
   dataDir: string
   ffmpegDir?: string
+  motionRunner: string // apps/desktop/motion/render.mjs (unpacked from the asar when packaged)
   dev: boolean
   onStatus: (s: BackendStatus) => void
   onEvent: (event: string, data: unknown) => void
@@ -28,7 +29,7 @@ export function createBackend(o: Options) {
   mkdirSync(join(o.dataDir, 'logs'), { recursive: true })
 
   // A packaged install ships the PyInstaller backend next to its data; a dev checkout runs the venv.
-  const frozen = join(o.backendDir, 'backend.exe')
+  const frozen = join(o.backendDir, 'AI Social Content Studio Engine.exe') // name set in apps/backend/backend.spec
   const venvPython = join(o.backendDir, '.venv', 'Scripts', 'python.exe')
   const [command, args] = existsSync(frozen)
     ? [frozen, [] as string[]]
@@ -45,7 +46,9 @@ export function createBackend(o: Options) {
     o.onStatus({ state: 'starting' })
     const proc = spawn(command, args, {
       cwd: o.backendDir,
-      env: { ...process.env, ACS_DATA_DIR: o.dataDir, PYTHONUNBUFFERED: '1', PYTHONIOENCODING: 'utf-8', ...ffmpegEnv },
+      // ACS_NODE: this very Electron binary, which the backend runs as Node for HyperFrames motion layers
+      env: { ...process.env, ACS_DATA_DIR: o.dataDir, PYTHONUNBUFFERED: '1', PYTHONIOENCODING: 'utf-8', ...ffmpegEnv,
+        ACS_NODE: process.execPath, ACS_MOTION_RUNNER: o.motionRunner },
       windowsHide: true,
     })
     child = proc

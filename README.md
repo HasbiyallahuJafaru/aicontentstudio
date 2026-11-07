@@ -73,6 +73,8 @@ still in progress, so treat output quality claims as unproven until you have run
   lines over stdio, one module per area, SQLite with plain SQL migrations. All pipeline logic lives here; the UI
   never duplicates it.
 - `app/edit.py` is the edit grammar, `app/renders.py` plans the shots, `app/render.py` drives ffmpeg.
+  `app/motion.py` renders animated hook titles and callouts with HyperFrames (HTML + GSAP through Edge or Chrome,
+  `apps/desktop/motion/render.mjs` on the app's own Electron binary) and composites them over the edit.
   `app/clipper/` is the long-video engine, `app/publish/` is Buffer and Metricool.
 - Anything provider-specific sits behind a small interface: `CreativeModel`, `VisualProvider`, `TTSProvider`,
   `Renderer`, `Publisher`.
@@ -109,11 +111,13 @@ Open Settings on first run. Nothing is required to launch the app, and each key 
 
 | Key | Unlocks |
 |---|---|
-| DeepSeek | Writing: batch plans, quotes, narration, per-platform copy |
-| Pexels or Unsplash | Stock footage and photos for written pieces |
-| Groq | Transcription for clip projects, and real word timings for karaoke captions |
+| OpenRouter | Every AI call: writing (batch plans, quotes, narration, per-platform copy), clip selection, and Whisper transcription for clips and karaoke word timings |
+| Pexels (Unsplash optional) | Stock footage and photos for written pieces |
 | Buffer | Scheduling and publishing, via OAuth. Optional |
 | Metricool | Publishing through the Metricool MCP. Optional |
+
+Models are set in Settings → AI as OpenRouter ids: `deepseek/deepseek-v4-pro` writes, `deepseek/deepseek-v4.1-flash`
+scans transcripts. Transcription uses `openai/whisper-large-v3-turbo`, the cheapest Whisper on OpenRouter.
 
 Narration is local and free by default (Kokoro, an 82M on-device voice model), with Windows SAPI as a fallback.
 Keys are stored encrypted in your user profile and are only ever decrypted by the app itself.

@@ -3,7 +3,8 @@
 // Build it first:  npm run package    (from the repo root, so the backend is frozen too)
 // Run:             node scripts/smoke-packaged.mjs
 import { _electron as electron } from 'playwright-core'
-import { existsSync, mkdirSync, mkdtempSync } from 'node:fs'
+import { execFileSync, spawnSync } from 'node:child_process'
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -14,8 +15,42 @@ const unpacked = join(here, '..', 'release', 'win-unpacked')
 const exe = join(unpacked, 'AI Social Content Studio.exe')
 assert.ok(existsSync(exe), `no packaged build at ${exe} - run npm run package first`)
 
-for (const rel of ['resources/backend/backend.exe', 'resources/ffmpeg/ffmpeg.exe', 'resources/ffmpeg/ffprobe.exe']) {
+for (const rel of ['resources/backend/AI Social Content Studio Engine.exe','resources/ffmpeg/ffmpeg.exe', 'resources/ffmpeg/ffprobe.exe']) {
   assert.ok(existsSync(join(unpacked, rel)), `missing from the package: ${rel}`)
+}
+
+// Every exe we ship should be signed once a certificate is configured (CSC_LINK + CSC_KEY_PASSWORD): unsigned
+// exes are what antivirus sandboxes. ACS_REQUIRE_SIGNED=1 turns the report into a failure.
+const sigs = JSON.parse(execFileSync('powershell', ['-NoProfile', '-Command',
+  `Get-ChildItem -LiteralPath '${unpacked}' -Recurse -Filter *.exe | ForEach-Object { [pscustomobject]@{ f = $_.FullName.Substring(${unpacked.length + 1}); s = [string](Get-AuthenticodeSignature -LiteralPath $_.FullName).Status } } | ConvertTo-Json -Compress`,
+], { encoding: 'utf8' }))
+for (const { f, s } of [sigs].flat()) console.log(`signature ${s.padEnd(9)} ${f}`)
+const unsigned = [sigs].flat().filter((x) => x.s !== 'Valid')
+if (process.env.ACS_REQUIRE_SIGNED === '1') assert.equal(unsigned.length, 0, `unsigned: ${unsigned.map((x) => x.f).join(', ')}`)
+
+// Motion layers: the packaged exe, run as Node, must render a composition through the unpacked HyperFrames runner
+// with the bundled ffmpeg and the GSAP the frozen backend ships (the same path app/motion.py takes).
+{
+  const comp = mkdtempSync(join(tmpdir(), 'acs-motion-'))
+  const gsap = join(unpacked, 'resources', 'backend', '_internal', 'app', 'motion_assets', 'gsap.min.js')
+  assert.ok(existsSync(gsap), `missing from the package: ${gsap}`)
+  copyFileSync(gsap, join(comp, 'gsap.min.js'))
+  writeFileSync(join(comp, 'index.html'), `<!doctype html><html><body style="margin:0;background:transparent">
+<div id="root" data-composition-id="probe" data-start="0" data-width="320" data-height="240" data-duration="1">
+<div class="clip" data-start="0" data-duration="1" data-track-index="0"><b id="t" style="font:64px sans-serif;color:#fff">HOOK</b></div></div>
+<script src="gsap.min.js"></script><script>const tl = gsap.timeline({ paused: true });
+tl.from('#t', { opacity: 0, duration: 0.5 }); window.__timelines = { probe: tl };</script></body></html>`)
+  const layer = join(comp, 'layer.webm')
+  const ff = join(unpacked, 'resources', 'ffmpeg')
+  const run = spawnSync(exe, [join(unpacked, 'resources', 'app.asar.unpacked', 'motion', 'render.mjs'), comp, layer], {
+    env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', HYPERFRAMES_FFMPEG_PATH: join(ff, 'ffmpeg.exe'),
+      HYPERFRAMES_FFPROBE_PATH: join(ff, 'ffprobe.exe'),
+      HYPERFRAMES_BROWSER_PATH: process.env.HYPERFRAMES_BROWSER_PATH || 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe' },
+    encoding: 'utf8', timeout: 240_000,
+  })
+  const result = run.stdout.trim().split('\n').reverse().find((l) => l.startsWith('{')) ?? run.stderr.slice(-800)
+  assert.ok(existsSync(layer), `packaged motion render failed: ${result}`)
+  console.log(`packaged motion layer ok: ${result}`)
 }
 
 const out = process.env.SMOKE_OUT || join(tmpdir(), 'acs-smoke')

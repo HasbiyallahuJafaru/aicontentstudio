@@ -5,9 +5,9 @@ import shutil
 import uuid
 from pathlib import Path
 
-from app import config, projects
-from app.clipper import acquire, select, transcribe
-from app.clipper.render_clip import render as render_clip
+from app import config, motion, projects, settings
+from app.clipper import acquire, select, tighten, transcribe
+from app.clipper.render_clip import ORIENTATIONS, render as render_clip
 from app.clipper.select import snap
 from app.database import connect
 from app.errors import UserError
@@ -37,7 +37,8 @@ def run(project_id: str, report) -> None:
 
     meta: dict = {}
     video, work = acquire.acquire(b["source"], config.MEDIA_DIR / WORK,
-                                  lambda pct: report("Downloading", round(0.02 + 0.23 * pct / 100, 3)), meta)
+                                  lambda pct: report("Downloading", round(0.02 + 0.23 * pct / 100, 3)), meta,
+                                  cookies=settings.get()["ytdlp_cookies"])
     if meta.get("title"):  # the source's own title is the honest project name
         with connect() as conn:
             conn.execute("UPDATE projects SET name = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') "
@@ -58,10 +59,15 @@ def run(project_id: str, report) -> None:
     total = len(found)
     for i, clip in enumerate(found, 1):
         report(f"Rendering clip {i} of {total}", round(0.55 + 0.45 * (i - 1) / total, 3))
-        clip.start, clip.end = snap(clip.start, clip.end, transcript["words"])
+        words = transcript["words"]
+        clip.start, clip.end = snap(clip.start, clip.end, words)
+        start, end = max(0, clip.start - 0.1), clip.end + 0.2
+        cold = tighten.to_words(words, *clip.cold_open) if clip.cold_open else None
         path = out / f"clip{i:02}.mp4"
-        render_clip(video, max(0, clip.start - 0.1), clip.end + 0.2, path, transcript["words"],
-                    b["burn_captions"], b["orientation"], fps=b["fps"])
+        layers = motion.layers("clip", *ORIENTATIONS[b["orientation"]][1], hook=clip.hook)  # animated title
+        render_clip(video, start, end, path, words, b["burn_captions"], b["orientation"], fps=b["fps"],
+                    ranges=tighten.plan(words, start, end, cold), emphasis=clip.emphasis, layers=layers)
+        clip.hook = clip.hook.replace("*", "")  # the keyword marks are for the animation, not the stored copy
         with connect() as conn:
             conn.execute("INSERT INTO clips (id, project_id, idx, start_at, end_at, score, reason, hook, title, "
                          "description, hashtags, posts, video_path, cover_path) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",

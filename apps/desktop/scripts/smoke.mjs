@@ -1,5 +1,5 @@
 // End-to-end check of the real app (build first: npm run build). Uses a throwaway data + profile folder and local
-// fake DeepSeek + Pexels servers (no paid calls). Screenshots go to SMOKE_OUT (default: <tmp>/acs-smoke). Exit 1 on failure.
+// fake OpenRouter (chat + transcription) + Pexels servers (no paid calls). Screenshots go to SMOKE_OUT (default: <tmp>/acs-smoke). Exit 1 on failure.
 import { _electron as electron } from 'playwright-core'
 import { createServer } from 'node:http'
 import { mkdtempSync, readFileSync, readdirSync, mkdirSync } from 'node:fs'
@@ -12,7 +12,20 @@ const QUOTES = ['Show up before the feeling does.', 'Small steps still count as 
 const SUBJECTS = ['runner on a mountain ridge at dawn', 'empty city crosswalk at night', 'fog rolling over a still lake']
 const CLIP = { title: 'The honest hour', hook: 'Most people quit too early', description: 'A story about lasting longer.' }
 let piece = 0
+// Fake Whisper: word-level verbose_json over the whole fixture, whatever audio arrives
+const WORDS = ['One.', 'Two.', 'Three.', 'Four.', 'Five.', 'Six.', 'Seven.', 'Eight.', 'Nine.', 'Ten.', 'Eleven.', 'Twelve.']
+const transcription = JSON.stringify({
+  language: 'en',
+  segments: [{ start: 0, end: 11.5, text: WORDS.join(' ') }],
+  words: WORDS.map((w, i) => ({ word: w, start: i * 0.95, end: i * 0.95 + 0.6 })),
+})
+// Fake OpenRouter: one base URL, routed by path like the real one (chat completions vs audio transcriptions)
 const fake = createServer((req, res) => {
+  if (req.url.endsWith('/audio/transcriptions')) {
+    req.on('data', () => {})
+    req.on('end', () => res.end(transcription))
+    return
+  }
   let body = ''
   req.on('data', (c) => (body += c))
   req.on('end', () => {
@@ -34,17 +47,6 @@ const fake = createServer((req, res) => {
             }
     setTimeout(() => res.end(JSON.stringify({ choices: [{ message: { content: JSON.stringify(out) } }] })), 400)
   })
-}).listen(0)
-
-// Fake Groq Whisper: word-level verbose_json over the whole fixture, whatever audio arrives
-const WORDS = ['One.', 'Two.', 'Three.', 'Four.', 'Five.', 'Six.', 'Seven.', 'Eight.', 'Nine.', 'Ten.', 'Eleven.', 'Twelve.']
-const fakeGroq = createServer((req, res) => {
-  req.on('data', () => {})
-  req.on('end', () => res.end(JSON.stringify({
-    language: 'en',
-    segments: [{ start: 0, end: 11.5, text: WORDS.join(' ') }],
-    words: WORDS.map((w, i) => ({ word: w, start: i * 0.95, end: i * 0.95 + 0.6 })),
-  })))
 }).listen(0)
 
 /** An 8x8 BMP whose stripes repeat every `period` pixels: distinct-looking thumbnails, so each asset hashes differently. */
@@ -98,8 +100,8 @@ pexelsBase = `http://127.0.0.1:${fakePexels.address().port}`
 const root = process.env.SMOKE_DATA || mkdtempSync(join(tmpdir(), 'acs-'))
 const out = process.env.SMOKE_OUT || join(tmpdir(), 'acs-smoke')
 mkdirSync(out, { recursive: true })
-const env = { ...process.env, ACS_DATA_DIR: join(root, 'data'), ACS_DEEPSEEK_URL: `http://127.0.0.1:${fake.address().port}`,
-  ACS_PEXELS_URL: pexelsBase, ACS_GROQ_URL: `http://127.0.0.1:${fakeGroq.address().port}` }
+const env = { ...process.env, ACS_DATA_DIR: join(root, 'data'), ACS_OPENROUTER_URL: `http://127.0.0.1:${fake.address().port}`,
+  ACS_PEXELS_URL: pexelsBase }
 delete env.ELECTRON_RENDERER_URL
 delete env.ELECTRON_RUN_AS_NODE
 
@@ -164,7 +166,7 @@ await assertNoHorizontalOverflow(win, 'create')
 
 // Settings: keys (encrypted) + a default
 await win.keyboard.press('Control+,')
-for (const [labelText, value] of [['DeepSeek API key', 'sk-smoke-deepseek'], ['Pexels API key', 'smoke-test-key-123'], ['Groq API key', 'gsk-smoke-groq']]) {
+for (const [labelText, value] of [['OpenRouter API key', 'sk-or-smoke'], ['Pexels API key', 'smoke-test-key-123']]) {
   await win.getByLabel(labelText).fill(value)
   await win.getByLabel(labelText).press('Enter')
 }
@@ -262,7 +264,8 @@ await win.waitForFunction(() => document.querySelectorAll('button[title^="render
   undefined, { timeout: 240_000 })
 
 // Export the project (PRD 47): every piece lands in exports/<date>/ and shows as Exported
-await win.getByRole('button', { name: 'Export', exact: true }).click()
+// Export stays disabled until the whole re-render job finishes, not just piece 1's chips: wait for the job
+await win.getByRole('button', { name: 'Export', exact: true }).click({ timeout: 240_000 })
 await win.waitForFunction(() => document.querySelectorAll('main').length &&
     [...document.querySelectorAll('main span')].filter((s) => s.textContent === 'Exported').length === 3,
   undefined, { timeout: 120_000 })
@@ -319,7 +322,7 @@ await win.getByText('Pexels · Video').first().waitFor()
 assert.equal(await win.getByText('Pexels · Video').count(), 3, 'assets survive restart')
 await shot(win, '7-library-restart')
 
-// Clip from video (Milestone 7 Phase B): local 12s fixture through fake Groq + the fake DeepSeek's clip passes
+// Clip from video (Milestone 7 Phase B): local 12s fixture through the fake OpenRouter's transcription + clip passes
 const talk = join(root, 'talk.mp4')
 {
   const r = spawnSync('ffmpeg', ['-v', 'error', '-y', '-f', 'lavfi', '-i', 'testsrc2=size=640x360:rate=30:duration=12',
@@ -366,7 +369,6 @@ await win.getByRole('radio', { name: '3', exact: true }).waitFor()
 assert.equal(await win.getByRole('radio', { name: '3', exact: true }).isChecked(), true, 'settings survive restart')
 await app.close()
 fake.close()
-fakeGroq.close()
 fakePexels.close()
 
 console.log(`smoke ok, screenshots in ${out}`)

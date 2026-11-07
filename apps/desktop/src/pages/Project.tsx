@@ -28,7 +28,7 @@ export function Project({ id, onBack, onSettings }: { id: string; onBack: () => 
     if (job?.status === 'completed') listRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }, [job?.status])
 
-  useEffect(() => { hasKey('DEEPSEEK_API_KEY').then(setKeySet) }, [])
+  useEffect(() => { hasKey('OPENROUTER_API_KEY').then(setKeySet) }, [])
   useEffect(() => { if (job && !running) reloadProject() }, [job?.status])
 
   const renderable = !!pieces?.some((p) => p.status !== 'failed' && p.content.asset)
@@ -98,7 +98,7 @@ export function Project({ id, onBack, onSettings }: { id: string; onBack: () => 
       </header>
 
       {keySet === false && (
-        <div className="mb-6"><ErrorNote error={{ message: 'Add your DeepSeek API key in Settings to generate content.' }}
+        <div className="mb-6"><ErrorNote error={{ message: 'Add your OpenRouter API key in Settings to generate content.' }}
           action={<Button onClick={onSettings}>Open Settings</Button>} /></div>
       )}
       {error && <div className="mb-6"><ErrorNote error={error} /></div>}

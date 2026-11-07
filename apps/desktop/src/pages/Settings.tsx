@@ -4,10 +4,9 @@ import { call, studio, GENRES, useQuery, BackendError, type SecretName, type Set
 import { Button, ErrorNote, Field, Input, PageHeader, Select } from '../components/ui'
 
 const KEYS: { name: SecretName; label: string }[] = [
-  { name: 'DEEPSEEK_API_KEY', label: 'DeepSeek API key' },
+  { name: 'OPENROUTER_API_KEY', label: 'OpenRouter API key' },
   { name: 'PEXELS_API_KEY', label: 'Pexels API key' },
-  { name: 'UNSPLASH_ACCESS_KEY', label: 'Unsplash access key' },
-  { name: 'GROQ_API_KEY', label: 'Groq API key' },
+  { name: 'UNSPLASH_ACCESS_KEY', label: 'Unsplash access key (optional)' },
   { name: 'METRICOOL_API_KEY', label: 'Metricool API key' },
 ]
 
@@ -207,8 +206,15 @@ export function Settings() {
         {secrets && KEYS.map((k) => <SecretField key={k.name} name={k.name} text={k.label} isSet={secrets[k.name]} onSaved={setSecrets} />)}
       </Section>
 
-      <Section title="AI" description="Used by DeepSeek when it writes each piece.">
-        <Field label="Model">{(id) => <Input id={id} value={form.ai_model} onChange={(e) => set('ai_model', e.target.value)} />}</Field>
+      <Section title="AI" description="OpenRouter models. Any model id from openrouter.ai/models works here.">
+        <div className="grid grid-cols-2 gap-4">
+          <Field label="Writing model" hint="Plans, pieces, clip picks and post copy. e.g. deepseek/deepseek-v4-pro">
+            {(id) => <Input id={id} value={form.ai_model} spellCheck={false} onChange={(e) => set('ai_model', e.target.value)} />}
+          </Field>
+          <Field label="Scanning model" hint="Reads whole transcripts to find clip moments. A cheap model is fine.">
+            {(id) => <Input id={id} value={form.ai_model_fast} spellCheck={false} onChange={(e) => set('ai_model_fast', e.target.value)} />}
+          </Field>
+        </div>
         <div className="grid grid-cols-2 gap-4">
           <Field label="Temperature" hint="0 to 2. Higher is more varied.">
             {(id) => <Input id={id} type="number" step={0.1} min={0} max={2} className="tnum" value={form.ai_temperature}
@@ -277,9 +283,22 @@ export function Settings() {
               onChange={(e) => set('music_volume', Number(e.target.value))} />}
           </Field>
         </div>
+        <Field label="Motion graphics" hint="Animated hook titles and callouts, rendered with Edge or Chrome. Adds about 30-60 s per video.">
+          {(id) => (
+            <Select id={id} value={form.motion_graphics ? 'on' : 'off'} onChange={(v) => set('motion_graphics', v === 'on')}
+              options={[{ value: 'on', label: 'On' }, { value: 'off', label: 'Off (plain edit)' }]} />
+          )}
+        </Field>
         <Field label="Music file" hint="Optional background track, fades in and out under the narration.">
           {(id) => <Input id={id} value={form.music_path} placeholder="Path to an mp3 or wav on this computer" spellCheck={false}
             onChange={(e) => set('music_path', e.target.value)} />}
+        </Field>
+      </Section>
+
+      <Section title="Clip downloads" description="How links are downloaded when you clip a video.">
+        <Field label="YouTube cookies" hint="When YouTube asks to confirm you're not a bot: a browser you're signed in with (firefox works best), or the path to a cookies.txt file. Leave empty to download anonymously.">
+          {(id) => <Input id={id} value={form.ytdlp_cookies} placeholder="e.g. firefox" spellCheck={false}
+            onChange={(e) => set('ytdlp_cookies', e.target.value)} />}
         </Field>
       </Section>
 

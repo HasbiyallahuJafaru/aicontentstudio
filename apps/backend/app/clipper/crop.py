@@ -42,7 +42,6 @@ def face_xs(video, start: float, end: float, fps: float) -> tuple[int, int, list
 def shots(xs: list[float], deadzone: float, hold: int = 3) -> list[tuple[int, float]]:
     """Split per-sample positions into steady shots: (first sample, median x). A move only counts once it
     holds for `hold` samples, so the crop cuts cleanly to a new position instead of wobbling."""
-    # ponytail: hard cuts suit static podcast cameras; add eased pans if handheld/walking footage looks choppy
     starts, ref = [0], xs[0]
     for i in range(1, len(xs) - hold + 1):
         run = xs[i:i + hold]
@@ -66,7 +65,19 @@ def crop_filter(video, start: float, end: float, ratio: tuple[int, int] = (9, 16
         last = last if x is None else x
         filled.append(last)
     parts = [(i / fps, round(min(max(x - cw / 2, 0), w - cw))) for i, x in shots(filled, cw * 0.2)]
+    return f"crop={cw}:{ch}:'{position_expr(parts, cw)}':0"
+
+
+EASE = 0.5  # seconds a small reframe glides over; shots hold >= 0.75 s (3 samples at 4 fps), so it always fits
+
+
+def position_expr(parts: list[tuple[float, int]], cw: int) -> str:
+    """ffmpeg expression for the crop's x over time. A small move (the same speaker shifting, handheld drift)
+    glides with a smoothstep ease; a move of half a crop width or more is a different subject and hard-cuts."""
     expr = str(parts[-1][1])
-    for (t_next, _), (_, x) in zip(reversed(parts[1:]), reversed(parts[:-1])):
+    for (t_next, x_next), (_, x) in zip(reversed(parts[1:]), reversed(parts[:-1])):
+        if abs(x_next - x) < cw / 2:
+            p = f"((t-{t_next:.2f})/{EASE})"
+            expr = f"if(lt(t,{t_next + EASE:.2f}),{x}+{x_next - x}*{p}*{p}*(3-2*{p}),{expr})"
         expr = f"if(lt(t,{t_next:.2f}),{x},{expr})"
-    return f"crop={cw}:{ch}:'{expr}':0"
+    return expr

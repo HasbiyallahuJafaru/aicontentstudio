@@ -1,0 +1,54 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<!-- Hook title: the opening line, word by word, in the first seconds. Filled by app/motion.py (PARAMS). -->
+<style>
+  @font-face { font-family: Hook; src: url("font.ttf"); font-weight: 800; }
+  html, body { margin: 0; overflow: hidden; background: transparent; }
+  #root { position: relative; }
+  .bar { position: absolute; height: 0.12em; width: 0; border-radius: 0.06em; }
+  .hook { position: absolute; display: flex; flex-wrap: wrap; column-gap: 0.26em; row-gap: 0.04em;
+          font-family: Hook, sans-serif; font-weight: 800; line-height: 1.02; letter-spacing: -0.02em; color: #fff;
+          text-shadow: 0 0.06em 0.28em rgba(0, 0, 0, 0.6); }
+  .w { display: inline-block; opacity: 0; }
+</style>
+</head>
+<body>
+<div id="root" data-composition-id="hook" data-start="0" data-width="__W__" data-height="__H__" data-duration="__DUR__">
+  <div class="clip" data-start="0" data-duration="__DUR__" data-track-index="0"><div class="bar"></div><div class="hook"></div></div>
+</div>
+<script src="gsap.min.js"></script>
+<script>
+  const P = /*PARAMS*/null;
+  const root = document.getElementById("root"), clip = root.firstElementChild;
+  const size = Math.round(Math.min(P.w * 0.105, P.h * 0.11));
+  Object.assign(root.style, { width: P.w + "px", height: P.h + "px", fontSize: size + "px" });
+  // (never name a global `top`: it is window.top, and redeclaring it kills the whole script)
+  const x0 = Math.round(P.w * 0.085), y0 = Math.round(P.h * 0.24);
+  const hook = clip.querySelector(".hook"), bar = clip.querySelector(".bar");
+  Object.assign(hook.style, { left: x0 + "px", right: x0 + "px", top: y0 + "px",
+                              textTransform: P.upper ? "uppercase" : "none" });
+  Object.assign(bar.style, { left: x0 + "px", top: y0 - size * 0.32 + "px", background: P.accent });
+  for (const w of P.words) {
+    const s = document.createElement("span");
+    s.className = "w" + (w.key ? " key" : "");
+    s.textContent = w.t;
+    if (w.key) s.style.color = P.accent;
+    hook.appendChild(s);
+  }
+  // in: bar draws, words rise and settle one by one; beat: keywords bounce; out: everything lifts away
+  const out = P.duration - 0.35;
+  const tl = gsap.timeline({ paused: true });
+  tl.to(bar, { width: size * 2.6, duration: 0.35, ease: "power3.out" }, 0)
+    .fromTo(".w", { opacity: 0, y: size * 0.5, scale: 0.86 },
+            { opacity: 1, y: 0, scale: 1, duration: 0.3, ease: "back.out(2.2)", stagger: 0.08 }, 0.08);
+  if (document.querySelector(".key"))
+    tl.to(".key", { y: -size * 0.12, duration: 0.14, yoyo: true, repeat: 1, ease: "power2.out", stagger: 0.06 },
+          Math.min(0.08 + 0.08 * P.words.length + 0.25, out - 0.4));
+  tl.to([hook, bar], { opacity: 0, y: -size * 0.4, duration: 0.3, ease: "power2.in" }, out);
+  window.__timelines = window.__timelines || {};
+  window.__timelines.hook = tl;
+</script>
+</body>
+</html>
