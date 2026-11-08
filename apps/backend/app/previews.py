@@ -13,8 +13,7 @@ from app.clipper.captions import CAPTION_FONTS, PRESETS, CaptionStyle, captions
 from app.clipper.ff import ffmpeg
 from app.database import connect
 
-SAMPLE = {"text": "Your comfort zone will kill you.", "author": None, "kicker": "Friendly reminder",
-          "emphasis": "kill you"}
+SAMPLE = {"text": "Your comfort zone will kill you.", "author": None}
 SAMPLE_PALETTE = {"primary": "#8A5A2B", "secondary": "#A89070", "dark": "#1E1611", "light": "#F1ECE4",
                   "text": "#FFFFFF", "overlay": "#1E1611"}
 STYLE_LABELS = {"karaoke": "Karaoke", "pop": "Word pop", "clean": "Clean", "boxed": "Boxed", "minimal": "Minimal",
@@ -56,7 +55,7 @@ def designs(font: str = "auto", position: str = "auto", quote: dict | None = Non
            for key, label in design.DESIGNS.items()] if swatches else []
     lines = [split_author(x) for x in (quotes or []) if x.strip()][:3]
     own = [{"text": t, "author": a} for t, a in lines] or [SAMPLE, {"text": "Life has no script. Live it."},
-                                                           {"text": "Begin before you feel ready.", "kicker": ""}]
+                                                           {"text": "Begin before you feel ready."}]
     samples = []
     for i, sq in enumerate(own):
         chosen = design.pick(design_name, genre, None, i, sq["text"])

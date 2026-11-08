@@ -149,7 +149,7 @@ export function Dialog({ label, width, onClose, className, children }: {
     <div role="dialog" aria-modal="true" aria-label={label} onClick={onClose}
       className="fixed inset-0 z-40 grid place-items-center bg-ink/40 p-6 backdrop-blur-sm">
       <div onClick={(e) => e.stopPropagation()} style={{ maxWidth: width }}
-        className={cx('grid max-h-[calc(100dvh-3rem)] w-full rounded-panel bg-panel',
+        className={cx('grid max-h-[calc(100dvh-3rem)] w-full grid-cols-[minmax(0,1fr)] rounded-panel bg-panel',  // the column never outgrows the panel, however long a title is
           'shadow-[inset_0_0_0_1px_rgb(17_18_20/0.09),0_32px_80px_-24px_rgb(17_18_20/0.22)]', className)}>
         {children}
       </div>

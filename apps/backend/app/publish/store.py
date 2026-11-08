@@ -1,4 +1,4 @@
-"""Credentials the Python side owns: Buffer OAuth tokens, media-hosting keys, pending OAuth states.
+"""Credentials the Python side owns: the Zernio API key (and the Zernio profile id it posts into).
 Encrypted with Windows DPAPI (per user — the same primitive Electron's safeStorage wraps), base64 in the
 credentials table. Off-Windows (dev only) the JSON is stored as-is.
 # ponytail: plaintext off-Windows; a packaged non-Windows build needs a real secret store first."""

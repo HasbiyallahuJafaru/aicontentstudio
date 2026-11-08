@@ -27,7 +27,7 @@ export function Exports({ onOpenProject }: { onOpenProject: (id: string) => void
         <section className="grid max-w-md gap-3 py-12">
           <h2 className="text-base font-semibold">Nothing exported yet</h2>
           <p className="text-ink-2">Export copies every rendered piece into dated folders with captions, a cover frame
-            and platform metadata, ready to upload or hand to Metricool.</p>
+            and platform metadata, ready to upload yourself.</p>
         </section>
       )}
 

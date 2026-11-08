@@ -60,17 +60,10 @@ class Settings(BaseModel):
     render_audio_bitrate: str = Field("192k", pattern=r"^\d+k$")
     render_width: int = Field(1080, ge=360, le=2160)
     render_height: int = Field(1920, ge=640, le=3840)
-    # Milestone 7 Phase C: publishing. Buffer's public OAuth client id (no secret — PKCE), and the user's own
-    # S3-compatible host for the videos Buffer publishes from (its keys live in the credentials table).
     # Animated hook titles and callouts (HyperFrames through Edge/Chrome). Off = plain edit, same as no browser.
     motion_graphics: bool = True
     # Clip downloads: a browser name (firefox, chrome, edge, ...) or a cookies.txt path, for YouTube's bot check.
     ytdlp_cookies: str = Field("", max_length=500)
-    buffer_client_id: str = Field("", max_length=120)
-    publish_host_endpoint: str = Field("", max_length=300)
-    publish_host_bucket: str = Field("", max_length=200)
-    publish_host_public_url: str = Field("", max_length=300)
-    publish_host_region: str = Field("auto", max_length=40)
 
 
 def _load() -> Settings:

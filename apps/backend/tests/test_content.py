@@ -83,9 +83,11 @@ class Generation(unittest.TestCase):
         first = projects.create(BRIEF)
         run_job(first["id"], FakeModel(["Rest is part of the plan.", "Nobody sees the early hours.", "Discipline is a quiet promise."]))
         again = projects.create({**BRIEF, "quantity": 2})
-        # piece 1: repeats history, then a fresh line; piece 2: repeats every attempt
-        job = run_job(again["id"], FakeModel(["Rest is part of the plan!", "Consistency beats intensity every day.",
-                                              "Nobody sees the early hours", "nobody sees the early hours.", "Nobody sees the early hours!"]))
+        # both pieces are drafted together first (batch writing); piece 1's draft repeats history, then its retry is
+        # fresh; piece 2 repeats on its draft and on both retries (three tries in all, the draft included)
+        job = run_job(again["id"], FakeModel(["Rest is part of the plan!", "Nobody sees the early hours",
+                                              "Consistency beats intensity every day.",
+                                              "nobody sees the early hours.", "Nobody sees the early hours!"]))
         self.assertEqual(job["status"], "completed")
         a, b = content.pieces(again["id"])
         self.assertEqual((a["status"], a["quote"]), ("written", "Consistency beats intensity every day."))
@@ -147,6 +149,21 @@ class OpenRouterClient(unittest.TestCase):
         self.assertIn("did not match the required JSON shape", calls[1]["messages"][-1]["content"])
         self.assertEqual(calls[0]["response_format"], {"type": "json_object"})
         self.assertEqual(calls[0]["provider"], {"require_parameters": True}, "only JSON-mode providers")
+
+    def test_a_group_of_pieces_is_one_request(self):
+        """Batch writing (owner 2026-11-08): three pieces, one call; a malformed piece comes back as None (written
+        alone by the caller) without costing the other two; the user's own quote is named in the request."""
+        calls = []
+        good = [piece_json("Keep going when it is boring."), piece_json("Nobody claps for the early hours.")]
+        reply = json.dumps({"pieces": [good[0], {"quote": "oops"}, good[1]]})
+        m = openrouter([(200, reply)], calls)
+        plan = BatchPlan.model_validate(plan_json(3))
+        got = m.write_pieces(BRIEF, plan, plan.pieces, [], [None, None, ("Be the one who stays.", "Seneca")])
+        self.assertEqual(len(calls), 1)
+        self.assertEqual([g.quote.text if g else None for g in got],
+                         ["Keep going when it is boring.", None, "Nobody claps for the early hours."])
+        self.assertIn('exactly 3 item(s) in "pieces"', calls[0]["messages"][-1]["content"])
+        self.assertIn("Be the one who stays.", calls[0]["messages"][-1]["content"])
 
     def test_out_of_credits_is_human(self):
         with self.assertRaisesRegex(UserError, "out of credits"):
@@ -260,7 +277,7 @@ class BulkQuotes(unittest.TestCase):
     def setUpClass(cls):
         database.migrate()
 
-    def test_more_than_twenty_own_quotes_plan_in_chunks(self):
+    def test_own_quote_images_skip_planning(self):  # owner 2026-11-08: quote images are never planned
         quotes = [f"Line number {i} of the bulk import." for i in range(25)]
         p = projects.create({**BRIEF, "format": "image", "quotes": quotes})
         self.assertEqual(p["brief"]["quantity"], 25)
@@ -275,5 +292,5 @@ class BulkQuotes(unittest.TestCase):
 
         job = run_job(p["id"], Bulk([f"model line {i}" * 2 for i in range(25)]))
         self.assertEqual(job["status"], "completed")
-        self.assertEqual(sizes, [20, 5])
+        self.assertEqual(sizes, [], "no planning call for quote images")
         self.assertEqual([x["content"]["quote"]["text"] for x in content.pieces(p["id"])], quotes)

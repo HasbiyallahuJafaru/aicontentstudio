@@ -60,15 +60,30 @@ def _insert(project_id: str, idx: int, angle: str, quote: str, content: dict, st
     return id
 
 
+# pieces written per AI request: as many as fit one reply under the max-token budget (a quote piece is ~400 tokens,
+# a narrated piece ~900). ponytail: fixed sizes; size by settings.ai_max_tokens if replies start running out of room.
+WRITE_GROUP_QUOTES, WRITE_GROUP_VIDEO = 8, 4
+
+
+def quote_plan(brief: dict, n: int) -> BatchPlan:
+    """The fixed stand-in plan for quote images: no AI call. Each piece is "a quote" on the topic; the group prompt
+    asks for a different facet and photo subject per quote, and the footage search reads visual_type from here."""
+    subject = (brief.get("topic") or "the quotes given")[:80]
+    item = PlanItem.model_construct(angle="quote", visual_subject=subject, visual_type="image", intensity="medium",
+                                    narration_style="")
+    return BatchPlan.model_construct(reading="", batch_theme=subject, pieces=[item] * n)
+
 def generate(project_id: str, report: Callable[[str, float], None]) -> None:
     brief = projects.get(project_id)["brief"]
     n = brief["quantity"]
     model = get_model()
     history, openings = _history(200)
-    total = 2 * n + 1  # plan + write + visual per piece; keeps the progress bar honest through both phases
+    total = 2 * n + 1  # write + visual per piece (+ the plan for videos); keeps the progress bar honest
 
-    report(f"Planning {n} {'angle' if n == 1 else 'angles'}", 0.02)
-    if brief.get("quotes"):  # the user's own lines (up to 100): planned 20 at a time, the plan schema's limit
+    if quotes_only(brief):  # quote images aren't planned (owner 2026-11-08): the group request writes them directly
+        plan = quote_plan(brief, n)
+    elif brief.get("quotes"):  # the user's own lines (up to 100): planned 20 at a time, the plan schema's limit
+        report(f"Planning {n} {'angle' if n == 1 else 'angles'}", 0.02)
         qs, plans = brief["quotes"], []
         for k in range(0, len(qs), PLAN_CHUNK):
             chunk = qs[k:k + PLAN_CHUNK]
@@ -76,6 +91,7 @@ def generate(project_id: str, report: Callable[[str, float], None]) -> None:
         plan = BatchPlan.model_construct(reading=plans[0].reading, batch_theme=plans[0].batch_theme,
                                          pieces=[p for pl in plans for p in pl.pieces])
     else:
+        report(f"Planning {n} {'angle' if n == 1 else 'angles'}", 0.02)
         plan = model.plan_batch(brief, history[:30] + openings)
 
     with connect() as conn:  # the new plan replaces any earlier pieces of this project
@@ -83,23 +99,37 @@ def generate(project_id: str, report: Callable[[str, float], None]) -> None:
     batch: list[str] = []
     written: list[dict] = []
     own = [split_author(q) for q in brief.get("quotes") or []]
+    group = WRITE_GROUP_QUOTES if quotes_only(brief) else WRITE_GROUP_VIDEO
+    drafts: dict[int, object] = {}  # piece number -> what the group request wrote (None: write it on its own)
     for i, item in enumerate(plan.pieces, 1):
-        report(f"Writing piece {i} of {n}", i / total)
+        if i not in drafts:  # one request writes the next group of pieces (owner: batch, not one call per piece)
+            items = plan.pieces[i - 1:i - 1 + group]
+            noun = ("quote", "quotes") if quotes_only(brief) else ("piece", "pieces")
+            report(f"Writing {noun[1]} {i}-{i + len(items) - 1} of {n}" if len(items) > 1 else f"Writing {noun[0]} {i} of {n}",
+                   i / total)
+            given = [own[i - 1 + j] if i - 1 + j < len(own) else None for j in range(len(items))]
+            drafts.update(zip(range(i, i + len(items)),
+                              model.write_pieces(brief, plan, items, batch + history[:30] + openings, given)))
         avoid = batch + history[:30] + openings
         if i <= len(own):  # the user's own line: the AI writes around it, the text itself is never changed
             text, author = own[i - 1]
-            piece = model.write_piece({**brief, "given_quote": text, "given_author": author}, plan, item, avoid)
+            piece = drafts[i] or model.write_piece({**brief, "given_quote": text, "given_author": author}, plan, item, avoid)
             piece.quote.text, piece.quote.author, repeat = text, author, None
             content = {"plan": item.model_dump(), "reading": plan.reading, **piece.model_dump()}
             batch.append(text)
             written.append({"id": _insert(project_id, i, item.angle, text, content), "content": content})
             continue
-        for _ in range(PIECE_ATTEMPTS):
+        piece, repeat = drafts[i], None
+        if piece is not None:
+            repeat = too_similar(piece.quote.text, batch + history)
+        tries = 0 if piece is not None and not repeat else PIECE_ATTEMPTS - (piece is not None)  # the draft counts
+        for _ in range(tries):  # unusable or a repeat: write it alone
+            if repeat:
+                avoid = [repeat] + avoid
             piece = model.write_piece(brief, plan, item, avoid)
             repeat = too_similar(piece.quote.text, batch + history)
             if not repeat:
                 break
-            avoid = [repeat] + avoid
         content = {"plan": item.model_dump(), "reading": plan.reading, **piece.model_dump()}
         if repeat:
             _insert(project_id, i, item.angle, piece.quote.text,

@@ -52,7 +52,7 @@ def _project_status(project_id: str, status: str) -> None:
 
 
 def start(project_id: str, kind: str = "generate", piece_ids: list[str] | None = None) -> dict:
-    if kind not in ("generate", "render", "export", "clip", "visuals"):
+    if kind not in ("generate", "render", "export", "clip", "visuals", "visuals_render"):
         raise UserError("Unknown job kind.", kind)
     running = latest(project_id)
     if running and running["status"] in ("queued", "running"):
@@ -88,7 +88,7 @@ def _run(job_id: str, project_id: str, kind: str = "generate", piece_ids: list[s
         _set(job_id, "job.progress", stage=stage, progress=round(progress, 3))
 
     stage = {"generate": "Generating", "render": "Rendering", "export": "Exporting", "clip": "Clipping",
-             "visuals": "Downloading footage"}[kind]
+             "visuals": "Downloading footage", "visuals_render": "Downloading footage"}[kind]
     _set(job_id, "job.started", status="running", stage=stage)
     try:
         if kind == "export":
@@ -97,6 +97,9 @@ def _run(job_id: str, project_id: str, kind: str = "generate", piece_ids: list[s
             clips.run(project_id, report)
         elif kind == "visuals":
             assets.download_picks(project_id, report)
+        elif kind == "visuals_render":  # "Download and render": the picked footage, then every piece, one progress bar
+            assets.download_picks(project_id, lambda s, p: report(s, p * 0.3))
+            renders.render_project(project_id, lambda s, p: report(s, 0.3 + p * 0.7), piece_ids)
         elif kind == "render":
             renders.render_project(project_id, report, piece_ids)
         else:

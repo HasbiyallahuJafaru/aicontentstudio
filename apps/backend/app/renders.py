@@ -173,10 +173,10 @@ def render_project(project_id: str, report, piece_ids: list[str] | None = None) 
 def _subtitles_ass(piece: dict, words: list[dict], duration: float, w: int, h: int,
                    style: dict | None = None) -> Path:
     """Burn-ready ASS for the narration, from the same word timings the edit cut to, in the brief's caption style.
-    Key words (the quote's emphasis and the callout words) take the highlight; "palette" uses the project accent."""
+    Key words (the callout words) take the highlight; "palette" uses the project accent."""
     from app.clipper.captions import captions
     c = piece["content"]
-    keys = ((c.get("quote") or {}).get("emphasis") or "").split() + [x.get("word", "") for x in c.get("callouts") or []]
+    keys = [x.get("word", "") for x in c.get("callouts") or []]
     pal = c.get("palette") or {}
     ass = captions(words, 0.0, duration, w, h, keys, style, accent=design.accent(pal) if pal else "#E0B07A",
                    plate=pal.get("dark", "#111111"))

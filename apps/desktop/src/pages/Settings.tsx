@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { CaretRight, Check, FolderOpen, Plug, PlugsConnected, Trash } from '@phosphor-icons/react'
+import { useEffect, useState, type ReactNode } from 'react'
+import { CaretRight, Check, FolderOpen, Trash } from '@phosphor-icons/react'
 import { call, studio, useQuery, BackendError, type SecretName, type Settings as S } from '../lib/studio'
 import { Button, ErrorNote, Field, Input, PageHeader, Select } from '../components/ui'
+import { ZernioSetup } from '../components/Posting'
 
 const KEYS: { name: SecretName; label: string }[] = [
   { name: 'OPENROUTER_API_KEY', label: 'OpenRouter API key' },
@@ -91,135 +92,6 @@ function Section({ title, description, children }: { title: string; description:
   )
 }
 
-type Connection = { connected: boolean }
-
-// One-click OAuth: the backend hands back the provider's consent page, the browser returns to its loopback
-// catcher, and we poll until the tokens land.
-export function useConnection(provider: 'buffer' | 'metricool', setError: (e?: BackendError) => void) {
-  const { data, reload } = useQuery<Connection>(`publish.${provider}_connection`)
-  const [waiting, setWaiting] = useState(false)
-  const poll = useRef<number | undefined>(undefined)
-
-  useEffect(() => () => window.clearInterval(poll.current), [])
-
-  async function connect() {
-    setError(undefined)
-    try {
-      studio.openExternal(await call<string>(`publish.${provider}_connect_url`))
-      setWaiting(true)
-      window.clearInterval(poll.current)
-      poll.current = window.setInterval(async () => {
-        const c = await call<Connection>(`publish.${provider}_connection`).catch(() => null)
-        if (c?.connected) { window.clearInterval(poll.current); setWaiting(false); reload() }
-      }, 2000)
-      window.setTimeout(() => { setWaiting(false); window.clearInterval(poll.current) }, 300_000)
-    } catch (e) { setError(e as BackendError) }
-  }
-
-  async function disconnect() {
-    setError(undefined)
-    try { await call(`publish.${provider}_disconnect`); reload() } catch (e) { setError(e as BackendError) }
-  }
-
-  return { connected: data?.connected, waiting, connect, disconnect }
-}
-
-function Publishing({ form, set }: { form: S; set: <K extends keyof S>(k: K, v: S[K]) => void }) {
-  const { data: host } = useQuery<{ configured: boolean; keys_set: boolean }>('publish.host_status')
-  const [hostKeys, setHostKeys] = useState({ access_key_id: '', secret_access_key: '' })
-  const [error, setError] = useState<BackendError>()
-  const buffer = useConnection('buffer', setError)
-  const metricool = useConnection('metricool', setError)
-
-  async function saveHost() {
-    setError(undefined)
-    try { await call('publish.host_save', { endpoint: form.publish_host_endpoint, bucket: form.publish_host_bucket,
-      public_url: form.publish_host_public_url, region: form.publish_host_region, ...hostKeys })
-      setHostKeys({ access_key_id: '', secret_access_key: '' })
-    } catch (e) { setError(e as BackendError) }
-  }
-
-  return (
-    <div className="grid gap-6">
-      {error && <ErrorNote error={error} />}
-
-      <div className="grid gap-4">
-        <div className="flex items-center justify-between gap-4">
-          <div>
-            <p className="text-[13px] font-medium text-ink">Buffer</p>
-            <p className="mt-0.5 text-xs text-ink-3">{buffer.connected
-              ? 'Connected — approved clips can be published to your channels.'
-              : 'Register a public OAuth app at developers.buffer.com, add http://127.0.0.1:8787/callback as a redirect URL, paste its client id here, then connect.'}</p>
-          </div>
-          {buffer.connected
-            ? <Button variant="ghost" onClick={buffer.disconnect}>Disconnect</Button>
-            : <Button disabled={buffer.waiting} onClick={buffer.connect}>
-                <Plug size={14} />{buffer.waiting ? 'Waiting for Buffer…' : 'Connect Buffer'}</Button>}
-        </div>
-        <Field label="Buffer client id" hint="From your OAuth app at developers.buffer.com. Saved with the changes button above.">
-          {(id) => <Input id={id} value={form.buffer_client_id} spellCheck={false}
-            onChange={(e) => set('buffer_client_id', e.target.value)} />}
-        </Field>
-      </div>
-
-      <div className="grid gap-4 border-t border-line pt-6">
-        <div className="flex items-center justify-between gap-4">
-          <div>
-            <p className="text-[13px] font-medium text-ink">Media host</p>
-            <p className="mt-0.5 text-xs text-ink-3">Buffer fetches videos from a public link, so published clips are
-              copied to your own S3-compatible bucket (Cloudflare R2 works). {host?.configured ? 'Configured.' : 'Not configured yet.'}</p>
-          </div>
-          <Button disabled={!form.publish_host_endpoint} onClick={saveHost}>Save host</Button>
-        </div>
-        <div className="grid grid-cols-2 gap-4">
-          <Field label="Endpoint" hint="e.g. https://<account>.r2.cloudflarestorage.com">
-            {(id) => <Input id={id} value={form.publish_host_endpoint} spellCheck={false}
-              onChange={(e) => set('publish_host_endpoint', e.target.value)} />}
-          </Field>
-          <Field label="Bucket">
-            {(id) => <Input id={id} value={form.publish_host_bucket} spellCheck={false}
-              onChange={(e) => set('publish_host_bucket', e.target.value)} />}
-          </Field>
-          <Field label="Public URL" hint="Where the bucket is reachable, e.g. a custom domain.">
-            {(id) => <Input id={id} value={form.publish_host_public_url} spellCheck={false}
-              onChange={(e) => set('publish_host_public_url', e.target.value)} />}
-          </Field>
-          <Field label="Region" hint="auto for Cloudflare R2.">
-            {(id) => <Input id={id} value={form.publish_host_region} spellCheck={false}
-              onChange={(e) => set('publish_host_region', e.target.value)} />}
-          </Field>
-        </div>
-        <div className="grid grid-cols-2 gap-4">
-          <Field label="Access key id" hint={host?.keys_set ? <span className="inline-flex items-center gap-1 text-ok"><Check size={12} weight="bold" />Keys saved</span> : 'From your host.'}>
-            {(id) => <Input id={id} type="password" autoComplete="off" value={hostKeys.access_key_id}
-              onChange={(e) => setHostKeys({ ...hostKeys, access_key_id: e.target.value })} />}
-          </Field>
-          <Field label="Secret access key">
-            {(id) => <Input id={id} type="password" autoComplete="off" value={hostKeys.secret_access_key}
-              onChange={(e) => setHostKeys({ ...hostKeys, secret_access_key: e.target.value })} />}
-          </Field>
-        </div>
-      </div>
-
-      <div className="grid gap-4 border-t border-line pt-6">
-        <div className="flex items-center justify-between gap-4">
-          <div>
-            <p className="text-[13px] font-medium text-ink">Metricool</p>
-            <p className="mt-0.5 text-xs text-ink-3">{metricool.connected
-              ? 'Connected. Clips can be scheduled through Metricool.'
-              : metricool.waiting ? 'Approve the app in the browser window that opened, then come back here.'
-              : 'Sign in to Metricool and approve the app. Works on every Metricool plan, nothing to copy or paste.'}</p>
-          </div>
-          {metricool.connected
-            ? <Button variant="ghost" onClick={metricool.disconnect}>Disconnect</Button>
-            : <Button disabled={metricool.waiting} onClick={metricool.connect}>
-                <PlugsConnected size={14} />{metricool.waiting ? 'Waiting for Metricool…' : 'Connect Metricool'}</Button>}
-        </div>
-      </div>
-    </div>
-  )
-}
-
 function SecretField({ name, text, isSet, onSaved }: { name: SecretName; text: string; isSet: boolean; onSaved: (s: Record<SecretName, boolean>) => void }) {
   const [value, setValue] = useState('')
   const save = async (v: string) => { onSaved(await studio.setSecret(name, v)); setValue('') }
@@ -278,6 +150,10 @@ export function Settings() {
         {secrets && KEYS.map((k) => <SecretField key={k.name} name={k.name} text={k.label} isSet={secrets[k.name]} onSaved={setSecrets} />)}
       </Section>
 
+      <Section title="Posting" description="Schedule finished clips to your social accounts. Everything stays on this computer until you post.">
+        <ZernioSetup />
+      </Section>
+
       <Section title="AI" description="Which AI writes your content. Billed to your OpenRouter account.">
         <Field label="Writing model" hint="Writes the scripts, hooks, captions and clip picks.">
           {(id) => <Select id={id} value={form.ai_model} onChange={(v) => set('ai_model', v)}
@@ -311,11 +187,8 @@ export function Settings() {
       <details className="group mb-5">
         <summary className="mb-5 flex cursor-pointer list-none items-center gap-1.5 text-[13px] text-ink-2 hover:text-ink">
           <CaretRight size={12} weight="bold" className="transition-transform duration-150 group-open:rotate-90" />
-          Advanced: publishing and video downloads
+          Advanced: video downloads
         </summary>
-        <Section title="Publishing" description="Send approved clips to Buffer or Metricool. Everything stays local until you publish.">
-          <Publishing form={form} set={set} />
-        </Section>
         <Section title="Video downloads" description="Only needed if YouTube blocks a download.">
           <Field label="YouTube cookies" hint="A browser you're signed in to YouTube with (Firefox works best), or the path to a cookies.txt file.">
             {(id) => <Input id={id} value={form.ytdlp_cookies} placeholder="e.g. firefox" spellCheck={false}

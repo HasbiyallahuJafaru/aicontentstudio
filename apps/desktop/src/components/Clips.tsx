@@ -3,9 +3,9 @@
 import { useEffect, useRef, useState } from 'react'
 import { ArrowLeft, CalendarBlank, Check, Copy, Export, PaperPlaneTilt, PencilSimple, Play, Trash, X } from '@phosphor-icons/react'
 import { call, formatDate, hasKey, label, mediaUrl, useJob, useQuery, BackendError,
-  type BufferChannel, type CalendarPlan, type Clip, type Project as P } from '../lib/studio'
+  type CalendarPlan, type Clip, type Project as P, type Publication } from '../lib/studio'
 import { Button, Choices, Dialog, ErrorNote, Field, Input, Select, Textarea, cx } from './ui'
-import { useConnection } from '../pages/Settings'
+import { PostDialog, PublicationChips, SetUpPosting, ZernioPicker, useZernio } from './Posting'
 
 const POST_ORDER = ['tiktok', 'instagram', 'youtube', 'linkedin', 'facebook', 'x'] as const
 type Net = (typeof POST_ORDER)[number]
@@ -72,6 +72,15 @@ export function ClipWorkspace({ project, onBack, onSettings }: { project: P; onB
   const [error, setError] = useState<BackendError>()
   const [keySet, setKeySet] = useState<boolean>()
 
+  const { data: pubs, reload: reloadPubs } = useQuery<Publication[]>('publish.publications', { project_id: project.id }, rev)
+  // while anything is still waiting to go out, look again every minute so "Scheduled" turns into "Posted" by itself
+  const pending = pubs?.some((p) => p.status === 'scheduled' || p.status === 'sending')
+  useEffect(() => {
+    if (!pending) return
+    const t = window.setInterval(reloadPubs, 60_000)
+    return () => window.clearInterval(t)
+  }, [pending])
+
   useEffect(() => { hasKey('OPENROUTER_API_KEY').then(setKeySet) }, [])
   useEffect(() => { if (job && !running) setRev((r) => r + 1) }, [job?.status])
 
@@ -126,7 +135,7 @@ export function ClipWorkspace({ project, onBack, onSettings }: { project: P; onB
             <Button variant="ghost" onClick={remove} aria-label="Delete project"><Trash size={15} /></Button>
             {clips?.some((c) => c.status === 'approved') && (
               <Button variant="ghost" onClick={() => setPlanning(true)} disabled={running}
-                title="Spread every approved clip over posting days and times in Buffer"><CalendarBlank size={14} />Plan calendar</Button>
+                title="Spread every approved clip over posting days and times"><CalendarBlank size={14} />Plan calendar</Button>
             )}
             {!!ready.length && (
               <Button onClick={() => start('export')} disabled={running}><Export size={14} />Export</Button>
@@ -172,7 +181,7 @@ export function ClipWorkspace({ project, onBack, onSettings }: { project: P; onB
       {!!clips?.length && (
         <ol ref={listRef} className="glass px-8 py-2">
           {clips.map((c) => (
-            <ClipRow key={c.id} clip={c} onPreview={() => setPreview(c.id)} onPublish={() => setPublishing(c)}
+            <ClipRow key={c.id} clip={c} pubs={pubs?.filter((p) => p.clip_idx === c.idx && !p.piece_id) ?? []} onPubsChanged={reloadPubs} onPreview={() => setPreview(c.id)} onPublish={() => setPublishing(c)}
               onReview={(status) => review(c.id, status)} onDelete={() => removeClip(c)} busy={running} />
           ))}
         </ol>
@@ -182,16 +191,17 @@ export function ClipWorkspace({ project, onBack, onSettings }: { project: P; onB
           onSaved={() => setRev((r) => r + 1)} />
       ))}
       {clips?.filter((c) => c.id === publishing?.id).map((c) => (
-        <PublishDialog key={c.id} clip={c} onClose={() => setPublishing(undefined)}
+        <PublishDialog key={c.id} clip={c} onClose={() => setPublishing(undefined)} onSettings={onSettings}
           onChanged={() => { setPublishing(undefined); setRev((r) => r + 1) }} />
       ))}
-      {planning && <CalendarDialog project={project} onClose={() => setPlanning(false)} onDone={() => setRev((r) => r + 1)} />}
+      {planning && <CalendarDialog project={project} onClose={() => setPlanning(false)} onDone={() => setRev((r) => r + 1)}
+        onSettings={onSettings} />}
     </>
   )
 }
 
-function ClipRow({ clip: c, onPreview, onPublish, onReview, onDelete, busy }: {
-  clip: Clip; onPreview: () => void; onPublish: () => void
+function ClipRow({ clip: c, pubs, onPubsChanged, onPreview, onPublish, onReview, onDelete, busy }: {
+  clip: Clip; pubs: Publication[]; onPubsChanged: () => void; onPreview: () => void; onPublish: () => void
   onReview: (status: 'approved' | 'ready' | 'rejected') => void; onDelete: () => void; busy: boolean
 }) {
   return (
@@ -212,6 +222,7 @@ function ClipRow({ clip: c, onPreview, onPublish, onReview, onDelete, busy }: {
           <span className={cx('w-fit rounded-full px-2.5 py-0.5 text-2xs font-medium',
             c.status === 'rejected' ? 'bg-danger/15 text-danger' : 'bg-ok/15 text-ok')}>{label(c.status)}</span>
         )}
+        <PublicationChips rows={pubs} onChanged={onPubsChanged} />
       </div>
       <div className="flex shrink-0 items-center gap-1.5">
         {c.status === 'approved' && (
@@ -341,41 +352,18 @@ function CopyEditor({ clip: c, onCancel, onSaved }: { clip: Clip; onCancel: () =
   )
 }
 
-/** Buffer channels that can take a video, as toggles. Shared by single-clip publishing and the calendar. */
-function ChannelPicker({ picked, onChange }: { picked: string[]; onChange: (ids: string[]) => void }) {
-  const { data: channels, error } = useQuery<BufferChannel[]>('publish.buffer_channels')
-  const usable = channels?.filter((ch) => ch.usable) ?? []
-  return (
-    <>
-      {error && <ErrorNote error={error} />}
-      {channels && usable.length === 0 && !error && (
-        <p className="text-[13px] text-ink-2">No usable channels in Buffer. Connect a network inside Buffer first.</p>
-      )}
-      <fieldset className="grid gap-1.5">
-        <legend className="mb-1.5 text-[13px] font-medium text-ink">Channels</legend>
-        {usable.map((ch) => (
-          <button key={ch.id} type="button"
-            onClick={() => onChange(picked.includes(ch.id) ? picked.filter((x) => x !== ch.id) : [...picked, ch.id])}
-            className={cx('flex items-center justify-between rounded-[10px] px-3.5 py-2.5 text-left text-[13px] transition-colors duration-150',
-              picked.includes(ch.id) ? 'chip-on' : 'text-ink-2 hover:bg-black/[0.05]')}>
-            {ch.displayName || ch.name}
-            <span className="text-2xs uppercase tracking-wide text-ink-3">{ch.service}</span>
-          </button>
-        ))}
-      </fieldset>
-    </>
-  )
-}
-
 const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((label, i) => ({ value: i + 1, label }))  // ISO weekdays
 const ZONE = Intl.DateTimeFormat().resolvedOptions().timeZone
 const day = (offset: number) => new Date(Date.now() + offset * 864e5).toLocaleDateString('sv')  // sv = YYYY-MM-DD
 const when = (iso: string) => new Date(iso).toLocaleString(undefined,
   { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
 
-/** ClipperAi's content calendar: every approved, unpublished clip gets the next free posting slot. A plan is shown
- * first; nothing reaches Buffer until "Schedule". */
-function CalendarDialog({ project, onClose, onDone }: { project: P; onClose: () => void; onDone: () => void }) {
+/** ClipperAi's content calendar: every approved, unscheduled clip gets the next free posting slot. A plan is shown
+ * first; nothing reaches Zernio until "Schedule". */
+function CalendarDialog({ project, onClose, onDone, onSettings }: {
+  project: P; onClose: () => void; onDone: () => void; onSettings?: () => void
+}) {
+  const zernio = useZernio().connected
   const [picked, setPicked] = useState<string[]>([])
   const [days, setDays] = useState<number[]>([1, 3, 5])
   const [times, setTimes] = useState('09:00, 18:00')
@@ -387,13 +375,13 @@ function CalendarDialog({ project, onClose, onDone }: { project: P; onClose: () 
 
   const parsed = times.split(/[,\s]+/).filter(Boolean)
   const badTime = parsed.find((t) => !/^([01]?\d|2[0-3]):[0-5]\d$/.test(t))
-  const ok = picked.length > 0 && days.length > 0 && parsed.length > 0 && !badTime && !!start
+  const ok = !!zernio && picked.length > 0 && days.length > 0 && parsed.length > 0 && !badTime && !!start
 
   async function run(dry: boolean) {
     setBusy(true)
     setError(undefined)
     try {
-      const result = await call<CalendarPlan>('publish.buffer_calendar', { project_id: project.id, channel_ids: picked,
+      const result = await call<CalendarPlan>('publish.calendar', { project_id: project.id, account_ids: picked,
         days, times: parsed.map((t) => t.padStart(5, '0')), start, tz: ZONE, dry_run: dry })
       setPlan(result)
       if (!dry) { setDone(true); onDone() }
@@ -409,7 +397,7 @@ function CalendarDialog({ project, onClose, onDone }: { project: P; onClose: () 
     <Dialog label="Plan a posting calendar" width={620} onClose={onClose} className="grid-rows-[auto_minmax(0,1fr)_auto]">
       <header className="flex items-start justify-between gap-3 border-b border-line px-6 py-5">
         <div>
-          <p className="text-xs text-ink-3">Posting calendar in Buffer</p>
+          <p className="text-xs text-ink-3">Posting calendar</p>
           <h2 className="mt-0.5 font-display text-[18px] font-semibold tracking-[-0.02em]">{project.name}</h2>
         </div>
         <Button variant="ghost" onClick={onClose} aria-label="Close" className="-mt-2 -mr-3 h-8"><X size={15} /></Button>
@@ -417,10 +405,10 @@ function CalendarDialog({ project, onClose, onDone }: { project: P; onClose: () 
 
       <div className="grid content-start gap-5 overflow-y-auto px-6 py-5">
         {done ? (
-          <p className="text-[13px] text-ink-2">Scheduled {plan?.scheduled.length} {plan?.scheduled.length === 1 ? 'clip' : 'clips'} in
-            Buffer. You can see and change them there.</p>
-        ) : <>
-          <ChannelPicker picked={picked} onChange={change(setPicked)} />
+          <p className="text-[13px] text-ink-2">Scheduled {plan?.scheduled.length} {plan?.scheduled.length === 1 ? 'clip' : 'clips'}.
+            Each clip shows where and when it goes out.</p>
+        ) : zernio === false ? <SetUpPosting onSettings={onSettings} onClose={onClose} /> : <>
+          <ZernioPicker picked={picked} onChange={change(setPicked)} onSettings={() => { onClose(); onSettings?.() }} />
           <Choices legend="Posting days" multiple options={WEEKDAYS} value={days} onChange={change(setDays)} />
           <div className="grid grid-cols-2 gap-4">
             <Field label="Times" hint={`24-hour, separated by commas. Your time zone: ${ZONE}.`}
@@ -464,113 +452,11 @@ function CalendarDialog({ project, onClose, onDone }: { project: P; onClose: () 
   )
 }
 
-type Brand = { id: string; name: string; timezone: string; networks: string[] | null }
-// Metricool's network names, in the order we show them (its "twitter" is X)
-const MC_NETS = [['instagram', 'Instagram'], ['tiktok', 'TikTok'], ['youtube', 'YouTube'], ['linkedin', 'LinkedIn'],
-  ['facebook', 'Facebook'], ['twitter', 'X']] as const
-
-/** Brand and networks for a Metricool post. Mounted only once Metricool is connected. */
-function MetricoolPicker({ brand, setBrand, nets, setNets }: {
-  brand?: string; setBrand: (id: string) => void; nets: string[]; setNets: (n: string[]) => void
+function PublishDialog({ clip: c, onClose, onChanged, onSettings }: {
+  clip: Clip; onClose: () => void; onChanged: () => void; onSettings?: () => void
 }) {
-  const { data: brands, error } = useQuery<Brand[]>('publish.metricool_brands')
-  useEffect(() => { if (brands?.length && !brand) setBrand(brands[0].id) }, [brands])
-  const chosen = brands?.find((b) => b.id === brand)
-  if (error) return <ErrorNote error={error} />
-  if (!brands) return <div className="h-24 animate-pulse rounded-field bg-black/[0.04]" />
-  const offered = MC_NETS.filter(([n]) => !chosen?.networks || chosen.networks.includes(n))
   return (
-    <>
-      {brands.length > 1 && (
-        <Field label="Brand">
-          {(id) => <Select id={id} value={brand ?? ''} onChange={(v) => { setBrand(v); setNets([]) }}
-            options={brands.map((b) => ({ value: b.id, label: b.name }))} />}
-        </Field>
-      )}
-      <Choices legend="Networks" multiple value={nets} onChange={setNets}
-        options={offered.map(([value, label]) => ({ value, label }))} />
-    </>
-  )
-}
-
-function PublishDialog({ clip: c, onClose, onChanged }: {
-  clip: Clip; onClose: () => void; onChanged: () => void
-}) {
-  const [via, setVia] = useState<'buffer' | 'metricool'>('buffer')
-  const [picked, setPicked] = useState<string[]>([])
-  const [brand, setBrand] = useState<string>()
-  const [nets, setNets] = useState<string[]>([])
-  const [when, setWhen] = useState('')
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<Error>()
-  const metricool = useConnection('metricool', (e) => setError(e))
-  const ready = via === 'buffer' ? picked.length > 0 : !!(metricool.connected && brand && nets.length)
-  // open on whichever service is connected: Metricool when Buffer isn't and Metricool is
-  const buffer = useQuery<{ connected: boolean }>('publish.buffer_connection').data
-  useEffect(() => { if (buffer && !buffer.connected && metricool.connected) setVia('metricool') }, [buffer?.connected, metricool.connected])
-
-  async function publish() {
-    if (busy) return
-    setBusy(true)
-    setError(undefined)
-    const due_at = when ? new Date(when).toISOString() : undefined
-    try {
-      if (via === 'buffer') {
-        await call('publish.buffer_publish', { project_id: c.project_id, clip_idx: c.idx, channel_ids: picked, due_at })
-      } else {
-        await call('publish.metricool_publish', { project_id: c.project_id, clip_idx: c.idx, blog_id: brand, networks: nets, due_at })
-      }
-      onChanged()
-      onClose()
-    } catch (e) {
-      setError(e as Error)
-      setBusy(false)
-    }
-  }
-
-  return (
-    <Dialog label={`Publish clip ${c.idx}`} width={560} onClose={onClose} className="grid-rows-[auto_minmax(0,1fr)_auto]">
-      <header className="flex items-start justify-between gap-3 border-b border-line px-6 py-5">
-        <div>
-          <p className="text-xs text-ink-3">Publish</p>
-          <h2 className="mt-0.5 font-display text-[18px] font-semibold tracking-[-0.02em]">{c.title}</h2>
-        </div>
-        <Button variant="ghost" onClick={onClose} aria-label="Close" className="-mt-2 -mr-3 h-8"><X size={15} /></Button>
-      </header>
-
-      <div className="grid content-start gap-5 overflow-y-auto px-6 py-5">
-        <Choices legend="Publish with" value={via} onChange={(v) => { setVia(v); setError(undefined) }}
-          options={[{ value: 'buffer', label: 'Buffer' }, { value: 'metricool', label: 'Metricool' }]} />
-
-        {via === 'buffer' && <ChannelPicker picked={picked} onChange={setPicked} />}
-        {via === 'metricool' && (metricool.connected
-          ? <MetricoolPicker brand={brand} setBrand={setBrand} nets={nets} setNets={setNets} />
-          : metricool.connected === false && (
-            <div className="grid gap-3 rounded-field bg-ground p-4 text-[13px]">
-              <p className="text-ink-2">{metricool.waiting
-                ? 'Approve the app in the browser window that opened, then come back here.'
-                : 'Connect your Metricool account once. You sign in and approve in your browser, nothing to paste.'}</p>
-              <Button className="w-fit" disabled={metricool.waiting} onClick={metricool.connect}>
-                <PaperPlaneTilt size={14} />{metricool.waiting ? 'Waiting for Metricool…' : 'Connect Metricool'}
-              </Button>
-            </div>
-          ))}
-
-        <Field label="Schedule" hint={via === 'buffer'
-          ? 'Leave empty to post now. Buffer can also reschedule it later.'
-          : 'Leave empty to post in about five minutes. It appears in your Metricool planner.'}>
-          {(id) => <Input id={id} type="datetime-local" value={when} onChange={(e) => setWhen(e.target.value)} />}
-        </Field>
-
-        {error && <ErrorNote error={error} />}
-      </div>
-
-      <div className="flex justify-end gap-2 border-t border-line px-6 py-4">
-        <Button variant="ghost" onClick={onClose}>Cancel</Button>
-        <Button variant="primary" disabled={!ready || busy} onClick={publish}>
-          <PaperPlaneTilt size={14} />{busy ? 'Publishing…' : when ? 'Schedule' : 'Post now'}
-        </Button>
-      </div>
-    </Dialog>
+    <PostDialog title={c.title} kind="clip" onClose={onClose} onDone={onChanged} onSettings={onSettings}
+      send={(account_ids, due_at) => call<Publication[]>('publish.zernio_publish', { project_id: c.project_id, clip_idx: c.idx, account_ids, due_at })} />
   )
 }

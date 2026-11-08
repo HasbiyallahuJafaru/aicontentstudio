@@ -1,6 +1,6 @@
 """Terminal access to the same engine the app drives: python -m app.cli <command>. Keys come from the repo
 .env (like dev mode) and the data folder from ACS_DATA_DIR (default <repo>/data), so the CLI works on the
-app's own projects. Publish commands need the Buffer connection and media host set up in the app first."""
+app's own projects. Posting commands need Zernio set up in the app first (Settings, Posting)."""
 import argparse
 import json
 import sys
@@ -18,15 +18,12 @@ def main(argv=None) -> int:
     clips.add_argument("project_id")
     export = sub.add_parser("export", help="export a project's rendered pieces/clips to a folder")
     export.add_argument("project_id")
-    channels = sub.add_parser("channels", help="list connected Buffer channels")
-    publish = sub.add_parser("publish", help="publish an approved clip through Buffer")
+    sub.add_parser("accounts", help="list the social accounts connected in Zernio")
+    publish = sub.add_parser("publish", help="post or schedule an approved clip through Zernio")
     publish.add_argument("project_id")
     publish.add_argument("clip_idx", type=int)
-    publish.add_argument("--channels", required=True, help="comma-separated Buffer channel ids")
-    publish.add_argument("--at", help="schedule: ISO time, e.g. 2026-09-21T09:00:00+01:00 (default: now)")
-    tool = sub.add_parser("metricool", help="call a Metricool MCP tool by name (tools: python -m app.cli metricool tools)")
-    tool.add_argument("tool")
-    tool.add_argument("--args", default="{}", help="JSON object of tool arguments")
+    publish.add_argument("--accounts", required=True, help="comma-separated Zernio account ids (see: accounts)")
+    publish.add_argument("--at", help="schedule: ISO time, e.g. 2026-09-21T09:00:00+01:00 (default: in two minutes)")
 
     args = parser.parse_args(argv)
     try:
@@ -47,23 +44,14 @@ def _run(args) -> int:
     elif args.cmd == "export":
         result = export.export_project(args.project_id)
         print(json.dumps(result, indent=2))
-    elif args.cmd == "channels":
-        from app.publish import buffer
-        print(json.dumps([{k: c[k] for k in ("id", "service", "displayName", "usable")}
-                          for c in buffer.channels()], indent=2))
+    elif args.cmd == "accounts":
+        from app.publish import zernio
+        print(json.dumps(zernio.accounts(), indent=2))
     elif args.cmd == "publish":
-        from app.publish import buffer
-        result = buffer.publish(args.project_id, args.clip_idx, args.channels.split(","), args.at)
+        from app.publish import zernio
+        result = zernio.publish(args.project_id, args.clip_idx, args.accounts.split(","), args.at)
         print(json.dumps([{k: r[k] for k in ("channel_name", "status", "due_at", "external_link", "error")}
                           for r in result], indent=2))
-    elif args.cmd == "metricool":
-        from app.publish import metricool
-        if args.tool == "tools":
-            print(json.dumps([{"name": t["name"], "description": t.get("description", "")} for t in metricool.tools()],
-                             indent=2))
-        else:
-            result = metricool.call_tool(args.tool, json.loads(args.args))
-            print(result["text"] or json.dumps(result))
     return 0
 
 

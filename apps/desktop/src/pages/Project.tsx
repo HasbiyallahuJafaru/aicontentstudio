@@ -1,13 +1,14 @@
 import type { CSSProperties } from 'react'
 import { useEffect, useRef, useState } from 'react'
-import { ArrowLeft, Export, Play, Sparkle, Trash, X } from '@phosphor-icons/react'
+import { ArrowLeft, Export, PaperPlaneTilt, Play, Sparkle, Trash, X } from '@phosphor-icons/react'
 import { call, formatDate, FORMATS, hasKey, label, PLATFORMS, useJob, useQuery, BackendError,
-  type Asset, type Piece, type Project as P, type Render } from '../lib/studio'
+  type Asset, type Piece, type Project as P, type Publication, type Render } from '../lib/studio'
 import { Preview } from '../components/Preview'
 import { ClipWorkspace } from '../components/Clips'
 import { Button, ErrorNote, cx, Reveal } from '../components/ui'
 import { Cover } from '../components/Cover'
 import { FootageReview } from '../components/FootageReview'
+import { PostDialog, PublicationChips } from '../components/Posting'
 
 export function Project({ id, onBack, onSettings }: { id: string; onBack: () => void; onSettings: () => void }) {
   const { data: project, error: loadError, reload: reloadProject } = useQuery<P>('projects.get', { id })
@@ -20,6 +21,15 @@ export function Project({ id, onBack, onSettings }: { id: string; onBack: () => 
     'renders.list', { project_id: id }, `${job?.updated_at ?? ''}|${rev}`)
   const { data: assets } = useQuery<Asset[]>('assets.list')
   const [preview, setPreview] = useState<string>()
+  const [posting, setPosting] = useState<string>()
+  const { data: pubs, reload: reloadPubs } = useQuery<Publication[]>('publish.publications', { project_id: id }, rev)
+  // while a post is waiting to go out, look again every minute so "Scheduled" turns into "Posted" by itself
+  const pending = pubs?.some((p) => p.status === 'scheduled' || p.status === 'sending')
+  useEffect(() => {
+    if (!pending) return
+    const t = window.setInterval(reloadPubs, 60_000)
+    return () => window.clearInterval(t)
+  }, [pending])
   const [keySet, setKeySet] = useState<boolean>()
   const [error, setError] = useState<BackendError>()
 
@@ -28,6 +38,9 @@ export function Project({ id, onBack, onSettings }: { id: string; onBack: () => 
   // bring the finished pieces into view when a job completes (they render below the progress bar)
   const listRef = useRef<HTMLOListElement>(null)
   const reviewRef = useRef<HTMLDivElement>(null)
+  const progressRef = useRef<HTMLElement>(null)
+  // a job started from further down the page (Download and render) brings its progress bar into view
+  useEffect(() => { if (running) progressRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }) }, [running])
   useEffect(() => {  // footage waiting for a pick is the next thing to do, so it wins the scroll over the list
     if (job?.status === 'completed') (reviewRef.current ?? listRef.current)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }, [job?.status, pieces?.some((p) => p.content.review)])
@@ -110,7 +123,7 @@ export function Project({ id, onBack, onSettings }: { id: string; onBack: () => 
       {error && <div className="mb-6"><ErrorNote error={error} /></div>}
 
       {running && job && (
-        <section aria-live="polite" className="glass mb-5 grid gap-3 px-7 py-5">
+        <section ref={progressRef} aria-live="polite" className="glass mb-5 grid scroll-mt-6 gap-3 px-7 py-5">
           <div className="flex items-center justify-between gap-4 text-[13px]">
             <span className="text-ink">{job.stage || 'Starting'}</span>
             <Button variant="ghost" onClick={() => call('jobs.cancel', { id: job.id })}>Cancel</Button>
@@ -141,6 +154,7 @@ export function Project({ id, onBack, onSettings }: { id: string; onBack: () => 
       <ol ref={listRef} className={cx('grid', (!!pieces?.length || running) && 'glass px-8 py-2')}>
         {pieces?.map((p) => (
           <PieceRow key={p.id} piece={p} renders={renders?.filter((r) => r.piece_id === p.id)}
+            pubs={pubs?.filter((x) => x.piece_id === p.id) ?? []} onPubsChanged={reloadPubs} onPost={() => setPosting(p.id)}
             onPreview={() => setPreview(p.id)} busy={running} onChanged={refresh} onError={setError} />
         ))}
         {running && (pieces?.length ?? 0) < b.quantity && job?.stage.startsWith('Writing') && (
@@ -153,6 +167,12 @@ export function Project({ id, onBack, onSettings }: { id: string; onBack: () => 
           </li>
         )}
       </ol>
+      {pieces?.filter((p) => p.id === posting).map((p) => (
+        <PostDialog key={p.id} title={p.content.quote.text} kind={renders?.some((r) => r.piece_id === p.id && r.kind === 'video') ? 'video' : 'image'}
+          video={!!renders?.some((r) => r.piece_id === p.id && r.kind === 'video')}
+          onClose={() => setPosting(undefined)} onDone={reloadPubs} onSettings={onSettings}
+          send={(account_ids, due_at) => call<Publication[]>('publish.zernio_publish_piece', { piece_id: p.id, account_ids, due_at })} />
+      ))}
       {pieces?.length ? pieces.filter((p) => p.id === preview).map((p) => (
         <Preview key={p.id} piece={p} renders={renders?.filter((r) => r.piece_id === p.id) ?? []} assets={assets ?? []}
           voice={b.voice} onClose={() => setPreview(undefined)} onChanged={refresh} />
@@ -161,9 +181,9 @@ export function Project({ id, onBack, onSettings }: { id: string; onBack: () => 
   )
 }
 
-function PieceRow({ piece: p, renders, onPreview, busy, onChanged, onError }: {
-  piece: Piece; renders?: Render[]; onPreview: () => void; busy?: boolean; onChanged: () => void
-  onError: (e: BackendError) => void
+function PieceRow({ piece: p, renders, pubs, onPubsChanged, onPost, onPreview, busy, onChanged, onError }: {
+  piece: Piece; renders?: Render[]; pubs: Publication[]; onPubsChanged: () => void; onPost: () => void
+  onPreview: () => void; busy?: boolean; onChanged: () => void; onError: (e: BackendError) => void
 }) {
   const c = p.content
   const tag = String(p.idx).padStart(3, '0')
@@ -222,6 +242,8 @@ function PieceRow({ piece: p, renders, onPreview, busy, onChanged, onError }: {
                     </span>
                   ))}
                   <Button variant="ghost" className="!px-2 !text-xs" onClick={onPreview}>Preview</Button>
+                  <Button variant="ghost" className="!px-2 !text-xs" disabled={busy} onClick={onPost}
+                    title="Post or schedule this to your social accounts"><PaperPlaneTilt size={13} />Post</Button>
                 </>
               )}
               {deletePiece}
@@ -230,6 +252,7 @@ function PieceRow({ piece: p, renders, onPreview, busy, onChanged, onError }: {
           <blockquote data-selectable className="max-w-[34ch] font-display text-[24px] leading-[1.25] font-semibold tracking-[-0.025em] text-balance">
             {c.quote.text}
           </blockquote>
+          <PublicationChips rows={pubs} onChanged={onPubsChanged} />
         </div>
         {c.narration && <p data-selectable className="max-w-[68ch] text-[13px] leading-relaxed text-ink-2">{c.narration.text}</p>}
         <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-5 gap-y-1.5 text-xs">
@@ -239,8 +262,10 @@ function PieceRow({ piece: p, renders, onPreview, busy, onChanged, onError }: {
             <dt className="text-ink-3">Asset</dt>
             <dd className="text-danger">{c.visual_error}</dd>
           </>)}
-          <dt className="text-ink-3">{c.narration ? 'Delivery' : 'Design'}</dt>
-          <dd className="text-ink-2">{c.narration ? `${label(c.narration.delivery.replace('_', ' '))}, ` : ''}{c.design.composition} composition{c.narration ? `, ${c.design.animation} motion` : ''}</dd>
+          {c.narration && c.design && (<>
+            <dt className="text-ink-3">Delivery</dt>
+            <dd className="text-ink-2">{label(c.narration.delivery.replace('_', ' '))}, {c.design.composition} composition, {c.design.animation} motion</dd>
+          </>)}
         </dl>
         <details className="group text-xs">
           <summary className="w-fit cursor-pointer list-none text-ink-3 hover:text-ink">Captions and metadata</summary>

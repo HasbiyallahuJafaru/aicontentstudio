@@ -18,7 +18,7 @@ from app import clips, config, database, downloader, export, projects  # noqa: E
 from app.clipper import preview  # noqa: E402
 from app.database import connect  # noqa: E402
 from app.errors import UserError  # noqa: E402
-from app.publish import buffer  # noqa: E402
+from app.publish import posts, zernio  # noqa: E402
 
 NETWORKS = ["tiktok", "instagram", "youtube", "linkedin", "facebook", "x"]
 
@@ -209,17 +209,17 @@ class PlainDownloader(unittest.TestCase):
 
 
 class CalendarPlan(unittest.TestCase):
-    def test_dry_run_plans_without_touching_buffer(self):
+    def test_dry_run_plans_without_touching_zernio(self):
         p, _ = clip_project(name="Calendar talk")
         start = (datetime.now(timezone.utc) + timedelta(days=2)).strftime("%Y-%m-%d")
-        with mock.patch.object(buffer, "_ready") as ready, mock.patch.object(buffer, "publish") as publish:
-            plan = buffer.calendar(p["id"], ["ch-1"], list(range(1, 8)), ["09:00"], start, "UTC", dry_run=True)
+        with mock.patch.object(zernio, "check") as ready, mock.patch.object(zernio, "publish") as publish:
+            plan = posts.calendar(p["id"], ["ch-1"], list(range(1, 8)), ["09:00"], start, "UTC", dry_run=True)
         ready.assert_not_called()
         publish.assert_not_called()
         self.assertEqual([s["clip_idx"] for s in plan["scheduled"]], [1])
         self.assertTrue(plan["scheduled"][0]["due_at"].startswith(start))
         with self.assertRaisesRegex(UserError, "posting day"):
-            buffer.calendar(p["id"], ["ch-1"], [], ["09:00"], start, "UTC", dry_run=True)
+            posts.calendar(p["id"], ["ch-1"], [], ["09:00"], start, "UTC", dry_run=True)
 
 
 if __name__ == "__main__":

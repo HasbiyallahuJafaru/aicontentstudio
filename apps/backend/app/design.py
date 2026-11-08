@@ -36,12 +36,17 @@ HEADLINE_FONTS = {"auto": "Matches the design", "poster": "Big Shoulders (conden
                   "grotesk": "Bricolage (editorial grotesk)", "serif-display": "Gloock (display serif)",
                   "serif-italic": "Instrument Serif (italic)", "sans": "Instrument Sans (light touch)"}
 DESIGNS = {"noir": "Noir poster", "paper": "Paper note", "whisper": "Whisper", "statement": "Statement",
-           "classic": "Classic serif", "split": "Editorial split", "stack": "Fitted stack"}
-GENRE_DESIGNS = {"hope": ["whisper", "paper", "classic"], "speech": ["noir", "stack", "paper"],
-                 "stoic": ["classic", "statement", "noir"], "history": ["classic", "split", "noir"],
-                 "books": ["classic", "paper", "split"], "cinema": ["whisper", "noir", "split"]}
+           "classic": "Classic serif", "split": "Editorial split", "stack": "Fitted stack", "notes": "Notes page",
+           "highlight": "Book highlight", "riso": "Riso print", "subtitle": "Film subtitle", "polaroid": "Instant print",
+           "swiss": "Swiss grid"}
+GENRE_DESIGNS = {"hope": ["whisper", "notes", "polaroid", "paper", "riso", "classic"],
+                 "speech": ["noir", "swiss", "stack", "subtitle", "paper"],
+                 "stoic": ["classic", "highlight", "statement", "swiss", "noir"],
+                 "history": ["classic", "highlight", "polaroid", "split", "noir"],
+                 "books": ["highlight", "classic", "notes", "paper", "split"],
+                 "cinema": ["subtitle", "whisper", "riso", "polaroid", "noir", "split"]}
 COMPOSITION = {"minimal": "whisper", "bold": "stack", "editorial": "split", "centered": "classic"}
-SHORT_ONLY = {"statement": 12, "stack": 14, "whisper": 20}  # words: past this the design stops reading well
+SHORT_ONLY = {"statement": 12, "stack": 14, "whisper": 20, "swiss": 16, "subtitle": 30, "riso": 22}  # words: past this the design stops reading well
 INK, BONE = "#151413", "#F3F0EA"
 
 
@@ -62,18 +67,9 @@ def pick(design: str, genre: str, composition: str | None, idx: int, text: str) 
 
 
 def copy_for(quote: dict) -> dict:
-    """The quote split into the parts a designer works with. `emphasis` and `kicker` come from the writer when it
-    gave them; otherwise a short final sentence ("Live it.") is the emphasis."""
-    text = " ".join(quote["text"].split())
-    emphasis = " ".join((quote.get("emphasis") or "").split())
-    if not emphasis:
-        parts = re.split(r"(?<=[.!?])\s+", text)
-        if len(parts) >= 2 and len(parts[-1].split()) <= 4:
-            emphasis = parts[-1]
-    if emphasis and _norm(emphasis) not in _norm(text):
-        emphasis = ""
-    return {"text": text, "author": (quote.get("author") or "").strip(),
-            "kicker": " ".join((quote.get("kicker") or "").split()), "emphasis": emphasis}
+    """What a design sets: the quote and its author. Nothing is added around them (owner, 2026-11-08: no emphasis
+    phrase, no kicker line; simple content reads better)."""
+    return {"text": " ".join(quote["text"].split()), "author": (quote.get("author") or "").strip()}
 
 
 def _norm(s: str) -> str:
@@ -184,16 +180,9 @@ def font(face: str, size: int) -> ImageFont.FreeTypeFont:
     return f
 
 
-def tokens(text: str, emphasis: str = "") -> list[tuple[str, bool]]:
-    words = text.split()
-    flags = [False] * len(words)
-    if emphasis:
-        ew = [_norm(w) for w in emphasis.split()]
-        for i in range(len(words) - len(ew) + 1):
-            if [_norm(w) for w in words[i:i + len(ew)]] == ew:
-                flags[i:i + len(ew)] = [True] * len(ew)
-                break
-    return list(zip(words, flags))
+def tokens(text: str) -> list[tuple[str, bool]]:
+    """Words as (word, stressed) pairs; the layout engine still honours the flag, which only Statement sets."""
+    return [(w, False) for w in text.split()]
 
 
 class Style:
@@ -365,7 +354,7 @@ def label_lines(text: str) -> list[str]:
 
 
 def sub_line(c: dict) -> str:
-    return c["kicker"] or (f"— {c['author']}" if c["author"] else "")
+    return f"— {c['author']}" if c["author"] else ""
 
 
 # ---------- designs ----------
@@ -441,7 +430,7 @@ def whisper(photo, c, pal, w, h, o):
     base = cover(photo, w, h, o["subject"]) if photo else Image.new("RGB", (w, h), pal["dark"])
     img = vignette(grade(base, 0.70, 1.05, 0.80), 0.5)
     face = o["face"] or "sans"
-    st, lines = fit(tokens(c["text"], c["emphasis"]),
+    st, lines = fit(tokens(c["text"]),
                     lambda s: Style(face, s, "#FFFFFF", emph_face="sans-bold" if face == "sans" else face,
                                     leading=1.38), w * 0.80, h * 0.3, [round(50 * u), round(44 * u), round(38 * u)], 4)
     sig = Style("label", 21 * u, "#FFFFFF", tracking=0.3, case="upper", alpha=170)
@@ -471,8 +460,8 @@ def statement(photo, c, pal, w, h, o):
     else:
         img.paste(mix(ground, "#FFFFFF", 0.45), (0, round(h * 0.80), w, h))
 
-    toks = tokens(c["text"], c["emphasis"])
-    if not any(e for _, e in toks):  # no emphasis given: the longest word carries the poster
+    toks = tokens(c["text"])
+    if not any(e for _, e in toks):  # the longest word carries the poster
         i = max(range(len(toks)), key=lambda k: len(re.sub(r"\W", "", toks[k][0])))
         toks[i] = (toks[i][0], True)
     first = next(i for i, (_, e) in enumerate(toks) if e)
@@ -535,7 +524,7 @@ def classic(photo, c, pal, w, h, o):
 
 
 def split(photo, c, pal, w, h, o):
-    """Magazine page: the photograph above, a solid panel in the palette's dark below, a tracked kicker in the
+    """Magazine page: the photograph above, a solid panel in the palette's dark below, a tracked line in the
     accent and the line set in an editorial grotesk, ranged left on a margin."""
     u = w / 1080
     ph = round(h * 0.58)
@@ -563,13 +552,13 @@ def split(photo, c, pal, w, h, o):
 
 def stack(photo, c, pal, w, h, o):
     """Fitted type: each line of condensed capitals scaled to the full measure, a solid wall of words over a
-    dark scene, the emphasis lines in the accent."""
+    dark scene."""
     u = w / 1080
     base = cover(photo, w, h, o["subject"]) if photo else Image.new("RGB", (w, h), pal["dark"])
     img = vignette(grade(base, 0.40, 1.12, 0.6), 0.7)
     face, acc, m = o["face"] or "poster", accent(pal), 84 * u
     measure, gap = w - 2 * m, 16 * u
-    toks = tokens(c["text"], c["emphasis"])
+    toks = tokens(c["text"])
 
     def lay(n):
         ref = Style(face, 100, BONE, case="upper")
@@ -605,8 +594,235 @@ def stack(photo, c, pal, w, h, o):
     return shadowed(grain(img, 0.08), layer, 0.45, 20 * u)
 
 
+
+# ---------- designs added 2026-11-08 (owner: "more backgrounds, unique and in vogue") ----------
+# Researched against 2026 feeds: tactile, made-by-hand surfaces (grain, paper, risograph, halftone, instant film) as a
+# reaction to the flat AI look, plus formats that read as candid rather than designed (a note, a highlighted page).
+# None imitates a real app's interface: no status bars, logos or brand chrome.
+
+def _seed(text: str) -> int:
+    return sum(ord(ch) * (i + 1) for i, ch in enumerate(text)) % 9973
+
+
+def _light(hexcol: str) -> float:
+    return colorsys.rgb_to_hls(*(v / 255 for v in _rgb(hexcol)))[1]
+
+
+def notes(photo, c, pal, w, h, o):
+    """A plain note: warm white page, the first sentence as a bold title, the rest as body text, flush left.
+    Reads as written, not designed, which is the point of the format."""
+    u = w / 1080
+    img = grain(Image.new("RGB", (w, h), "#FBFAF6"), 0.025)
+    m = 104 * u
+    parts = re.split(r"(?<=[.!?])\s+", c["text"])
+    title, body = (parts[0], " ".join(parts[1:])) if len(parts) > 1 and len(parts[0].split()) <= 14 else (c["text"], "")
+    head, hlines = fit(tokens(title), lambda s: Style(o["face"] or "sans-bold", s, "#1C1B1A", leading=1.14),
+                       w - 2 * m, h * (0.34 if body else 0.6), sizes(92 * u, 46 * u), 6)
+    bst, blines = (fit(tokens(body), lambda s: Style("sans", s, "#34322F", leading=1.42), w - 2 * m, h * 0.36,
+                       sizes(52 * u, 34 * u), 9) if body else (None, []))
+    lab = Style("label", 21 * u, "#9A958E", tracking=0.16, case="upper")
+    sign = c["author"] and f"— {c['author']}"
+    gap = head.size * 0.7
+    bh = block_h(head, len(hlines)) + (gap + block_h(bst, len(blines)) if bst else 0)
+    top = h * 0.22 if o["position"] == "auto" else _place(o["position"], "top", h, bh)
+    layer = Image.new("RGBA", (w, h))
+    d = ImageDraw.Draw(layer)
+    acc = mix(tone(pal.get("primary", "#E0A82E"), 0.6, 0.75), "#E9B530", 0.55)
+    d.rounded_rectangle((m, top - 92 * u, m + 64 * u, top - 84 * u), radius=4 * u, fill=rgba(acc))
+    y = draw_lines(layer, head, hlines, m, top, "left")
+    if bst:
+        y = draw_lines(layer, bst, blines, m, y + gap, "left")
+    if sign:
+        draw_lines(layer, lab, [tokens(sign)], m, y + head.size * 0.9, "left")
+    return over(img, layer)
+
+
+def highlight(photo, c, pal, w, h, o):
+    """A page from a book: running head, the quote set in a text serif with a marker highlight laid down line by
+    line, the rest of the page as faint lines of type, a folio at the foot."""
+    import random
+    u = w / 1080
+    img = paper(w, h, "#F0E9DA")
+    m = 118 * u
+    st, lines = fit(tokens(c["text"]), lambda s: Style(o["face"] or "serif", s, "#221F1B", leading=1.52),
+                    w - 2 * m, h * 0.44, sizes(72 * u, 40 * u), 9)
+    lh = st.size * st.leading
+    bh = block_h(st, len(lines))
+    top = _place(o["position"], "center", h, bh, 0.2, 0.8)
+    rnd = random.Random(_seed(c["text"]))
+    marks = Image.new("RGBA", (w, h))
+    md = ImageDraw.Draw(marks)
+    yellow = mix("#F7DF4F", tone(pal.get("primary", "#F7DF4F"), 0.62, 0.8), 0.18)
+    for i, line in enumerate(lines):  # the marker: a little long or short at each end, never a perfect box
+        y0 = top + i * lh - st.size * 0.16
+        md.rounded_rectangle((m - rnd.uniform(4, 14) * u, y0 + rnd.uniform(-3, 3) * u,
+                              m + line_w(st, line) + rnd.uniform(4, 18) * u, y0 + st.cap + st.size * 0.34),
+                             radius=6 * u, fill=rgba(yellow, 175))
+    ghost = Image.new("RGBA", (w, h))
+    gd = ImageDraw.Draw(ghost)
+    gl, gh = st.size * 0.95, max(5 * u, st.size * 0.14)
+    for start, end in ((168 * u, top - lh * 0.9), (top + bh + lh * 0.9, h - 170 * u)):
+        y, n = start, 0
+        while y + gh < end:  # paragraphs of faint type around the passage; a short line ends each paragraph
+            n += 1
+            short = n % rnd.randint(4, 6) == 0
+            gd.rounded_rectangle((m, y, m + (w - 2 * m) * (rnd.uniform(0.3, 0.6) if short else rnd.uniform(0.9, 1.0)), y + gh),
+                                 radius=gh / 2, fill=rgba("#221F1B", 30))
+            y += gl
+    head_lab = Style("label", 19 * u, "#6E675D", tracking=0.22, case="upper")
+    layer = Image.new("RGBA", (w, h))
+    if c["author"]:
+        draw_lines(layer, head_lab, [tokens(c["author"])], w / 2, 96 * u)
+    draw_lines(layer, head_lab, [tokens(str(17 + _seed(c["text"]) % 260))], w / 2, h - 96 * u)
+    draw_lines(layer, st, lines, m, top, "left")
+    flat = Image.new("RGB", (w, h), "#FFFFFF")
+    for lay in (ghost, marks, layer):  # every mark is ink on paper: multiplied into the sheet, not pasted on it
+        tmp = Image.new("RGB", (w, h), "#FFFFFF")
+        tmp.paste(lay, (0, 0), lay)
+        flat = ImageChops.multiply(flat, tmp)
+    return ImageChops.multiply(img, flat.filter(ImageFilter.GaussianBlur(0.5)))
+
+
+def riso(photo, c, pal, w, h, o):
+    """Two-colour risograph print: the photograph as fluorescent halftone dots, the words in the second ink with a
+    slightly missed registration, both multiplied into uncoated paper."""
+    u = w / 1080
+    img = paper(w, h, "#F5F0E6")
+    ink_a = "#FF5C9E"                                                     # fluorescent pink
+    ink_b = mix("#1D46B5", tone(pal.get("primary", "#1D46B5"), 0.36, 0.8), 0.22)  # deep riso blue, palette-tinted
+    if photo:
+        g = ImageOps.autocontrast(ImageOps.grayscale(cover(photo, w, h, o["subject"])), cutoff=2)
+        g = ImageEnhance.Brightness(g).enhance(1.3)  # riso halftones read light: paper must show between the dots
+    else:
+        g = ImageOps.invert(Image.radial_gradient("L").resize((w, h)))
+    cell = max(6, round(13 * u))
+    small = g.resize((w // cell + 2, h // cell + 2), Image.BILINEAR)
+    dots = Image.new("L", (w, h), 0)
+    dd = ImageDraw.Draw(dots)
+    for j in range(small.height):
+        for i in range(small.width):
+            r = cell * 0.56 * ((255 - small.getpixel((i, j))) / 255) ** 1.5
+            if r > 0.7:
+                cx, cy = i * cell + (cell / 2 if j % 2 else 0), j * cell
+                dd.ellipse((cx - r, cy - r, cx + r, cy + r), fill=225)
+    img = Image.composite(ImageChops.multiply(img, Image.new("RGB", (w, h), ink_a)), img, dots)
+    m = 84 * u
+    head, lines = fit(tokens(c["text"]),
+                      lambda s: Style(o["face"] or "grotesk", s, "#000000", leading=0.98, case="upper"),
+                      w - 2 * m, h * 0.42, sizes(132 * u, 52 * u), 6)
+    sub = sub_line(c)
+    lab = Style("label", 24 * u, "#000000", tracking=0.3, case="upper")
+    gap = head.size * 0.5
+    bh = block_h(head, len(lines)) + (gap + lab.cap if sub else 0)
+    top = _place(o["position"], "bottom", h, bh, 0.12, 0.9)
+    mask = Image.new("RGBA", (w, h))
+    y = draw_lines(mask, head, lines, m, top, "left")
+    small = Image.new("RGBA", (w, h))
+    if sub:  # the small label prints in the blue drum only: misregistration would make it unreadable
+        draw_lines(small, lab, [tokens(sub)], m, y + gap, "left")
+    alpha = mask.getchannel("A")
+    shift = round(7 * u)
+    for ink, dx, dy, k in ((ink_a, shift, round(5 * u), 0.55), (ink_b, 0, 0, 0.92)):  # pink drum first, off by a hair
+        a = ImageChops.offset(alpha, dx, dy).point(lambda v: round(v * k))
+        if ink == ink_b:
+            a = ImageChops.lighter(a, small.getchannel("A"))
+        img = Image.composite(ImageChops.multiply(img, Image.new("RGB", (w, h), ink)), img, a)
+    return grain(img, 0.06)
+
+
+def subtitle(photo, c, pal, w, h, o):
+    """A frame from a film: split-toned grade, letterbox bars, the line set as a subtitle just above the lower bar."""
+    u = w / 1080
+    base = cover(photo, w, h, o["subject"], 0.5) if photo else Image.new("RGB", (w, h), pal["dark"])
+    toned = ImageOps.colorize(ImageOps.grayscale(base), black="#0B1418", mid="#5E6B66", white="#F4DDBD")
+    img = vignette(Image.blend(grade(base, 0.84, 1.1, 0.8), toned, 0.42), 0.55)
+    bar = round(h * 0.11)
+    d = ImageDraw.Draw(img)
+    d.rectangle((0, 0, w, bar), fill="#050505")
+    d.rectangle((0, h - bar, w, h), fill="#050505")
+    st, lines = fit(tokens(c["text"]), lambda s: Style(o["face"] or "sans", s, "#FFFFFF", leading=1.3),
+                    w * 0.84, h * 0.24, sizes(52 * u, 32 * u), 4)
+    bh = block_h(st, len(lines))
+    top = h - bar - 64 * u - bh if o["position"] in ("auto", "bottom") else _place(o["position"], "center", h, bh)
+    layer = Image.new("RGBA", (w, h))
+    draw_lines(layer, st, lines, w / 2, top)
+    lab = Style("label", 19 * u, "#FFFFFF", tracking=0.34, case="upper", alpha=150)
+    if sub := sub_line(c):
+        draw_lines(layer, lab, [tokens(sub.replace("— ", ""))], w / 2, (bar - lab.cap) / 2)
+    return shadowed(grain(img, 0.11), layer, 0.9, 5 * u)
+
+
+def polaroid(photo, c, pal, w, h, o):
+    """An instant print taped to a sheet of paper, slightly crooked, the line written underneath in an italic serif."""
+    u = w / 1080
+    img = paper(w, h, mix("#DCD4C6", pal.get("light", "#E9E3D8"), 0.3))
+    seed = _seed(c["text"])
+    pw = round(w * 0.66)
+    border = round(pw * 0.055)
+    frame = Image.new("RGBA", (pw + 2 * border, pw + border + round(border * 3.6)), "#FBFAF6")
+    if photo:
+        pic = grade(cover(photo, pw, pw, o["subject"]), 1.02, 0.86, 0.8)
+        pic = grain(Image.blend(pic, Image.new("RGB", pic.size, "#F2D7AE"), 0.14), 0.14)
+    else:
+        pic = Image.new("RGB", (pw, pw), pal["dark"])
+    frame.paste(pic, (border, border))
+    angle = -3.2 + (seed % 5 - 2) * 0.9
+    tilted = frame.rotate(angle, resample=Image.BICUBIC, expand=True)
+    x, y = (w - tilted.width) // 2, round(82 * u)
+    shadow = Image.new("RGBA", (w, h))
+    sh = Image.new("RGBA", tilted.size, (0, 0, 0, 0))
+    sh.putalpha(tilted.getchannel("A").point(lambda v: round(v * 0.38)))
+    shadow.paste(sh, (x + round(10 * u), y + round(16 * u)), sh)
+    img = over(img, shadow.filter(ImageFilter.GaussianBlur(18 * u)))
+    canvas = img.convert("RGBA")
+    canvas.alpha_composite(tilted, (x, y))
+    tape = Image.new("RGBA", (round(150 * u), round(46 * u)), (233, 223, 196, 170))
+    for tx, ta in ((x + tilted.width * 0.12, 32), (x + tilted.width * 0.72, -28)):
+        t = tape.rotate(ta + angle, resample=Image.BICUBIC, expand=True)
+        canvas.alpha_composite(t, (round(tx), max(0, y - round(18 * u))))
+    img = canvas.convert("RGB")
+    area_top = y + tilted.height + 44 * u
+    st, lines = fit(tokens(c["text"]), lambda s: Style(o["face"] or "serif-italic", s, "#262320", leading=1.16),
+                    w * 0.78, h - area_top - 120 * u, sizes(70 * u, 34 * u), 5)
+    lab = Style("label", 20 * u, "#4A453E", tracking=0.22, case="upper")
+    gap = st.size * 0.55
+    bh = block_h(st, len(lines)) + (gap + lab.cap if c["author"] else 0)
+    top = area_top + max(0, (h - 110 * u - area_top - bh) / 2)
+    layer = Image.new("RGBA", (w, h))
+    yy = draw_lines(layer, st, lines, w / 2, top)
+    if c["author"]:
+        draw_lines(layer, lab, [tokens(c["author"])], w / 2, yy + gap)
+    return over(img, layer)
+
+
+def swiss(photo, c, pal, w, h, o):
+    """A Swiss poster on one strong colour: huge flush-left capitals sitting on the lower rule, thin rules and two
+    small labels framing them. No photograph: the type is the image."""
+    u = w / 1080
+    ground = tone(pal.get("primary", "#C8452B"), 0.5, 0.78)
+    ink = INK if _light(ground) > 0.56 else "#F6F3EE"
+    img = grain(Image.new("RGB", (w, h), ground), 0.05)
+    m = 76 * u
+    head, lines = fit(tokens(c["text"]),
+                      lambda s: Style(o["face"] or "grotesk", s, ink, leading=1.04, tracking=-0.01, case="upper"),
+                      w - 2 * m, h * 0.6, sizes(118 * u, 40 * u), 8)
+    lab = Style("label", 20 * u, ink, tracking=0.3, case="upper", alpha=220)
+    layer = Image.new("RGBA", (w, h))
+    d = ImageDraw.Draw(layer)
+    rule_t, rule_b = m + 44 * u, h - m - 44 * u
+    for yy in (rule_t, rule_b):
+        d.rectangle((m, yy, w - m, yy + max(2, round(2.5 * u))), fill=rgba(ink, 230))
+    if sub := sub_line(c):
+        draw_lines(layer, lab, [tokens(sub.replace("— ", ""))], m, m, "left")
+    d.rectangle((w - m - 26 * u, m, w - m, m + 26 * u), fill=rgba(ink, 230))
+    bh = block_h(head, len(lines))
+    top = rule_b - 40 * u - bh if o["position"] in ("auto", "bottom") else _place(o["position"], "center", h, bh)
+    draw_lines(layer, head, lines, m, max(top, rule_t + 40 * u), "left")
+    return over(img, layer)
+
 RENDER = {"noir": noir, "paper": paper_note, "whisper": whisper, "statement": statement, "classic": classic,
-          "split": split, "stack": stack}
+          "split": split, "stack": stack, "notes": notes, "highlight": highlight, "riso": riso, "subtitle": subtitle,
+          "polaroid": polaroid, "swiss": swiss}
 
 
 def compose(design: str, photo: Image.Image | None, quote: dict, palette: dict, w: int, h: int, *,

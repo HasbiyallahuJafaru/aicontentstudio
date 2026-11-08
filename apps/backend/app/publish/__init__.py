@@ -1,2 +1,2 @@
-"""Publishing integrations (Milestone 7 Phase C): Buffer's GraphQL API, Metricool's MCP server, and the
-storage they need. RPC-facing functions live in buffer.py and metricool.py; app/cli.py drives them."""
+"""Posting finished clips: Zernio (zernio.py) does the posting, posts.py keeps our record of where each clip is
+going, and store.py keeps the Zernio key encrypted. app/cli.py drives the same functions from a terminal."""

@@ -47,11 +47,10 @@ export type DownloadStatus = {
   error: { message: string; detail?: string } | null
 }
 export type CalendarPlan = { scheduled: { clip_idx: number; title: string; due_at: string }[]; left: number[] }
-export type BufferChannel = { id: string; service: string; name: string; displayName: string; usable: boolean }
 export type Publication = {
   id: string; project_id: string; clip_idx: number; provider: string; channel_id: string; service: string
   channel_name: string; status: string; due_at: string | null; sent_at: string | null
-  external_link: string | null; error: string | null; created_at: string
+  external_link: string | null; error: string | null; created_at: string; piece_id: string | null
 }
 export type Job = {
   id: string; project_id: string; status: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled'
@@ -62,7 +61,7 @@ export type PieceContent = {
   quote: { text: string }
   narration?: { text: string; delivery: string } | null  // quote images have none
   visual: { preferred_type: 'video' | 'image'; search_query: string; secondary_query: string; mood: string }
-  design: { text_density: string; animation: string; composition: string }
+  design?: { text_density: string; animation: string; composition: string } | null  // narrated videos only
   metadata: { title: string; description: string; caption: string; hashtags: string[]; keywords: string[]; alt_text: string }
   asset?: { id: string; provider: string; asset_type: string }
   visual_error?: string
@@ -89,8 +88,6 @@ export type Settings = {
   music_path: string; music_volume: number
   render_crf: number; render_audio_bitrate: string; render_width: number; render_height: number
   ytdlp_cookies: string; motion_graphics: boolean
-  buffer_client_id: string
-  publish_host_endpoint: string; publish_host_bucket: string; publish_host_public_url: string; publish_host_region: string
 }
 export type Render = {
   id: string; piece_id: string; kind: 'video' | 'image'; local_path: string

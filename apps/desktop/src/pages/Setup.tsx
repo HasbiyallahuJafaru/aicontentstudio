@@ -1,10 +1,10 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import { ArrowSquareOut, Check, PlugsConnected } from '@phosphor-icons/react'
+import { ArrowSquareOut, Check } from '@phosphor-icons/react'
 import { studio, BackendError, type SecretName } from '../lib/studio'
 import { Button, ErrorNote, Field, Input, Reveal, cx } from '../components/ui'
-import { useConnection } from './Settings'
+import { ZernioSetup, useZernio } from '../components/Posting'
 
-/** First run: one screen per key, then Metricool, then a summary. Shown after the splash whenever a key the
+/** First run: one screen per key, then posting through Zernio, then a summary. Shown after the splash whenever a key the
  *  studio needs is missing; every screen can be skipped and everything stays editable in Settings. */
 const KEYS: { name: SecretName; title: string; why: string; where: string; url: string; optional?: boolean }[] = [
   { name: 'OPENROUTER_API_KEY', title: 'Connect the AI', url: 'https://openrouter.ai/keys',
@@ -17,7 +17,7 @@ const KEYS: { name: SecretName; title: string; why: string; where: string; url: 
     why: 'Optional. An Unsplash access key adds a second photo library to choose from.',
     where: 'Create an app at unsplash.com/developers and copy its Access Key.' },
 ]
-const STEPS = KEYS.length + 2  // the keys, Metricool, the summary
+const STEPS = KEYS.length + 2  // the keys, posting, the summary
 
 const LABEL: Record<SecretName, string> = {
   OPENROUTER_API_KEY: 'OpenRouter', PEXELS_API_KEY: 'Pexels', UNSPLASH_ACCESS_KEY: 'Unsplash',
@@ -28,7 +28,7 @@ export function Setup({ onDone }: { onDone: () => void }) {
   const [saved, setSaved] = useState<Record<SecretName, boolean>>()
   const [value, setValue] = useState('')
   const [error, setError] = useState<BackendError>()
-  const metricool = useConnection('metricool', setError)
+  const zernio = useZernio()
 
   useEffect(() => { studio.secretsStatus().then(setSaved) }, [])
 
@@ -62,15 +62,12 @@ export function Setup({ onDone }: { onDone: () => void }) {
     </>
   } else if (step === KEYS.length) {
     body = <>
-      <Heading title="Publish through Metricool" text="Optional. Sign in to Metricool in your browser and approve the app to schedule finished clips from here. Nothing to copy or paste." />
-      <p className="text-[13px] text-ink-2">{metricool.connected
-        ? <span className="inline-flex items-center gap-1 text-ok"><Check size={13} weight="bold" />Metricool is connected.</span>
-        : metricool.waiting ? 'Approve the app in the browser window that opened, then come back here.' : 'Not connected.'}</p>
+      <Heading title="Post to your socials" text="Optional. Zernio posts your clips to TikTok, YouTube, Instagram and more at the time you pick, even when this computer is off. You can also do this later in Settings." />
+      <ZernioSetup intro={false} onChange={zernio.reload} />
       <Footer>
-        {metricool.connected ? <span /> : <Button disabled={metricool.waiting} onClick={metricool.connect}>
-          <PlugsConnected size={14} />{metricool.waiting ? 'Waiting for Metricool…' : 'Connect Metricool'}</Button>}
-        <Button variant={metricool.connected ? 'primary' : 'ghost'} onClick={next}>
-          {metricool.connected ? 'Continue' : 'Skip for now'}</Button>
+        <span />
+        <Button variant={zernio.connected ? 'primary' : 'ghost'} onClick={next}>
+          {zernio.connected ? 'Continue' : 'Skip for now'}</Button>
       </Footer>
     </>
   } else {
@@ -81,7 +78,7 @@ export function Setup({ onDone }: { onDone: () => void }) {
         : 'Everything is stored encrypted on this computer. Change any of it later in Settings.'} />
       <ul className="grid gap-2 text-[13px]">
         {[...KEYS.map((k) => [LABEL[k.name], !!saved?.[k.name], k.optional] as const),
-          ['Metricool', !!metricool.connected, true] as const].map(([name, ok, optional]) => (
+          ['Posting (Zernio)', !!zernio.connected, true] as const].map(([name, ok, optional]) => (
           <li key={name} className={cx('flex items-center gap-2', ok ? 'text-ink' : 'text-ink-3')}>
             <span className={cx('grid size-5 place-items-center rounded-full', ok ? 'bg-accent text-ink' : 'bg-black/[0.06]')}>
               {ok && <Check size={11} weight="bold" />}</span>

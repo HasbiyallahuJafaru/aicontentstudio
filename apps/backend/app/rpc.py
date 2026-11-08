@@ -7,7 +7,7 @@ from pydantic import ValidationError
 
 from app import (assets, clips, config, content, database, downloader, export, jobs, previews, projects, queue, quotes_csv, renders,
                  settings, storage, tts)
-from app.publish import buffer as buffer_publish, host as publish_host, metricool
+from app.publish import posts, zernio
 from app.errors import UserError, explain
 from app.events import emit, send
 
@@ -63,22 +63,16 @@ METHODS = {
     "jobs.start": jobs.start,
     "jobs.cancel": jobs.cancel,
     "jobs.latest": jobs.latest,
-    "publish.buffer_connection": buffer_publish.oauth.connection,
-    "publish.buffer_connect_url": buffer_publish.oauth.connect_url,
-    "publish.buffer_disconnect": buffer_publish.oauth.disconnect,
-    "publish.buffer_channels": buffer_publish.channels,
-    "publish.buffer_publish": buffer_publish.publish,
-    "publish.buffer_calendar": buffer_publish.calendar,
-    "publish.publications": buffer_publish.publications,
-    "publish.remove": buffer_publish.remove,
-    "publish.host_status": publish_host.status,
-    "publish.host_save": publish_host.save,
-    "publish.metricool_connection": metricool.connection,
-    "publish.metricool_connect_url": metricool.connect_url,
-    "publish.metricool_disconnect": metricool.disconnect,
-    "publish.metricool_brands": metricool.brands,
-    "publish.metricool_publish": metricool.publish,
-    "publish.metricool_call": metricool.call_tool,
+    "publish.calendar": posts.calendar,
+    "publish.publications": posts.publications,
+    "publish.remove": posts.remove,
+    "publish.zernio_connection": zernio.connection,
+    "publish.zernio_save_key": zernio.save_key,
+    "publish.zernio_disconnect": zernio.disconnect,
+    "publish.zernio_connect_url": zernio.connect_url,
+    "publish.zernio_accounts": zernio.accounts,
+    "publish.zernio_publish": zernio.publish,
+    "publish.zernio_publish_piece": zernio.publish_piece,
 }
 
 

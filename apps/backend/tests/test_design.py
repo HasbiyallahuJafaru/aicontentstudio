@@ -15,7 +15,7 @@ PAL = {"text": "#FFFFFF", "overlay": "#18201E", "primary": "#53645F", "dark": "#
        "secondary": "#A7B4AD"}
 QUOTES = [
     {"text": "Life has no script. Live it."},
-    {"text": "Your comfort zone will kill you.", "kicker": "Friendly reminder", "emphasis": "kill you"},
+    {"text": "Your comfort zone will kill you."},
     {"text": "The impediment to action advances action. What stands in the way becomes the way.",
      "author": "Marcus Aurelius"},
 ]
@@ -63,14 +63,18 @@ class Designs(unittest.TestCase):
 
     def test_pick_honours_the_user_then_the_genre_and_rotates(self):
         self.assertEqual(design.pick("paper", "stoic", None, 0, "x y z"), "paper")
-        picks = {design.pick("auto", "stoic", None, i, "Short line here.") for i in range(3)}
+        picks = {design.pick("auto", "stoic", None, i, "Short line here.")
+                 for i in range(len(design.GENRE_DESIGNS["stoic"]))}  # a full rotation uses every design the genre has
         self.assertEqual(picks, set(design.GENRE_DESIGNS["stoic"]))
         long_quote = " ".join(["word"] * 18)
-        self.assertNotIn(design.pick("auto", "stoic", None, 1, long_quote), {"statement"}, "statement needs short copy")
+        self.assertNotIn(design.pick("auto", "stoic", None, 1, long_quote), {"statement", "swiss"}, "short-copy designs")
+        for name in design.DESIGNS:  # every design renders, with and without a photo
+            self.assertEqual(design.compose(name, None, {"text": "Short line here."}, {"primary": "#8A5A2B",
+                             "dark": "#1E1611", "light": "#F1ECE4"}, 216, 270).size, (216, 270))
 
-    def test_copy_takes_a_short_last_sentence_as_emphasis(self):
-        self.assertEqual(design.copy_for({"text": "Life has no script. Live it."})["emphasis"], "Live it.")
-        self.assertEqual(design.copy_for({"text": "One line only.", "emphasis": "not in it"})["emphasis"], "")
+    def test_copy_is_just_the_quote_and_author(self):  # owner 2026-11-08: no emphasis, no kicker
+        old = {"text": "Life has  no script.", "author": " Seneca ", "emphasis": "script", "kicker": "Note"}
+        self.assertEqual(design.copy_for(old), {"text": "Life has no script.", "author": "Seneca"})
 
 
 WORDS = [{"word": w, "start": i * 0.4, "end": i * 0.4 + 0.38}

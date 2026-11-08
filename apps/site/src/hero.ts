@@ -1,14 +1,18 @@
 import * as THREE from 'three'
 
-/** The hero's story in one loop (about 10 s): the app's real renders sit edge to edge as one long film strip (the
- *  long video), a lime playhead sweeps across and cuts it, the pieces lift into a fan of finished posts, rest, and
- *  fold back. Rounded corners and soft shadows are drawn in the shaders so the strip can start square and round off
- *  as it is cut. Pauses off-screen; under reduced motion it renders the fan once, still. */
+/** The hero: an endless production line. Raw footage (the app's own looping clips, still playing) flows in from the
+ *  left as a wide film strip; a lime playhead cuts each frame as it passes, wiping it into a finished post (a real
+ *  render from the design engine); the post turns upright, lifts out of the strip and drifts off into depth. Tiles
+ *  recycle, so it never stops. Scroll speed feeds the line, the pointer tilts it, and it pauses off-screen. Under
+ *  reduced motion it draws one still frame. Rounded corners, shadows and the wipe are drawn in the shaders. */
 
-const N = 5
-const W = 1, H = 1.25                     // the renders are 4:5
-const GAP = 0.12                          // space a cut opens between two pieces
-const LOOP = 10.4
+const M = 18                         // tiles on the line at once
+const D = 1.78                       // distance between tile centres
+const L = M * D                      // length of the line
+const RAW = new THREE.Vector2(1.6, 0.9)
+const POST = new THREE.Vector2(1.1, 1.375)
+const CUT_X = -0.6                   // where the playhead stands
+const CELL = 240                     // footage atlas cell
 const ACCENT = new THREE.Color('#c6f432')
 
 const vertex = /* glsl */ `
@@ -16,19 +20,33 @@ const vertex = /* glsl */ `
   void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`
 
 const sdf = /* glsl */ `
-  float sdRound(vec2 p, vec2 b, float r) { vec2 q = abs(p) - b + r; return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r; }`
+  float sdRound(vec2 p, vec2 b, float r) { vec2 q = abs(p) - b + r; return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r; }
+  vec2 cover(vec2 uv, vec2 size) {            // square source, any frame shape
+    float a = size.x / size.y;
+    return a > 1.0 ? vec2(uv.x, (uv.y - 0.5) / a + 0.5) : vec2((uv.x - 0.5) * a + 0.5, uv.y);
+  }`
 
-const cardFragment = /* glsl */ `
+const tileFragment = /* glsl */ `
   varying vec2 vUv;
-  uniform sampler2D map; uniform vec2 size; uniform float radius; uniform float shade; uniform float rim;
+  uniform sampler2D atlas; uniform vec2 cell; uniform sampler2D post;
+  uniform vec2 size; uniform float wipe; uniform float morph; uniform float alpha;
+  uniform vec3 accent;
   ${sdf}
   void main() {
-    float d = sdRound((vUv - 0.5) * size, size * 0.5, radius);
+    float d = sdRound((vUv - 0.5) * size, size * 0.5, mix(0.05, 0.09, morph));
     float aa = fwidth(d);
-    vec4 c = texture2D(map, vUv);
-    // rim: a hairline of light at the edge so dark cards separate from a dark page
-    vec3 col = mix(c.rgb * shade, vec3(1.0), rim * (1.0 - smoothstep(0.0, 0.012, -d)));
-    gl_FragColor = vec4(col, 1.0 - smoothstep(-aa, aa, d));
+    // raw: the footage frame, washed out like a source file; post: the finished render in full colour
+    vec2 fuv = (cell + clamp(cover(vUv, size), 0.002, 0.998)) / vec2(4.0, 3.0);
+    vec3 raw = texture2D(atlas, vec2(fuv.x, 1.0 - fuv.y)).rgb;
+    raw = mix(vec3(dot(raw, vec3(0.299, 0.587, 0.114))), raw, 0.35) * 0.92 + 0.04;
+    vec3 fin = texture2D(post, cover(vUv, size)).rgb;
+    float edge = 1.0 - wipe;                    // the playhead crosses right to left in tile space
+    float isPost = smoothstep(edge - 0.004, edge + 0.004, vUv.x);
+    vec3 col = mix(raw, fin, isPost);
+    // the cut itself: a lime seam riding the wipe, gone once the frame is through
+    float seam = (1.0 - smoothstep(0.0, 0.012, abs(vUv.x - edge))) * step(0.001, wipe) * step(wipe, 0.999);
+    col = mix(col, accent, seam);
+    gl_FragColor = vec4(col, alpha * (1.0 - smoothstep(-aa, aa, d)));
     #include <colorspace_fragment>
   }`
 
@@ -37,95 +55,161 @@ const shadowFragment = /* glsl */ `
   uniform vec2 size; uniform float strength; uniform vec3 tint;
   ${sdf}
   void main() {
-    float d = sdRound((vUv - 0.5) * size, size * 0.5 - 0.22, 0.12);
-    gl_FragColor = vec4(tint, (1.0 - smoothstep(-0.2, 0.22, d)) * strength);
+    vec2 s = size + 0.8;
+    float d = sdRound((vUv - 0.5) * s, size * 0.5 - 0.1, 0.12);
+    gl_FragColor = vec4(tint, (1.0 - smoothstep(-0.18, 0.3, d)) * strength);
   }`
 
 const clamp01 = (x: number) => Math.min(1, Math.max(0, x))
-const easeInOut = (x: number) => (x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2)
-const easeOut = (x: number) => 1 - Math.pow(1 - x, 4)
-const span = (t: number, a: number, b: number) => clamp01((t - a) / (b - a))
+const ease = (x: number) => (x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2)
+const smooth = (a: number, b: number, x: number) => { const t = clamp01((x - a) / (b - a)); return t * t * (3 - 2 * t) }
 
-export function mountHero(canvas: HTMLCanvasElement, urls: string[]): () => void {
+type Decoder = { decode(o: { frameIndex: number }): Promise<{ image: CanvasImageSource & { close(): void } }>; tracks: { ready: Promise<void>; selectedTrack?: { frameCount: number } } }
+
+/** The footage atlas: twelve looping clips drawn into one 4x3 canvas that is re-uploaded about 15 times a second.
+ *  WebCodecs' ImageDecoder pulls frames straight from the animated WebP files; without it (Safari) the clips play as
+ *  hidden <img> elements and their current frame is copied. */
+function footageAtlas(urls: string[], onFrame: () => void) {
+  const canvas = document.createElement('canvas')
+  canvas.width = CELL * 4
+  canvas.height = CELL * 3
+  const ctx = canvas.getContext('2d')!
+  ctx.fillStyle = '#2a2c30'
+  ctx.fillRect(0, 0, canvas.width, canvas.height)
+  const cellAt = (i: number) => [(i % 4) * CELL, Math.floor(i / 4) * CELL] as const
+  const ID = (window as unknown as { ImageDecoder?: new (o: object) => Decoder }).ImageDecoder
+  let tick: () => void
+
+  if (ID) {
+    const clips = urls.map((url) => {
+      const clip = { decoder: undefined as Decoder | undefined, count: 1, frame: 0, busy: false }
+      fetch(url).then((r) => r.arrayBuffer()).then(async (data) => {
+        const decoder = new ID({ data, type: 'image/webp' })
+        await decoder.tracks.ready
+        clip.count = decoder.tracks.selectedTrack?.frameCount || 1
+        clip.decoder = decoder
+      }).catch(() => {})
+      return clip
+    })
+    tick = () => clips.forEach((c, i) => {
+      if (!c.decoder || c.busy) return
+      c.busy = true
+      c.decoder.decode({ frameIndex: c.frame }).then(({ image }) => {
+        ctx.drawImage(image, ...cellAt(i), CELL, CELL)
+        image.close()
+        c.frame = (c.frame + 1) % c.count
+        onFrame()
+      }).catch(() => {}).finally(() => { c.busy = false })
+    })
+  } else {
+    const holder = document.createElement('div')
+    holder.style.cssText = 'position:fixed;left:0;top:0;width:4px;height:4px;overflow:hidden;opacity:0.01;pointer-events:none'
+    const imgs = urls.map((u) => { const im = new Image(); im.src = u; im.width = im.height = 4; holder.append(im); return im })
+    document.body.append(holder)
+    tick = () => { imgs.forEach((im, i) => im.complete && ctx.drawImage(im, ...cellAt(i), CELL, CELL)); onFrame() }
+  }
+  return { canvas, tick }
+}
+
+export function mountHero(canvas: HTMLCanvasElement, renders: string[], footage: string[]) {
   const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches
-  const dark = matchMedia('(prefers-color-scheme: dark)')
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, powerPreference: 'high-performance' })
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
 
   const scene = new THREE.Scene()
-  const camera = new THREE.PerspectiveCamera(30, 1, 0.1, 60)
+  const camera = new THREE.PerspectiveCamera(30, 1, 0.1, 80)
   const rig = new THREE.Group()
   scene.add(rig)
 
+  const atlasTex = new THREE.CanvasTexture(document.createElement('canvas'))
+  const atlas = footageAtlas(footage, () => { atlasTex.needsUpdate = true })
+  atlasTex.image = atlas.canvas
+  atlasTex.colorSpace = THREE.SRGBColorSpace
+  atlasTex.needsUpdate = true
+
   const manager = new THREE.LoadingManager()
   const loader = new THREE.TextureLoader(manager)
-  const cardGeo = new THREE.PlaneGeometry(W, H)
-  const shadowGeo = new THREE.PlaneGeometry(W + 0.9, H + 0.9)
-  const shadowTint = new THREE.Color()
-  let cards: { holder: THREE.Group; material: THREE.ShaderMaterial; shadow: THREE.ShaderMaterial }[] = []
-  const paintShadow = () => {
-    shadowTint.set(dark.matches ? '#000000' : '#1b2a10')
-    cards.forEach(({ material }) => { material.uniforms.rim.value = dark.matches ? 0.22 : 0 })
-  }
+  const posts = renders.map((u) => loader.load(u, (t) => { t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8 }))
 
-  cards = Array.from({ length: N }, (_, i) => {
-    const map = loader.load(urls[i % urls.length], (t) => { t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8 })
+  const plane = new THREE.PlaneGeometry(1, 1)
+  const shadowTint = new THREE.Color('#1b2a10')
+  const tiles = Array.from({ length: M }, (_, i) => {
+    const size = new THREE.Vector2().copy(RAW)
     const material = new THREE.ShaderMaterial({
-      uniforms: { map: { value: map }, size: { value: new THREE.Vector2(W, H) }, radius: { value: 0 }, shade: { value: 1 }, rim: { value: 0 } },
-      vertexShader: vertex, fragmentShader: cardFragment, transparent: true,
+      uniforms: {
+        atlas: { value: atlasTex }, cell: { value: new THREE.Vector2(i % 4, Math.floor(i / 4) % 3) },
+        post: { value: posts[i % posts.length] }, size: { value: size }, wipe: { value: 0 }, morph: { value: 0 },
+        alpha: { value: 1 }, accent: { value: ACCENT },
+      },
+      vertexShader: vertex, fragmentShader: tileFragment, transparent: true, depthWrite: false,
     })
-    const shadow = new THREE.Mesh(shadowGeo, new THREE.ShaderMaterial({
-      uniforms: { size: { value: new THREE.Vector2(W + 0.9, H + 0.9) }, strength: { value: 0 }, tint: { value: shadowTint } },
+    const shadow = new THREE.ShaderMaterial({
+      uniforms: { size: { value: size }, strength: { value: 0 }, tint: { value: shadowTint } },
       vertexShader: vertex, fragmentShader: shadowFragment, transparent: true, depthWrite: false,
-    }))
-    const card = new THREE.Mesh(cardGeo, material)
+    })
+    const card = new THREE.Mesh(plane, material)
+    const shade = new THREE.Mesh(plane, shadow)
+    shade.position.set(0.05, -0.14, -0.04)
     const holder = new THREE.Group()
-    shadow.position.set(0.04, -0.12, -0.06)
-    holder.add(shadow, card)
+    holder.add(shade, card)
     rig.add(holder)
-    return { holder, material, shadow: shadow.material as THREE.ShaderMaterial }
+    return { holder, card, shade, material, shadow, size, lap: 0 }
   })
 
-  paintShadow()
-
-  // the playhead: a lime bar with a round head, riding just in front of the strip
+  // the playhead: a lime bar with a round head, and a faint track the strip runs along
   const playhead = new THREE.Group()
-  const lineMat = new THREE.MeshBasicMaterial({ color: ACCENT, transparent: true, opacity: 0 })
-  playhead.add(new THREE.Mesh(new THREE.PlaneGeometry(0.035, H + 0.3), lineMat))
-  const head = new THREE.Mesh(new THREE.CircleGeometry(0.075, 32), lineMat)
-  head.position.y = (H + 0.3) / 2
+  const lime = new THREE.MeshBasicMaterial({ color: ACCENT, transparent: true })
+  playhead.add(new THREE.Mesh(new THREE.PlaneGeometry(0.03, 1.5), lime))
+  const head = new THREE.Mesh(new THREE.CircleGeometry(0.07, 40), lime)
+  head.position.y = 0.75
   playhead.add(head)
-  playhead.position.z = 0.02
+  playhead.position.set(CUT_X, -0.25, 0.3)
   rig.add(playhead)
 
-  /** Fit by measurement: pose the loop's widest moments, project every card corner from a reference distance, and
-   *  move the camera so the largest extent fills the canvas with a small margin. Works for any canvas shape. */
-  const corner = new THREE.Vector3()
-  function resize() {
+  /** One tile at path position s (0 enters at the far left, 1 leaves at the far right). Pure function of s and time,
+   *  so a still frame and the live loop agree. */
+  function place(tile: (typeof tiles)[number], s: number, time: number, index: number) {
+    const x = (s - 0.5) * L + 2
+    const half = RAW.x / 2
+    const wipe = clamp01((x + half - CUT_X) / RAW.x)
+    const after = x - CUT_X - half                       // distance past the cut once fully through
+    const morph = ease(clamp01(after / 1.9))
+    const out = clamp01(after / (L * 0.5))               // how far down the exit run
+
+    tile.size.set(THREE.MathUtils.lerp(RAW.x, POST.x, morph), THREE.MathUtils.lerp(RAW.y, POST.y, morph))
+    const bob = Math.sin(time * 1.2 + index * 1.7) * 0.06 * morph
+    const sway = (index % 2 ? 1 : -1)
+    tile.holder.position.set(
+      x,
+      THREE.MathUtils.lerp(-0.25, 0.32 + sway * 0.12, morph) + bob + out * out * 1.4,
+      THREE.MathUtils.lerp(-Math.pow(Math.min(0, x - CUT_X) * 0.32, 2), 0.55, morph) - out * out * 7,
+    )
+    tile.holder.rotation.set(
+      THREE.MathUtils.lerp(-0.18, 0, morph),
+      THREE.MathUtils.lerp(0.32, -0.12, morph) - out * 0.5,
+      sway * 0.06 * morph + Math.sin(time * 0.8 + index) * 0.02 * morph,
+    )
+    tile.card.scale.set(tile.size.x, tile.size.y, 1)
+    tile.shade.scale.set(tile.size.x + 0.8, tile.size.y + 0.8, 1)
+    tile.material.uniforms.wipe.value = wipe
+    tile.material.uniforms.morph.value = morph
+    const fade = smooth(0, 0.07, s) * (1 - smooth(0.9, 1, s))
+    tile.material.uniforms.alpha.value = fade
+    tile.shadow.uniforms.strength.value = (0.1 + 0.26 * morph) * fade
+    tile.card.renderOrder = tile.shade.renderOrder = Math.round(tile.holder.position.z * 100)
+  }
+
+  const fit = () => {
     const { clientWidth: w, clientHeight: h } = canvas
     if (!w || !h) return
     renderer.setSize(w, h, false)
     camera.aspect = w / h
-    camera.position.set(0, 0, 10)
+    // frame about 12 units of the line across the widest screens, never fewer than ~6 on a phone
+    const want = THREE.MathUtils.clamp(12 * Math.min(1, camera.aspect / 1.6) + 2, 6.5, 12.5)
+    const hfov = 2 * Math.atan(Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * camera.aspect)
+    camera.position.set(0.4, 0.55, (want / 2) / Math.tan(hfov / 2) + 0.6)
+    camera.lookAt(0.4, 0.05, 0)
     camera.updateProjectionMatrix()
-    camera.updateMatrixWorld()
-    const [px, py] = [pointer.x, pointer.y]
-    pointer.x = pointer.y = 0
-    let ex = 0, ey = 0
-    for (const at of [0.4, 2.2, 3.8, 6]) {
-      pose(at, 0)
-      rig.updateMatrixWorld(true)
-      for (const { holder } of cards) {
-        const mesh = holder.children[1]
-        for (const [cx, cy] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
-          corner.set((cx * W) / 2, (cy * H) / 2, 0).applyMatrix4(mesh.matrixWorld).project(camera)
-          ex = Math.max(ex, Math.abs(corner.x))
-          ey = Math.max(ey, Math.abs(corner.y))
-        }
-      }
-    }
-    pointer.x = px; pointer.y = py
-    camera.position.z = 10 * Math.max(ex / 0.92, ey / 0.8)
   }
 
   const pointer = { x: 0, y: 0, tx: 0, ty: 0 }
@@ -134,87 +218,61 @@ export function mountHero(canvas: HTMLCanvasElement, urls: string[]): () => void
     pointer.ty = (e.clientY / innerHeight) * 2 - 1
   }
 
-  /** Every transform is a pure function of time t in the loop, so frames never drift and reduced motion can pose
-   *  any moment. */
-  function pose(t: number, elapsed: number) {
-    const sweep = easeInOut(span(t, 1.1, 3.1))
-    const back = easeInOut(span(t, 8.9, 10.2))
-    const px = (-N / 2 - 0.15 + sweep * (N + 0.3)) * W
-    const cut = Array.from({ length: N - 1 }, (_, j) => easeOut(span(px, (j - (N - 1) / 2 + 0.5) * W, (j - (N - 1) / 2 + 0.5) * W + 0.45)) * (1 - back))
-    const total = cut.reduce((a, b) => a + b, 0)
-    let before = 0
-    let lifted = 0
-    cards.forEach(({ holder, material, shadow }, i) => {
-      const c = i - (N - 1) / 2
-      const lift = easeInOut(span(t, 3.0 + i * 0.09, 4.5 + i * 0.09)) * (1 - easeInOut(span(t, 8.9 + (N - 1 - i) * 0.05, 10.1 + (N - 1 - i) * 0.05)))
-      lifted += lift / N
-      const stripX = c * W + (before - total / 2) * GAP
-      before += cut[i] ?? 0
-      const bob = Math.sin(elapsed * 1.1 + i * 0.9) * 0.035 * lift
-      holder.position.set(
-        THREE.MathUtils.lerp(stripX, c * 1.08, lift),
-        THREE.MathUtils.lerp(0, -c * c * 0.05 + 0.12, lift) + bob,
-        THREE.MathUtils.lerp(0, -Math.abs(c) * 0.42 + 0.3, lift),
-      )
-      holder.rotation.set(0, THREE.MathUtils.lerp(0, -c * 0.1, lift), THREE.MathUtils.lerp(0, -c * 0.075, lift))
-      const edge = Math.max(cut[i - 1] ?? 0, cut[i] ?? 0)
-      material.uniforms.radius.value = 0.075 * Math.max(edge, lift)
-      material.uniforms.shade.value = 1 - 0.07 * Math.abs(c) * lift
-      shadow.uniforms.strength.value = 0.16 + 0.22 * lift
-    })
-    playhead.position.x = px
-    lineMat.opacity = span(t, 0.8, 1.15) * (1 - span(t, 3.0, 3.4))
-    // the strip lies in perspective; the fan faces the viewer and follows the pointer
-    rig.rotation.set(
-      THREE.MathUtils.lerp(-0.16, 0, lifted) + pointer.y * 0.12,
-      THREE.MathUtils.lerp(-0.5, 0, lifted) + pointer.x * 0.22,
-      THREE.MathUtils.lerp(0.2, 0, lifted),
-    )
-    rig.position.y = THREE.MathUtils.lerp(0.05, -0.05, lifted)
-  }
-
+  let progress = 0.31          // line position, in tiles
+  let boost = 0
+  let atlasClock = 0
   const timer = new THREE.Timer()
   timer.connect(document)
-  let t = 0.3
-  function frame() {
-    timer.update()
-    const delta = Math.min(timer.getDelta(), 0.05)
-    t = (t + delta) % LOOP
-    pointer.x = THREE.MathUtils.damp(pointer.x, pointer.tx, 3, delta)
-    pointer.y = THREE.MathUtils.damp(pointer.y, pointer.ty, 3, delta)
-    pose(t, timer.getElapsed())
+
+  function draw(time: number) {
+    tiles.forEach((tile, i) => {
+      const raw = (i + progress) / M
+      const lap = Math.floor(raw)
+      const s = raw - lap
+      if (lap !== tile.lap) {      // a recycled tile enters with fresh footage and a fresh render
+        tile.lap = lap
+        const k = i + lap * M
+        tile.material.uniforms.cell.value.set(((k * 5) % 12) % 4, Math.floor(((k * 5) % 12) / 4))
+        tile.material.uniforms.post.value = posts[((k % posts.length) + posts.length) % posts.length]
+      }
+      place(tile, s, time, i)
+    })
+    rig.rotation.set(pointer.y * 0.06, pointer.x * 0.12, 0)
+    lime.opacity = 0.85 + Math.sin(time * 3) * 0.15
     renderer.render(scene, camera)
   }
-  const still = () => { pose(6, 0); renderer.render(scene, camera) }
 
-  const resizer = new ResizeObserver(() => { resize(); if (reduce) still() })
+  function frame() {
+    timer.update()
+    const dt = Math.min(timer.getDelta(), 0.05)
+    boost = THREE.MathUtils.damp(boost, 0, 2.5, dt)
+    progress += dt * (0.32 + boost)
+    pointer.x = THREE.MathUtils.damp(pointer.x, pointer.tx, 3, dt)
+    pointer.y = THREE.MathUtils.damp(pointer.y, pointer.ty, 3, dt)
+    atlasClock += dt
+    if (atlasClock > 1 / 15) { atlasClock = 0; atlas.tick() }
+    draw(timer.getElapsed())
+  }
+
+  const resizer = new ResizeObserver(() => { fit(); if (reduce) draw(0) })
   resizer.observe(canvas)
-  resize()
+  fit()
   let visible = true
   const watcher = new IntersectionObserver(([e]) => {
     visible = e.isIntersecting
     if (!reduce) renderer.setAnimationLoop(visible ? frame : null)
   })
-  const onScheme = () => { paintShadow(); if (reduce) still() }
-  dark.addEventListener('change', onScheme)
 
   manager.onLoad = () => {
     canvas.classList.add('ready')
-    if (reduce) { still(); return }
+    if (reduce) { atlas.tick(); setTimeout(() => draw(0), 400); return }
     addEventListener('pointermove', onPointer, { passive: true })
     watcher.observe(canvas)
     if (visible) renderer.setAnimationLoop(frame)
   }
 
-  return () => {
-    renderer.setAnimationLoop(null)
-    resizer.disconnect()
-    watcher.disconnect()
-    removeEventListener('pointermove', onPointer)
-    dark.removeEventListener('change', onScheme)
-    timer.dispose()
-    cards.forEach(({ material, shadow }) => { material.uniforms.map.value.dispose(); material.dispose(); shadow.dispose() })
-    cardGeo.dispose(); shadowGeo.dispose(); lineMat.dispose()
-    renderer.dispose()
+  return {
+    /** scroll velocity in px per frame-ish; fast scrolling runs the line faster */
+    push(v: number) { boost = Math.min(4, boost + Math.abs(v) * 0.004) },
   }
 }

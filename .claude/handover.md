@@ -6,6 +6,12 @@
 > setup screens, clip-from-your-own-file, plain-language errors, the clip preview redesign. Release steps are in
 > `.claude/CLAUDE.md` "Release and deploy"; open owner actions are at the top of `NEXT_STEPS.md`.
 >
+> **Later on 2026-11-08 (uncommitted, details in NEXT_STEPS):** Buffer and Metricool were **removed**; posting is
+> Zernio only (`app/publish/zernio.py` + `posts.py`), for clips, quote images and narrated videos. "Download and
+> render" replaces "Download N shots and continue". Six new image designs (13 total). The landing site was
+> redesigned (three.js production-line hero, GSAP + Lenis, light only). Anything below about Buffer, Metricool,
+> `oauth.py`, `host.py` or the media-host bucket describes code that no longer exists.
+>
 > **Superseded: read `NEXT_STEPS.md` at the repo root first** (updated 2026-11-08). It has the current state,
 > how to run, every change and what is left. This file is the older milestone log (M1-M8); where they disagree,
 > NEXT_STEPS wins. Binding owner decisions live in `.claude/CLAUDE.md` ("Owner decisions").
@@ -51,8 +57,8 @@ kokoro-onnx + soundfile)
 - Methods: `app.info`, `app.stats`, `settings.get|update`, `projects.create|list|get|delete|set_voice`,
   `pieces.*`, `assets.list`, `renders.list`, `clips.list|review`, `exports.list`, `queue.list`,
   `jobs.start(project_id, kind='generate'|'render'|'export'|'clip', piece_ids)|cancel|latest`,
-  `tts.voices`, `publish.*` (12: buffer connection/connect_url/disconnect/channels/publish/calendar/
-  publications/remove, host status/save, metricool status/call), `secrets.load` (Electron main only).
+  `tts.voices`, `publish.*` (since 2026-11-08: zernio_connection/save_key/disconnect/connect_url/accounts/publish/
+  publish_piece, calendar, publications, remove), `secrets.load` (Electron main only).
 - Migrations 001–008: projects/settings, content_pieces/jobs, assets/asset_usage, analysis columns,
   renders + kind, exports, **007 `clips`**, **008 `publications` + `credentials` (DPAPI-encrypted)**.
 - `app/creative/`: schemas (model strings are **trimmed to caps**, not rejected — a 94-char angle must not kill
@@ -85,15 +91,14 @@ kokoro-onnx + soundfile)
   `captions.py` (karaoke ASS, bundled Montserrat), `render_clip.py` (clip render + cover, 30/60 fps).
 - `app/clips.py`: clip orchestration — acquire → title→project name → transcript cache
   (`media/clipwork/<key>/transcript.json`) → find_clips → snap + render into `media/clips/<pid>/`, rows in DB.
-- `app/publish/` (Phase C): `oauth.py` (Buffer PKCE public client, loopback `127.0.0.1:8787/callback`,
-  single-use refresh rotation), `host.py` (hand-rolled SigV4 PUT to the user's S3-compatible bucket — Buffer has
-  NO upload API), `buffer.py` (GraphQL channels/publish/calendar/publications/remove; no local queue — Buffer
-  schedules server-side), `metricool.py` (minimal stdlib MCP client for `ai.metricool.com/mcp`, `X-Mc-Auth`),
-  `store.py` (DPAPI-encrypted credentials table).
+- `app/publish/` (since 2026-11-08): `zernio.py` (Zernio REST API: key check, accounts, connect links, presigned
+  media upload, one post per account, status refresh, unschedule), `posts.py` (our publications record, the posting
+  calendar), `store.py` (DPAPI-encrypted credentials table). Buffer, Metricool, `oauth.py` and `host.py` were removed
+  (migration 011 deletes their saved connections; 012 adds `publications.piece_id`).
 - `app/export.py`: piece exports (`exports/<date>/NNN_<slug>/` + caption.txt + metadata.json) and clip exports
   (clip.mp4, cover.jpg, captions.ass, caption.txt, metadata.json with per-platform posts).
-- `app/cli.py`: `python -m app.cli projects|clips|export|channels|publish --at|metricool`.
-- `app/jobs.py`: kinds generate|render|export|clip; render accepts piece_ids (per-piece re-render);
+- `app/cli.py`: `python -m app.cli projects|clips|export|accounts|publish --accounts --at` (Zernio).
+- `app/jobs.py`: kinds generate|render|export|clip|visuals|visuals_render; render accepts piece_ids (per-piece re-render);
   cancel/recover account for clip projects.
 - Tests (113): test_content (incl. over-long model line trimming), test_assets, test_visual, test_backend,
   test_render (incl. the whole multi-shot filter graph + still/motion variants), test_m6, test_clipper_port

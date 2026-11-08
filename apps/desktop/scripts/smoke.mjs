@@ -45,17 +45,23 @@ const fake = createServer((req, res) => {
         : text.includes('senior short-form video editor')  // clip pass 2: picks + copy
           ? { clips: [{ id: 0, score: 94, hook: CLIP.hook, title: CLIP.title, description: CLIP.description,
                        hashtags: ['#story'], posts: { tiktok: 'pt', instagram: 'pi', youtube: 'py', linkedin: 'pl', facebook: 'pf', x: 'px' } }] }
-          : {
+          : text.includes('Write these')  // batch writing: one request returns a group of pieces
+            ? { pieces: Array.from({ length: Number(text.match(/exactly (\d+) item/)[1]) }, makePiece) }
+            : makePiece()
+    setTimeout(() => res.end(JSON.stringify({ choices: [{ message: { content: JSON.stringify(out) } }] })), 400)
+  })
+}).listen(0)
+
+function makePiece() {
+  return {
               quote: { text: QUOTES[piece % 3], author: null },
               narration: { text: `Nobody sees the early hours. ${QUOTES[piece++ % 3]} Keep going anyway.`, delivery: 'calm_reflective' },
               visual: { preferred_type: 'video', search_query: 'runner mountain ridge sunrise', secondary_query: 'trail runner dawn fog', mood: 'quiet determination' },
               design: { text_density: 'low', animation: 'slow', composition: 'editorial' },
               metadata: { title: 'Before the feeling', description: 'A short reflection on discipline and showing up.', caption: 'Start before you feel ready.',
                 hashtags: ['#discipline', '#mindset', '#habits'], keywords: ['discipline', 'habits', 'consistency'], alt_text: 'A lone runner on a ridge at sunrise.' },
-            }
-    setTimeout(() => res.end(JSON.stringify({ choices: [{ message: { content: JSON.stringify(out) } }] })), 400)
-  })
-}).listen(0)
+  }
+}
 
 /** An 8x8 BMP whose stripes repeat every `period` pixels: distinct-looking thumbnails, so each asset hashes differently. */
 function bmp(period) {
@@ -77,6 +83,16 @@ function bmp(period) {
   return Buffer.concat([h, pixels])
 }
 
+// "Download and render" downloads and renders in one job, so the fake footage must be a real video from the start:
+// 14s, longer than any duration the fake Pexels metadata advertises, so the renderer's middle-segment seek always
+// lands inside the file
+const fixtureClip = join(mkdtempSync(join(tmpdir(), 'acs-clip-')), 'clip.mp4')
+{
+  const r = spawnSync('ffmpeg', ['-v', 'error', '-y', '-f', 'lavfi', '-i', 'testsrc2=size=1080x1920:rate=30:duration=14',
+    '-c:v', 'libx264', '-preset', 'ultrafast', fixtureClip], { timeout: 120_000, encoding: 'utf8' })
+  assert.equal(r.status, 0, `fixture clip failed: ${r.stderr}`)
+}
+const fixtureBytes = readFileSync(fixtureClip)
 let pexelsBase = ''
 const fakePexels = createServer((req, res) => {
   const url = new URL(req.url, pexelsBase)
@@ -96,7 +112,7 @@ const fakePexels = createServer((req, res) => {
     res.end(bmp(Number(url.pathname.match(/(\d)/)[1])))
   } else if (url.pathname.startsWith('/asset/')) {
     res.setHeader('Content-Type', 'video/mp4')
-    res.end(bmp(Number(url.pathname.match(/(\d)/)[1]))) // bytes are never decoded: only the thumbnail is hashed
+    res.end(fixtureBytes)
   } else {
     res.statusCode = 404
     res.end()
@@ -184,9 +200,10 @@ for (const [label, value, nextHeading] of [['OpenRouter key', 'sk-or-smoke', 'Ad
   await win.getByRole('heading', { name: nextHeading }).waitFor()
 }
 await win.getByRole('button', { name: 'Skip for now' }).click()  // Unsplash is optional
-await win.getByRole('heading', { name: 'Publish through Metricool' }).waitFor()
-assert.equal(await win.getByRole('button', { name: 'Connect Metricool' }).count(), 1, 'Metricool connects with a button')
-await shot(win, '0d-setup-metricool')
+await win.getByRole('heading', { name: 'Post to your socials' }).waitFor()
+assert.equal(await win.getByLabel('Zernio API key').count(), 1, 'Zernio is set up with a pasted key')
+assert.equal(await win.getByRole('button', { name: /Open zernio\.com/ }).count(), 1, 'setup links to Zernio sign-up')
+await shot(win, '0d-setup-posting')
 await win.getByRole('button', { name: 'Skip for now' }).click()
 await win.getByRole('heading', { name: "You're set up" }).waitFor()
 await shot(win, '0e-setup-done')
@@ -296,7 +313,7 @@ await win.getByText('Also a 4:5 picture', { exact: true }).click() // video + de
 // render timeouts, and the burn itself is covered by test_render's subtitle renders, so the smoke turns them off
 await win.getByRole('group', { name: 'Subtitles' }).getByText('Off', { exact: true }).click()
 await win.keyboard.press('Control+Enter') // Look -> create + generate
-await win.getByText(/Writing piece \d of 3|Planning 3 angles/).waitFor({ timeout: 15_000 })
+await win.getByText(/Writing pieces? [\d-]+ of 3|Planning 3 angles/).waitFor({ timeout: 15_000 })
 await shot(win, '4-generating')
 await win.locator('blockquote').getByText(QUOTES[2]).waitFor({ timeout: 30_000 })
 await win.getByRole('button', { name: /Generate again/ }).waitFor()
@@ -310,23 +327,9 @@ const fullFiles = () => { try { return readdirSync(assetsDir).filter((f) => f.en
 await win.getByRole('heading', { name: 'Choose the footage' }).waitFor()
 assert.equal(fullFiles(), 0, 'no footage downloaded before the user confirms')
 await shot(win, '5a-footage-review')
-await win.getByRole('button', { name: /^Download \d+ shots? and continue$/ }).click()
+// one button under the shots: download exactly the picks, then render every piece
+await win.getByRole('button', { name: 'Download and render' }).click()
 await win.getByRole('heading', { name: 'Choose the footage' }).waitFor({ state: 'detached', timeout: 60_000 })
-// the download job runs; Render enables once every piece has its confirmed footage
-await win.waitForFunction(() => [...document.querySelectorAll('button')].some((b) => b.textContent.trim() === 'Render' && !b.disabled),
-  undefined, { timeout: 120_000 })
-assert.ok(fullFiles() > 0, 'confirmed footage is downloaded')
-
-// Render: swap the fake downloaded bytes for real clips, render all three pieces
-// 14s: longer than any duration the fake Pexels metadata advertises, so the renderer's middle-segment
-// seek always lands inside the real file
-for (const f of readdirSync(assetsDir).filter((f) => f.endsWith('.mp4'))) {
-  const r = spawnSync('ffmpeg', ['-v', 'error', '-y', '-f', 'lavfi', '-i', 'testsrc2=size=1080x1920:rate=30:duration=14',
-    '-c:v', 'libx264', '-preset', 'ultrafast', join(assetsDir, f)], { timeout: 120_000, encoding: 'utf8' })
-  assert.equal(r.status, 0, `fixture clip failed: ${r.stderr}`)
-}
-// still on the project page; Render enables once the visuals job finishes
-await win.getByRole('button', { name: 'Render', exact: true }).click({ timeout: 120_000 })
 const chips = () => win.locator('button[title^="renders/"]')
 try {
   await chips().first().waitFor({ timeout: 240_000 })
@@ -337,9 +340,16 @@ try {
   console.error('PAGE TEXT AT TIMEOUT:', await win.evaluate(() => document.body.innerText.slice(0, 2000)))
   throw e
 }
+assert.ok(fullFiles() > 0, 'confirmed footage is downloaded')
 await win.getByText(/Video \d\.\ds/).first().waitFor()
 await shot(win, '5c-project-rendered')
 await assertNoHorizontalOverflow(win, 'project-rendered')
+// a rendered piece can be posted; without Zernio set up the dialog points to Settings
+await win.getByRole('button', { name: 'Post', exact: true }).first().click()
+await win.getByText('Set up posting once', { exact: true }).waitFor()
+await shot(win, '5c2-post-piece')
+await win.keyboard.press('Escape')
+await win.locator('[role="dialog"]').waitFor({ state: 'detached' })
 
 // Preview: native video player with render facts (PRD 40)
 await win.getByRole('button', { name: 'Preview' }).first().click()
@@ -492,13 +502,13 @@ await shot(win, '8c-clip-preview')
 await win.keyboard.press('Escape')
 await win.getByRole('button', { name: 'Approve' }).click()
 await win.getByText('Approved', { exact: true }).waitFor()
-// publishing offers Buffer and Metricool; Metricool asks to connect first
+// publishing goes through Zernio; before it is set up the dialog points to Settings
 await win.getByRole('button', { name: 'Preview', exact: true }).click()
 await win.locator('[role="dialog"]').getByRole('button', { name: 'Publish', exact: true }).click()
-await win.getByRole('group', { name: 'Publish with' }).getByText('Metricool', { exact: true }).click()
-await win.getByRole('button', { name: 'Connect Metricool' }).waitFor()
-await win.waitForTimeout(300) // let the chip colour settle
-await shot(win, '8e-publish-metricool')
+await win.getByText('Set up posting once', { exact: true }).waitFor()
+assert.equal(await win.getByRole('button', { name: 'Open Settings' }).count(), 1, 'publish dialog links to Settings')
+await win.waitForTimeout(300)
+await shot(win, '8e-publish-setup')
 await win.keyboard.press('Escape')
 await win.locator('[role="dialog"]').first().waitFor({ state: 'detached' }).catch(() => win.keyboard.press('Escape'))
 await win.getByRole('button', { name: 'Export', exact: true }).click()
@@ -508,6 +518,8 @@ await shot(win, '8d-clip-exported')
 // Settings survive the restart; then Clear all content wipes every project and file, keys and settings stay
 await win.keyboard.press('Control+,')
 assert.match(await win.getByLabel('Quality').textContent(), /Standard/, 'settings survive restart')
+await win.getByRole('heading', { name: 'Posting' }).scrollIntoViewIfNeeded()
+await shot(win, '9a-settings-posting')
 win.once('dialog', (d) => d.accept())
 await win.getByRole('button', { name: 'Clear all content' }).click()
 await win.getByText(/Cleared\. .* freed\./).waitFor({ timeout: 60_000 })

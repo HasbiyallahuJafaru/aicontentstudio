@@ -5,8 +5,14 @@ the older milestone log (M1-M8) and is superseded where they disagree. Read this
 
 ## Start here
 
-- **Shipped 2026-11-08.** `main` = `quality-motion-openrouter` = `cde8ffe` on GitHub. `npm test` green: 226
-  backend tests, typecheck, build, smoke (smoke walks the setup screens and the new clip preview + publish dialog).
+- **Shipped 2026-11-08.** `main` = `quality-motion-openrouter` = `cde8ffe` on GitHub (release 0.1.0).
+- **Committed 2026-11-08 on `quality-motion-openrouter` (not yet on `main`):** Zernio-only posting (Buffer and
+  Metricool removed) for clips, quote images and narrated videos; "Download and render"; six new image designs (13
+  total); the post-dialog overflow fix and confirmation; simpler quote content (no emphasis, no kicker); batch writing
+  (one AI request per group of pieces); quote images skip planning; the redesigned landing site (deployed) plus three
+  copy fixes (not deployed). Checked: 221 backend tests, typecheck, desktop build. **Not run: `npm test`'s smoke
+  step** (updated for every change; it opens real windows, so ask the owner to keep hands off first). Next: smoke,
+  then fast-forward `main` if the owner asks, rebuild the installer, deploy the site copy fixes.
 - **Live:** site https://ytclipper.xyz (Vercel project `ytclipper`, root `apps/site`); installer 0.1.0 (256 MiB,
   essentials FFmpeg, unsigned) in the private R2 bucket `ytclipper-releases`, served by the Worker
   `https://ytclipper-download.jafaruhasbiyallahu-cc1.workers.dev/download` after a Turnstile check; a public copy
@@ -24,16 +30,66 @@ the older milestone log (M1-M8) and is superseded where they disagree. Read this
    cname.vercel-dns.com, both DNS only), switch the nameservers in Vercel's domain settings. Then attach
    `download.ytclipper.xyz` to the Worker (or bucket) and point the site's `GATE` at it. Registrar transfer to
    Cloudflare possible from about 2026-11-14 (60-day lock).
-3. **Metricool:** the brand (blogId 6469712) has no social networks connected; connect one, set up the media host
-   (R2 keys from the Cloudflare dashboard), then do the first real Metricool post and confirm `metricool.brands()`
-   reads the connected networks (its reply shape is only verified in the no-networks error form).
+3. **Zernio, the rest of the real checks:** TikTok with a quote image is verified (below). Still to try for real:
+   a narrated video to YouTube (becomes a Short), a clip, a scheduled (not "now") post, unscheduling one, and the
+   Plan calendar. The owner's key is in the dev data; accounts connected: YouTube "The Micro-Fix", TikTok
+   "Jafar </> Builds Web Apps".
 4. **Legal pages:** confirm governing law (set to Nigeria, inferred from the time zone, not confirmed) and the
    contact route (points to hasbiyallahu.xyz). Plain-language drafts; a lawyer should review before commercial use.
 5. **Code signing:** the installer is unsigned, so SmartScreen warns on first run (the site FAQ explains it).
 
 ### Still unverified with real accounts
-- The live Metricool OAuth round trip (the safety check blocked a live client registration from this session).
+- **Zernio:** verified live 2026-11-08: key save, account list, connect links, and one quote image posted to TikTok
+  (published 34 s after its slot). Not yet live-tested: YouTube, clips, scheduling ahead, unscheduling, calendar.
+  TikTok returned no public post link for the photo post, so its chip says Posted without a link.
 - A real clip of a real video end to end in the packaged app, and a real render by eye and ear (old step 12).
+
+## Zernio posting, new designs, landing site redesign (2026-11-08, uncommitted)
+
+- **Posting through Zernio** (owner pick, the recommended way): `app/publish/zernio.py`. Settings has a new visible
+  **Posting** section with three numbered steps (make a free account, copy an API key, paste it), then the connected
+  social accounts and one button per network to add another (browser sign-in through Zernio). Zernio hosts the
+  video itself, so no media host is needed.
+- **Buffer and Metricool are removed completely** (owner, same day): `buffer.py`, `metricool.py`, `oauth.py`,
+  `host.py` and `tests/test_publish.py` deleted; shared publications logic moved to `app/publish/posts.py`; settings
+  fields and the Advanced panel gone; first-run Setup's Metricool step is now "Post to your socials" (Zernio);
+  CLI has `accounts` and `publish --accounts`; migration 011 deletes their saved connections.
+- **Publish dialog** is Zernio only; before Zernio is set up it offers "Open Settings". TikTok picks show
+  TikTok's Music Usage Confirmation line (TikTok requires it).
+- **Calendar** schedules through Zernio (`posts.calendar`, RPC `publish.calendar`).
+- **Quote images and narrated videos can be posted too** (`zernio.publish_piece`, RPC `publish.zernio_publish_piece`):
+  a Post button on every rendered piece opens the shared `PostDialog` (components/Posting.tsx). The video goes when
+  the piece has one, else the image (YouTube is disabled for images: videos only). Each network's text comes from the
+  piece metadata with the export's hashtag rules (`zernio.piece_texts`). Migration 012 adds `publications.piece_id`.
+- **First real post (2026-11-08):** a quote image to TikTok went out through Zernio at 17:15:51, 34 s after its slot.
+  Found and fixed: TikTok's creator-info returns privacy levels as `{value, label}` objects (Zernio accepted the
+  object anyway); the post dialog spilled past its panel on long titles (Dialog grid now `minmax(0,1fr)`, every
+  dialog); the dialog now shows a "Sent to Zernio" confirmation per account instead of closing silently.
+  Zernio pricing (zernio.com/pricing): first 2 accounts free, unlimited posts; no documented schedule horizon.
+- **Simpler quote content:** the AI no longer writes an "emphasis" phrase or a "kicker" line; a quote is its text
+  and author only (`Quote` schema, `QUOTE_FIELD`, `design.copy_for`). Old pieces that still carry them load fine.
+  Clip subtitles keep their own key-word colouring (a different feature).
+- **Quote images simplified:** no planning call any more (`content.quote_plan` is a fixed stand-in, no AI) and no
+  design hints in their JSON (`PieceContent.design` is optional; narrated videos still require it). Flow for quote
+  images: write in groups of 8 -> footage options -> Download and render -> render -> post. 20 quote images = 3 AI
+  calls. The progress line reads "Writing quotes 1-8 of 20". Narrated videos keep their planning step for now.
+- **Batch writing:** pieces are written in groups, one AI request per group (8 quote pieces or 4 narrated pieces;
+  `content.WRITE_GROUP_*`, `prompts.pieces`, `OpenRouterModel.write_pieces`). A malformed or repeated piece falls back
+  to the single-piece call; three tries per piece in all, the batch draft included. Own CSV quotes batch too.
+  Regenerating one piece still uses one call.
+- **Six new image designs** (`design.py`, researched against 2026 feeds): Notes page, Book highlight, Riso print,
+  Film subtitle, Instant print, Swiss grid. 13 designs total; every genre now rotates through 5-6.
+- **"Download and render"** (was "Download N shots and continue"): the button now sits under the footage shots and
+  starts the new `visuals_render` job, which downloads the picks and then renders every piece on one progress bar;
+  the page scrolls to the progress bar. The smoke's fake Pexels now serves a real 14 s clip so no swap step is needed.
+- **Every clip now shows where it is going:** status chips (Scheduled / Posting now / Posted / Failed, with the
+  network and time); a posted chip opens the live post, the x unschedules. Zernio statuses refresh every
+  minute while anything is pending. Cancelled posts no longer block rescheduling.
+- Tests: `tests/test_zernio.py` (fake REST API + fake presigned storage), 220 backend tests green, typecheck and
+  build green. **The smoke run was not done** (it needs the owner to keep hands off the windows) and the new
+  Settings section has not been seen in a screenshot yet.
+- **Site:** redesigned `apps/site` (endless three.js production-line hero, pinned "cut" scroll scene, GSAP +
+  Lenis, light only) is live on ytclipper.xyz; three copy fixes after that are local only, not deployed.
 
 ## Release + publishing (2026-11-08)
 
@@ -395,8 +451,7 @@ npm run smoke:packaged  # launches the built exe, checks every exe's signature, 
       and callouts). Judge it frame by frame and by ear; note time per video with motion on.
 - [ ] Clip a real video: dead-air cuts land between words with no clicks; the cold open is a real payoff line;
       caption pop and keyword colours; reframing glides vs cuts; the animated hook.
-- [ ] Buffer: connect, publish now, publish scheduled.
-- [ ] Metricool (one-click OAuth built 2026-11-08, fakes only): press Connect Metricool in Settings, approve, confirm it says Connected. If Metricool rejects the `http://127.0.0.1:8787/callback` registration, that is the one thing to change in `publish/metricool.py`. Then `python -m app.cli metricool tools`, inspect `schedule_post`, wire the UI.
+- [ ] Zernio: connect a network in Settings, Posting, post one clip now, schedule another, unschedule a third.
 
 ### 3. Code signing (ready, waiting on a certificate)
 - Azure Trusted Signing only takes individual developers in the US/Canada (organizations US/Canada/EU/UK);

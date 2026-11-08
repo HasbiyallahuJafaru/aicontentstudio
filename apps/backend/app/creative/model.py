@@ -1,6 +1,7 @@
 """The creative director. Provider-neutral interface + the OpenRouter implementation (OpenAI-compatible chat API).
 One OpenRouter key covers every model call in the app: writing, clip selection (here) and transcription
 (app/clipper/transcribe.py)."""
+import json
 import logging
 import os
 import ssl
@@ -33,6 +34,16 @@ class CreativeModel:
 
     def write_piece(self, brief: dict, plan: BatchPlan, item: PlanItem, avoid: list[str]) -> PieceContent: ...
 
+    def write_pieces(self, brief: dict, plan: BatchPlan, items: list[PlanItem], avoid: list[str],
+                     given: list) -> list[PieceContent | None]:
+        """Several pieces at once. This default writes them one by one; OpenRouterModel asks in one request. A None
+        means that piece came back unusable and the caller writes it on its own."""
+        out = []
+        for item, own in zip(items, given):
+            b = {**brief, "given_quote": own[0], "given_author": own[1]} if own else brief
+            out.append(self.write_piece(b, plan, item, avoid))
+        return out
+
 
 class OpenRouterModel(CreativeModel):
     URL = BASE + "/chat/completions"
@@ -54,6 +65,24 @@ class OpenRouterModel(CreativeModel):
     def write_piece(self, brief, plan, item, avoid):
         schema = PieceContent if prompts.quotes_only(brief) else VideoPieceContent
         return self._json(prompts.piece(brief, plan, item, avoid), schema)
+
+    def write_pieces(self, brief, plan, items, avoid, given):
+        """One request for the whole group; each piece is validated on its own, so one malformed piece costs only
+        that piece (returned as None) and never the batch."""
+        schema = PieceContent if prompts.quotes_only(brief) else VideoPieceContent
+        try:
+            found = json.loads(self._chat(prompts.pieces(brief, plan, items, avoid, given))).get("pieces") or []
+        except (ValueError, AttributeError) as e:
+            log.warning("batch write returned no usable JSON: %s", e)
+            found = []
+        out = []
+        for j in range(len(items)):
+            try:
+                out.append(schema.model_validate(found[j]) if j < len(found) else None)
+            except ValidationError as e:
+                log.warning("batch piece %d invalid: %s", j + 1, str(e)[:300])
+                out.append(None)
+        return out
 
     def _json(self, messages: list[dict], schema: type[BaseModel]):
         """Call, validate; if invalid, ask the model to repair once; if still invalid, regenerate once (PRD §100)."""

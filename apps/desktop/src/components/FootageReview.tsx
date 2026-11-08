@@ -1,6 +1,7 @@
 // Footage review (owner decision 2026-11-07): nothing full-size downloads until the user has seen the options.
 // Each piece shows its candidates as thumbnails with the AI's picks pre-selected and numbered in play order; a click
-// swaps a shot (saved at once, so a restart keeps it), and one button downloads exactly the picked footage.
+// swaps a shot (saved at once, so a restart keeps it), and one button under the shots downloads exactly the picked
+// footage and then renders every piece (the "visuals_render" job).
 import { useState, type CSSProperties } from 'react'
 import { DownloadSimple, Play } from '@phosphor-icons/react'
 import { call, mediaUrl, BackendError, type Piece } from '../lib/studio'
@@ -31,29 +32,20 @@ export function FootageReview({ pieces, onStarted, disabled }: {
     setStarting(true)
     setError(undefined)
     try {
-      await call('jobs.start', { project_id: pieces[0].project_id, kind: 'visuals' })
+      await call('jobs.start', { project_id: pieces[0].project_id, kind: 'visuals_render' })
       onStarted()
     } catch (e) { setError(e as BackendError) } finally { setStarting(false) }
   }
 
   return (
     <section aria-label="Choose the footage" className="glass anim-drift mb-8 grid gap-7 p-8">
-      <div className="flex flex-wrap items-end justify-between gap-6">
-        <div className="grid gap-1.5">
-          <h2 className="font-display text-[22px] font-semibold tracking-[-0.02em]">Choose the footage</h2>
-          <p className="max-w-[62ch] text-[13px] leading-relaxed text-ink-2">
-            Nothing has been downloaded yet. The studio's picks are numbered in the order they play; click any shot to
-            swap it. Only what you pick here is downloaded.
-          </p>
-        </div>
-        <Button variant="primary" onClick={confirm} disabled={disabled || starting || !!missing.length || !total}>
-          <DownloadSimple size={14} weight="bold" />{starting ? 'Starting' : `Download ${total} ${total === 1 ? 'shot' : 'shots'} and continue`}
-        </Button>
+      <div className="grid gap-1.5">
+        <h2 className="font-display text-[22px] font-semibold tracking-[-0.02em]">Choose the footage</h2>
+        <p className="max-w-[62ch] text-[13px] leading-relaxed text-ink-2">
+          Nothing has been downloaded yet. The studio's picks are numbered in the order they play; click any shot to
+          swap it. When you're happy, press Download and render below the shots.
+        </p>
       </div>
-      {!!missing.length && (
-        <p className="-mt-3 text-xs text-danger">Pick at least one shot for piece {missing.map((p) => String(p.idx).padStart(3, '0')).join(', ')}.</p>
-      )}
-      {error && <ErrorNote error={error} />}
 
       {pieces.map((p) => {
         const review = p.content.review!
@@ -102,6 +94,18 @@ export function FootageReview({ pieces, onStarted, disabled }: {
           </div>
         )
       })}
+
+      <div className="flex flex-wrap items-center justify-between gap-4 border-t border-line pt-6">
+        <p className="max-w-[56ch] text-[13px] text-ink-2">
+          {missing.length
+            ? <span className="text-danger">Pick at least one shot for piece {missing.map((p) => String(p.idx).padStart(3, '0')).join(', ')}.</span>
+            : `Downloads the ${total} picked ${total === 1 ? 'shot' : 'shots'}, then renders every piece. You can watch the progress at the top of this page.`}
+        </p>
+        <Button variant="primary" onClick={confirm} disabled={disabled || starting || !!missing.length || !total}>
+          <DownloadSimple size={14} weight="bold" />{starting ? 'Starting…' : 'Download and render'}
+        </Button>
+      </div>
+      {error && <ErrorNote error={error} />}
     </section>
   )
 }

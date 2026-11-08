@@ -125,9 +125,7 @@ VIDEO_PLAN_SHAPE = {
                 "narration_style": "e.g. calm reflective, quiet urgent, warm conversational"}],
 }
 
-QUOTE_FIELD = {"text": "string", "author": None,
-               "emphasis": "1-3 words copied exactly from quote.text that carry it (often the turn: 'Live it.')",
-               "kicker": "optional quiet line under the quote, 2-5 words, adds instead of repeats, or null"}
+QUOTE_FIELD = {"text": "string", "author": None}
 DESIGN_FIELD = {"text_density": "low|medium|high", "animation": "still|slow|medium",
                 "composition": "editorial|centered|minimal|bold"}
 METADATA_FIELD = {"title": "short title, no hashtags", "description": "2-3 sentences",
@@ -142,7 +140,6 @@ QUOTE_PIECE_SHAPE = {
     "quote": QUOTE_FIELD,
     "visual": {"preferred_type": "image", "search_query": "the photo search", "secondary_query": "a different "
                "photo search for the same quote, used only if the first finds nothing", "mood": "string"},
-    "design": DESIGN_FIELD,
     "metadata": METADATA_FIELD,
 }
 VIDEO_PIECE_SHAPE = {
@@ -252,6 +249,48 @@ neighbouring theme, or would sit unchanged under a different topic, rewrite it.
 Return JSON shaped like: {json.dumps(VIDEO_PIECE_SHAPE)}"""
     return [{"role": "system", "content": QUOTES_SYSTEM if quotes_only(brief) else VIDEO_SYSTEM},
             {"role": "user", "content": f"{head}\n{ask}"}]
+
+
+def pieces(brief: dict, plan, items: list, avoid: list[str], given: list) -> list[dict]:
+    """Several pieces in one request (owner 2026-11-08: batch instead of one call per piece). `given[j]` is the
+    user's own (text, author) for item j, or None when the AI writes the quote."""
+    reading = getattr(plan, "reading", "") or f'the topic "{brief["topic"]}", read literally'
+    quotes = quotes_only(brief)
+    rows = []
+    for j, (item, own) in enumerate(zip(items, given), 1):
+        if quotes:  # quote images are not planned (owner 2026-11-08): each row is just "a new quote" or the user's
+            row = f"{j}. a new quote: its own facet of the topic and its own photographable subject from its world"
+        else:
+            row = (f'{j}. facet "{item.angle}", visual subject "{item.visual_subject}", intensity {item.intensity}, '
+                   f"preferred visual {item.visual_type}, narration style {item.narration_style or 'natural'}")
+        if own:
+            row = (f'{j}. the user\'s quote, fixed: "{own[0]}"; quote.text must be exactly that, word for word; '
+                   f"author = {json.dumps(own[1])}. Write its photo search and post copy around it")
+        rows.append(row)
+    if quotes:
+        rules = "For each: the quote, its photo search, design hints and post copy. No narration, no script."
+        shape = QUOTE_PIECE_SHAPE
+    else:
+        rules = ("For each: the narration's FIRST line is the hook; the quote is the line people screenshot; \"hook\" "
+                 "is the animated title on screen while the first line is spoken (read with the sound off it must stop "
+                 "the scroll alone, not a copy of the first line); \"callouts\": 0-2 short phrases or numbers worth "
+                 "seeing, each tied to one word the narration actually says, or empty.")
+        shape = VIDEO_PIECE_SHAPE
+    n = len(items)
+    return [{"role": "system", "content": QUOTES_SYSTEM if quotes else VIDEO_SYSTEM},
+            {"role": "user", "content": f"""{_brief(brief)}
+
+Reading of the topic (stay inside it): {reading}
+Batch: {plan.batch_theme}.
+
+Write these {n} piece(s), one per line below, in this order:
+{chr(10).join(rows)}
+
+{rules} Every piece is distinct from the others here: no two quotes or openings alike.{_avoid(avoid)}
+
+Before you answer, check every piece against the reading above. If one drifted to a neighbouring theme, or would sit \
+unchanged under a different topic, rewrite it.
+Return JSON shaped like: {{"pieces": [{json.dumps(shape)}]}} with exactly {n} item(s) in "pieces", in the order above."""}]
 
 
 def repair(error: str) -> str:

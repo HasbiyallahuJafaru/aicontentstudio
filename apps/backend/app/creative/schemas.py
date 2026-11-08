@@ -41,9 +41,6 @@ class BatchPlan(BaseModel):
 class Quote(BaseModel):
     text: Text = Field(min_length=8, max_length=180)
     author: str | None = None  # null for original lines; the real public-domain source for attributed genres
-    # design copy for the still (app/design.py); optional and capped so a model that skips them never fails a piece
-    emphasis: Annotated[str, capped(40)] | None = None  # the words of the quote the design stresses
-    kicker: Annotated[str, capped(40)] | None = None    # a quiet tracked line under the quote
 
 
 class Narration(BaseModel):
@@ -98,7 +95,7 @@ class PieceContent(BaseModel):
     quote: Quote
     narration: Narration | None = None
     visual: Visual
-    design: DesignHints
+    design: DesignHints | None = None  # narrated videos only; a quote image's design comes from the genre rotation
     metadata: Metadata
     # on-screen motion text (app/motion.py). Optional: pieces written before motion graphics still load.
     hook: Annotated[str, capped(70)] = ""
@@ -113,3 +110,4 @@ class PieceContent(BaseModel):
 class VideoPieceContent(PieceContent):
     """Anything that may become a video must carry the script it is cut to."""
     narration: Narration
+    design: DesignHints

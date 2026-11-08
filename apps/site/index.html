@@ -7,9 +7,8 @@
     <title>YT Clipper - AI Content Studio for Windows</title>
     <meta name="description" content="Turn long videos into captioned shorts, and ideas into quote images and narrated videos. A free Windows app that runs on your own PC." />
     <link rel="canonical" href="https://ytclipper.xyz/" />
-    <meta name="theme-color" content="#f2f3f5" media="(prefers-color-scheme: light)" />
-    <meta name="theme-color" content="#0d0e10" media="(prefers-color-scheme: dark)" />
-    <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" content="#f2f3f5" />
+    <meta name="color-scheme" content="light" />
     <link rel="icon" type="image/png" href="/favicon.png" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <meta property="og:type" content="website" />
@@ -34,6 +33,7 @@
   <body>
     <a class="skip" href="#main">Skip to content</a>
     <div class="top-sentinel" aria-hidden="true"></div>
+    <div class="cursor" aria-hidden="true"><span></span></div>
 
     <header class="nav" data-nav>
       <div class="nav-inner">
@@ -42,60 +42,122 @@
           <span>YT Clipper</span>
         </a>
         <nav class="nav-links" aria-label="Main">
+          <a href="#cut">How it cuts</a>
           <a href="#features">Features</a>
-          <a href="#how">How it works</a>
+          <a href="#tour">Tour</a>
           <a href="#faq">FAQ</a>
         </nav>
-        <a class="btn btn-primary btn-sm" data-download href="https://ytclipper-download.jafaruhasbiyallahu-cc1.workers.dev/download">
+        <a class="btn btn-primary btn-sm" data-download data-magnetic href="https://ytclipper-download.jafaruhasbiyallahu-cc1.workers.dev/download">
           <i data-icon="windows-logo"></i>Download for Windows
         </a>
       </div>
     </header>
 
     <main id="main">
+      <!-- hero: the endless production line -->
       <section class="hero" id="top">
         <div class="hero-copy">
-          <h1 class="display">
-            <span class="line">Long videos in.</span>
-            <span class="line"><mark>Shorts</mark> out.</span>
+          <h1 class="display" aria-label="Long videos in. Shorts out.">
+            <span class="line" aria-hidden="true"><span>Long</span> <span>videos</span> <span>in.</span></span>
+            <span class="line" aria-hidden="true"><span><mark>Shorts</mark></span> <span>out.</span></span>
           </h1>
-          <p class="lede">Turn talks, podcasts and quick ideas into captioned shorts, quote images and narrated videos, right on your PC.</p>
-          <div class="hero-ctas">
-            <a class="btn btn-primary" data-download href="https://ytclipper-download.jafaruhasbiyallahu-cc1.workers.dev/download">
-              <i data-icon="windows-logo"></i>Download for Windows
-            </a>
-            <a class="btn btn-ghost" href="#how">See how it works<i data-icon="arrow-down-right"></i></a>
+          <div class="hero-side">
+            <p class="lede">Turn talks, podcasts and quick ideas into captioned shorts, quote images and narrated videos, right on your PC.</p>
+            <div class="hero-ctas">
+              <a class="btn btn-primary" data-download data-magnetic href="https://ytclipper-download.jafaruhasbiyallahu-cc1.workers.dev/download">
+                <i data-icon="windows-logo"></i>Download for Windows
+              </a>
+              <a class="btn btn-ghost" href="#cut">Watch it cut<i data-icon="arrow-down-right"></i></a>
+            </div>
           </div>
         </div>
         <div class="hero-stage">
-          <canvas class="hero-canvas" aria-label="A strip of finished quote images is cut by a playhead and lifts into a fan of separate posts" role="img"></canvas>
+          <canvas class="hero-canvas" aria-label="An endless strip of raw footage runs past a lime playhead, and each frame it cuts comes out as a finished vertical post" role="img"></canvas>
+          <div class="hero-labels" aria-hidden="true">
+            <span class="hero-label hero-label-in"><i data-icon="film-strip"></i>Raw footage</span>
+            <span class="hero-label hero-label-out"><i data-icon="sparkle"></i>Finished posts</span>
+          </div>
         </div>
       </section>
 
-      <section class="showcase" aria-label="The app">
-        <figure class="showcase-frame" data-reveal>
-          <img src="./src/assets/shots/dashboard.webp" alt="The YT Clipper dashboard, with a row of finished quote images under the greeting" width="1440" height="768" loading="lazy" decoding="async" />
-        </figure>
+      <!-- a running band of what goes in and what comes out -->
+      <div class="band" aria-hidden="true">
+        <div class="band-track" data-band>
+          <span>Podcasts</span><i data-icon="arrow-right"></i><b>Shorts</b><i data-icon="sparkle"></i>
+          <span>Lectures</span><i data-icon="arrow-right"></i><b>Reels</b><i data-icon="sparkle"></i>
+          <span>Interviews</span><i data-icon="arrow-right"></i><b>TikToks</b><i data-icon="sparkle"></i>
+          <span>A single idea</span><i data-icon="arrow-right"></i><b>Quote posts</b><i data-icon="sparkle"></i>
+          <span>A topic</span><i data-icon="arrow-right"></i><b>Narrated videos</b><i data-icon="sparkle"></i>
+        </div>
+      </div>
+
+      <!-- the cut, scrubbed by scroll: a long source plays past the playhead, the best moments become shorts -->
+      <section class="cut" id="cut" aria-labelledby="cut-title">
+        <div class="cut-pin">
+          <div class="cut-panel">
+            <div class="cut-head">
+              <h2 class="section-title" id="cut-title">An hour of talking. <span class="text-accent">Three shorts</span> worth posting.</h2>
+              <p class="cut-step" data-cut-step>It listens to every word.</p>
+            </div>
+
+            <div class="source" aria-hidden="true">
+              <div class="source-meta"><span><i data-icon="play"></i>episode-41.mp4</span><span data-timecode>00:00:00</span></div>
+              <div class="source-window">
+                <div class="source-track" data-track>
+                  <div class="source-frames" data-frames></div>
+                  <div class="source-wave" data-wave></div>
+                  <p class="source-words" data-words></p>
+                </div>
+                <div class="source-head"></div>
+              </div>
+            </div>
+
+            <div class="phones" aria-hidden="true">
+              <figure class="phone" data-phone>
+                <img src="./src/assets/footage/clip-03.webp" alt="" />
+                <span class="phone-hook">Nobody tells you this</span>
+                <p class="phone-caption" data-caption="Most people quit right before it starts working"></p>
+              </figure>
+              <figure class="phone" data-phone>
+                <img src="./src/assets/footage/clip-07.webp" alt="" />
+                <span class="phone-hook">The unseen hours</span>
+                <p class="phone-caption" data-caption="The work nobody watches is the work that shows up later"></p>
+              </figure>
+              <figure class="phone" data-phone>
+                <img src="./src/assets/footage/clip-10.webp" alt="" />
+                <span class="phone-hook">Start today</span>
+                <p class="phone-caption" data-caption="You will never feel ready so start before you do"></p>
+              </figure>
+            </div>
+          </div>
+        </div>
       </section>
 
+      <!-- features: a bento where every cell is doing its job -->
       <section class="features" id="features">
-        <h2 class="section-title" data-reveal>Three kinds of content. One app.</h2>
+        <h2 class="section-title" data-reveal>Three kinds of content. <span class="text-accent">One app.</span></h2>
         <div class="bento">
           <article class="cell cell-clip" data-reveal>
-            <div class="cell-media"><img src="./src/assets/shots/clip.webp" alt="The clip form: paste a link or choose a video file, then pick orientation, clip count and captions" loading="lazy" decoding="async" /></div>
             <div class="cell-text">
               <i data-icon="scissors" class="cell-icon"></i>
               <h3>Clip any long video</h3>
               <p>Paste a YouTube link or drop in a file. It transcribes every word, finds the moments that stand alone and burns in captions.</p>
             </div>
+            <div class="clip-live" aria-hidden="true">
+              <figure class="phone phone-sm">
+                <img src="./src/assets/footage/clip-05.webp" alt="" />
+                <p class="phone-caption" data-caption="Say less and mean every word of it"></p>
+              </figure>
+              <figure class="phone phone-sm">
+                <img src="./src/assets/footage/clip-11.webp" alt="" />
+                <p class="phone-caption" data-caption="Discipline is remembering what you want"></p>
+              </figure>
+            </div>
           </article>
           <article class="cell cell-quotes" data-reveal>
-            <div class="fan" aria-hidden="true">
-              <img src="./src/assets/renders/card-3.webp" alt="" loading="lazy" />
-              <img src="./src/assets/renders/card-1.webp" alt="" loading="lazy" />
-              <img src="./src/assets/renders/card-5.webp" alt="" loading="lazy" />
-            </div>
+            <div class="deck" data-deck aria-hidden="true"></div>
             <div class="cell-text">
+              <i data-icon="text-aa" class="cell-icon"></i>
               <h3>Quote images with real typography</h3>
               <p>Seven designs with bundled fonts. Paste your own lines or let the AI write them.</p>
             </div>
@@ -106,55 +168,57 @@
               <h3>Narrated shorts</h3>
               <p>A voiced short cut to stock footage, colour graded, with word-by-word subtitles.</p>
             </div>
-            <img class="voice-art" src="./src/assets/renders/card-8.webp" alt="" loading="lazy" />
+            <div class="eq" data-eq aria-hidden="true"></div>
           </article>
           <article class="cell cell-publish" data-reveal>
             <i data-icon="calendar-check" class="cell-icon"></i>
             <h3>Schedule with Metricool</h3>
             <p>Connect with one button, approve in your browser, then schedule finished clips straight from the app.</p>
+            <div class="week" aria-hidden="true"><div class="week-track" data-week></div></div>
           </article>
           <article class="cell cell-private" data-reveal>
             <i data-icon="lock-simple" class="cell-icon"></i>
             <h3>Stays on your computer</h3>
             <p>No account and no cloud. Your keys are encrypted by Windows and your files never leave your PC.</p>
+            <div class="orbit" aria-hidden="true"><span></span><span></span><span></span><b><i data-icon="lock-simple"></i></b></div>
           </article>
         </div>
       </section>
 
-      <section class="how" id="how">
-        <div class="how-rail">
-          <h2 class="section-title">From link to post</h2>
-          <ol class="how-steps">
-            <li data-step="0" class="active">
-              <h3>Drop in a video or an idea</h3>
-              <p>Paste a link, choose a file from your PC, or type a topic for quote images and narrated videos.</p>
-            </li>
-            <li data-step="1">
-              <h3>Let the AI do the cutting</h3>
-              <p>It picks the strongest moments, writes a hook and post copy for every platform, and renders 1080 x 1920 files.</p>
-            </li>
-            <li data-step="2">
-              <h3>Review, then export or schedule</h3>
-              <p>Keep what you like. Export files and captions for each platform, or send them to Metricool.</p>
-            </li>
-          </ol>
-        </div>
-        <div class="how-media">
-          <figure data-step="0"><img src="./src/assets/shots/create.webp" alt="Choosing what to make: quote images, narrated videos or clips from a video" loading="lazy" decoding="async" /></figure>
-          <figure data-step="1"><img src="./src/assets/shots/clip.webp" alt="Setting up a clip job from a link or a video file" loading="lazy" decoding="async" /></figure>
-          <figure data-step="2"><img src="./src/assets/shots/quotes.webp" alt="Previewing finished quote images before exporting" loading="lazy" decoding="async" /></figure>
+      <!-- tour: the real app, one screen stacking on the last -->
+      <section class="tour" id="tour" aria-labelledby="tour-title">
+        <h2 class="section-title" id="tour-title" data-reveal>From link to post</h2>
+        <div class="stack">
+          <article class="slide" data-slide>
+            <div class="slide-text"><span class="slide-num">01</span><h3>Drop in a video or an idea</h3><p>Paste a link, choose a file from your PC, or type a topic for quote images and narrated videos.</p></div>
+            <figure class="slide-media"><img src="./src/assets/shots/create.webp" alt="Choosing what to make: quote images, narrated videos or clips from a video" loading="lazy" decoding="async" /></figure>
+          </article>
+          <article class="slide" data-slide>
+            <div class="slide-text"><span class="slide-num">02</span><h3>Let the AI do the cutting</h3><p>It picks the strongest moments, writes a hook and post copy for every platform, and renders 1080 x 1920 files.</p></div>
+            <figure class="slide-media"><img src="./src/assets/shots/clip.webp" alt="Setting up a clip job from a link or a video file" loading="lazy" decoding="async" /></figure>
+          </article>
+          <article class="slide" data-slide>
+            <div class="slide-text"><span class="slide-num">03</span><h3>Review, then export or schedule</h3><p>Keep what you like. Export files and captions for each platform, or send them to Metricool.</p></div>
+            <figure class="slide-media"><img src="./src/assets/shots/quotes.webp" alt="Previewing finished quote images before exporting" loading="lazy" decoding="async" /></figure>
+          </article>
+          <article class="slide" data-slide>
+            <div class="slide-text"><span class="slide-num">04</span><h3>Keep it all in one place</h3><p>Every project, render and clip stays in your library. Re-render or delete one without touching the rest.</p></div>
+            <figure class="slide-media"><img src="./src/assets/shots/dashboard.webp" alt="The YT Clipper dashboard, with a row of finished quote images under the greeting" loading="lazy" decoding="async" /></figure>
+          </article>
         </div>
       </section>
 
+      <!-- gallery: two endless rows that speed up and lean with the scroll -->
       <section class="gallery" aria-labelledby="gallery-title">
-        <h2 class="section-title" id="gallery-title" data-reveal>Made in the studio</h2>
-        <div class="marquee" data-marquee>
-          <div class="marquee-track"></div>
+        <h2 class="section-title" id="gallery-title" data-reveal>Made in the studio. <span class="text-accent">Every one.</span></h2>
+        <div class="rows" data-rows>
+          <div class="row" data-row="1"><div class="row-track"></div></div>
+          <div class="row" data-row="-1"><div class="row-track"></div></div>
         </div>
       </section>
 
       <section class="statement">
-        <p class="statement-text" data-reveal>Your keys. Your files. <mark>Your computer.</mark></p>
+        <p class="statement-text" data-fill>Your keys. Your files. Your computer. No account, no cloud storage.</p>
         <p class="statement-sub" data-reveal>Bring your own OpenRouter and Pexels keys and pay only for what you use, straight to them. The app itself is free.</p>
       </section>
 
@@ -184,9 +248,11 @@
         </div>
       </section>
 
+      <!-- final call, under a ring of output that never stops turning -->
       <section class="final">
-        <h2 class="display final-title" data-reveal>Make this week's shorts tonight.</h2>
-        <a class="btn btn-primary btn-lg" data-download href="https://ytclipper-download.jafaruhasbiyallahu-cc1.workers.dev/download" data-reveal>
+        <div class="ring-stage" aria-hidden="true"><div class="ring" data-ring></div></div>
+        <h2 class="display final-title" data-reveal>Make this week's shorts <mark>tonight.</mark></h2>
+        <a class="btn btn-primary btn-lg" data-download data-magnetic href="https://ytclipper-download.jafaruhasbiyallahu-cc1.workers.dev/download" data-reveal>
           <i data-icon="windows-logo"></i>Download for Windows
         </a>
         <p class="final-meta" data-reveal>Windows 10 and 11, 64-bit. Free download.</p>
@@ -194,6 +260,7 @@
     </main>
 
     <footer class="footer">
+      <p class="wordmark" aria-hidden="true">YT Clipper</p>
       <div class="footer-inner">
         <a class="brand" href="#top"><img src="/favicon.png" alt="" width="24" height="24" /><span>YT Clipper</span></a>
         <nav class="legal-links" aria-label="Legal">

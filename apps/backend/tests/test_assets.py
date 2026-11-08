@@ -293,6 +293,15 @@ def run_job_with(providers, model, project_id) -> dict:
 class Review(unittest.TestCase):
     """Owner decision 2026-11-07: nothing full-size downloads until the user has seen the options and confirmed."""
 
+    def test_download_and_render_runs_both_in_one_job(self):
+        """The footage panel's one button: download the picks, then render, on a single progress bar."""
+        p = projects.create(BRIEF)
+        seen = []
+        with mock.patch.object(assets, "download_picks", lambda pid, report: (seen.append("download"), report("Downloading footage", 1.0))),                 mock.patch.object(jobs.renders, "render_project", lambda pid, report, ids=None: (seen.append("render"), report("Rendering", 0.5))),                 mock.patch.object(jobs, "emit"):
+            job = _wait(jobs.start(p["id"], "visuals_render"))
+        self.assertEqual(job["status"], "completed")
+        self.assertEqual(seen, ["download", "render"])
+
     @classmethod
     def setUpClass(cls):
         database.migrate()
