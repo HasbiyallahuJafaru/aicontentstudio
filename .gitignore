@@ -11,3 +11,5 @@ graphify-out/
 build/
 release/
 apps/desktop/resources/ffmpeg/
+.wrangler/
+.vercel/

@@ -122,3 +122,51 @@ def palette(dominant: list[str]) -> dict:
 
     return {"primary": _hex01(primary), "secondary": _hex01(secondary), "dark": _hex01(dark),
             "light": _hex01(light), "text": _hex01(text), "overlay": _hex01(dark)}
+
+
+# Footage palettes (owner ask 2026-11-08): retrieve visuals that already fit the look, without spending searches.
+# Photos are filtered at the source (Pexels and Unsplash both take a colour); video search has no colour filter, so
+# every candidate is also ranked by how well its thumbnail matches.
+PALETTES = {
+    "warm": {"label": "Warm and golden", "pexels": "orange", "unsplash": "orange"},
+    "cool": {"label": "Cool blues", "pexels": "blue", "unsplash": "blue"},
+    "earth": {"label": "Earth and green", "pexels": "green", "unsplash": "green"},
+    "mono": {"label": "Black and white", "pexels": "gray", "unsplash": "black_and_white"},
+    "dark": {"label": "Dark and moody", "pexels": "black", "unsplash": "black"},
+    "light": {"label": "Bright and airy", "pexels": "white", "unsplash": "white"},
+}
+# "auto": no source filter (subject relevance first), only a soft ranking toward the genre's usual look
+GENRE_PALETTE = {"hope": "warm", "speech": "dark", "stoic": "mono", "history": "earth", "books": "warm",
+                 "cinema": "cool"}
+
+
+def _hues(a: dict) -> list[tuple[float, float, float]]:
+    out = []
+    for h in a.get("dominant_colors") or []:
+        r, g, b = _rgb(h)
+        out.append(colorsys.rgb_to_hls(r, g, b))
+    return out
+
+
+def palette_match(a: dict, key: str) -> float:
+    """0..1: how well a thumbnail's analysis fits a palette, from its brightness, saturation, temperature and hues."""
+    if key not in PALETTES:
+        return 0.0
+    hls = _hues(a)
+
+    def share(lo: float, hi: float, min_sat: float = 0.12) -> float:
+        hits = [1 for h, l, s in hls if lo <= h * 360 <= hi and s >= min_sat and 0.08 < l < 0.92]
+        return len(hits) / max(len(hls), 1)
+
+    bright, sat, temp = a.get("brightness", 0.5), a.get("saturation", 0.3), a.get("temperature", "neutral")
+    if key == "warm":
+        return 0.5 * share(10, 55) + 0.5 * (1.0 if temp == "warm" else 0.4 if temp == "neutral" else 0.0)
+    if key == "cool":
+        return 0.5 * share(170, 260) + 0.5 * (1.0 if temp == "cool" else 0.4 if temp == "neutral" else 0.0)
+    if key == "earth":
+        return max(share(65, 165), 0.8 * share(20, 45, 0.08) * (1.0 if bright < 0.55 else 0.5))
+    if key == "mono":
+        return max(0.0, 1 - sat / 0.18)
+    if key == "dark":
+        return max(0.0, min(1.0, (0.55 - bright) / 0.35))
+    return max(0.0, min(1.0, (bright - 0.45) / 0.35))  # light

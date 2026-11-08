@@ -198,15 +198,19 @@ def slots(days: list[int], times: list[str], start, earliest: datetime, until: d
 
 
 def calendar(project_id: str, channel_ids: list[str], days: list[int], times: list[str],
-             start: str, tz: str) -> dict:
+             start: str, tz: str, dry_run: bool = False) -> dict:
     """Spreads the project's approved, unpublished clips over the calendar's posting times, up to 30 days
-    ahead, creating each Buffer post directly. `left`: clips that didn't fit."""
+    ahead, creating each Buffer post directly. `left`: clips that didn't fit. `dry_run`: only plan, so the person
+    sees every slot before anything reaches Buffer (ClipperAi's plan step)."""
     now = datetime.now(timezone.utc)
     try:
         zone = ZoneInfo(tz)
     except (KeyError, ValueError):
         raise UserError("That time zone isn't known. Use one like Europe/London or America/New_York.")
-    chosen = _ready(channel_ids)
+    if not days or not times:
+        raise UserError("Pick at least one posting day and one time.")
+    if not dry_run:
+        _ready(channel_ids)  # every chosen channel is connected and can take video
     with connect() as conn:
         rows = conn.execute("SELECT * FROM clips WHERE project_id = ? AND status = 'approved' ORDER BY idx",
                             (project_id,)).fetchall()
@@ -224,8 +228,9 @@ def calendar(project_id: str, channel_ids: list[str], days: list[int], times: li
     due = list(islice(free, len(clips)))
     if not due:
         raise UserError(f"None of those days and times fall within the next {AHEAD.days} days. Pick an earlier start.")
-    for clip, at in zip(clips, due):
-        publish(project_id, clip["idx"], channel_ids, at)
+    if not dry_run:
+        for clip, at in zip(clips, due):
+            publish(project_id, clip["idx"], channel_ids, at)
     return {"scheduled": [{"clip_idx": c["idx"], "title": c["title"], "due_at": a.isoformat()}
                           for c, a in zip(clips, due)],
             "left": [c["idx"] for c in clips[len(due):]]}

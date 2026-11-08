@@ -76,6 +76,7 @@ class Regenerate(unittest.TestCase):
         with database.connect() as conn:  # wipe so the fresh candidate isn't cooled out by earlier tests
             conn.execute("DELETE FROM asset_usage")
         prov = FakeProvider2([cand("a2")])
+        content.assets._CACHE.clear()  # a different fake under the same provider name: drop the earlier results
         with mock.patch.object(content.assets, "get_providers", lambda: [prov]):
             offered = content.regenerate(before["id"], "visual")
             # fresh options to review; the current footage stays until the user confirms (owner decision 2026-11-07)

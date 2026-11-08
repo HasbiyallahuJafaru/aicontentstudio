@@ -37,7 +37,7 @@ class VisualProvider:
     name: str = ""
     LICENSE = ""
 
-    async def search_images(self, query: str, limit: int) -> list[Candidate]: ...
+    async def search_images(self, query: str, limit: int, color: str | None = None) -> list[Candidate]: ...
     async def search_videos(self, query: str, limit: int) -> list[Candidate]: ...
     async def download(self, asset: Candidate) -> bytes: ...
     async def download_thumb(self, asset: Candidate) -> bytes: ...
@@ -94,8 +94,11 @@ class PexelsProvider(VisualProvider):
     def __init__(self, api_key: str, transport: httpx.AsyncBaseTransport | None = None):
         self.h = _Http("Pexels", {"Authorization": api_key}, transport)
 
-    async def search_images(self, query, limit):
-        d = await self.h.get_json(f"{self.URL}/v1/search", {"query": query, "per_page": limit, "orientation": "portrait"})
+    async def search_images(self, query, limit, color=None):
+        params = {"query": query, "per_page": limit, "orientation": "portrait"}
+        if color:
+            params["color"] = color  # Pexels filters photos by colour at the source (videos have no such filter)
+        d = await self.h.get_json(f"{self.URL}/v1/search", params)
         return [Candidate(provider=self.name, provider_asset_id=str(p["id"]), asset_type="image",
                           creator=p.get("photographer", ""), source_url=p.get("url", ""),
                           download_url=p["src"]["large2x"], thumb_url=p["src"]["medium"],
@@ -141,8 +144,11 @@ class UnsplashProvider(VisualProvider):
     def __init__(self, access_key: str, transport: httpx.AsyncBaseTransport | None = None):
         self.h = _Http("Unsplash", {"Authorization": f"Client-ID {access_key}"}, transport)
 
-    async def search_images(self, query, limit):
-        d = await self.h.get_json(f"{self.URL}/search/photos", {"query": query, "per_page": limit, "orientation": "portrait"})
+    async def search_images(self, query, limit, color=None):
+        params = {"query": query, "per_page": limit, "orientation": "portrait"}
+        if color:
+            params["color"] = color
+        d = await self.h.get_json(f"{self.URL}/search/photos", params)
         return [Candidate(provider=self.name, provider_asset_id=str(p["id"]), asset_type="image",
                           creator=p.get("user", {}).get("name", ""), source_url=p.get("links", {}).get("html", ""),
                           download_url=p["links"]["download_location"], thumb_url=p["urls"]["small"],

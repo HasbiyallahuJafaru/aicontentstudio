@@ -2,7 +2,7 @@
 // fake OpenRouter (chat + transcription) + Pexels servers (no paid calls). Screenshots go to SMOKE_OUT (default: <tmp>/acs-smoke). Exit 1 on failure.
 import { _electron as electron } from 'playwright-core'
 import { createServer } from 'node:http'
-import { mkdtempSync, readFileSync, readdirSync, mkdirSync } from 'node:fs'
+import { mkdtempSync, readFileSync, readdirSync, mkdirSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -165,15 +165,99 @@ let { app, win } = await launch()
 await win.getByRole('link', { name: 'GitHub' }).waitFor()
 const splashLinks = await win.getByRole('link', { name: /Website|LinkedIn|GitHub/ }).count()
 assert.equal(splashLinks, 3, 'three developer links on the splash')
+// the fan of bundled design-engine renders, every image decoded (a broken import would show empty cards)
+await win.waitForFunction(() => {
+  const imgs = [...document.querySelectorAll('.bounce-cards__card img')]
+  return imgs.length === 5 && imgs.every((i) => i.complete && i.naturalWidth > 0)
+}, undefined, { timeout: 15_000 })
 await shot(win, '0-splash')
 await assertNoHorizontalOverflowOnSplash(win)
-await enterApp(win)
-await win.getByRole('heading', { name: /^(Good (morning|afternoon|evening)|Working late)$/ }).waitFor() // the splash opens the Dashboard
+// first run: no keys yet, so the setup screens come between the splash and the studio, one key per screen
+await win.getByRole('button', { name: "Let's create content" }).click()
+await win.getByRole('heading', { name: 'Connect the AI' }).waitFor({ timeout: 30_000 })
+await win.getByText('Step 1 of 5').waitFor()
+await shot(win, '0c-setup-openrouter')
+for (const [label, value, nextHeading] of [['OpenRouter key', 'sk-or-smoke', 'Add stock footage'],
+  ['Pexels key', 'smoke-test-key-123', 'More photos']]) {
+  await win.getByLabel(label).fill(value)
+  await win.getByRole('button', { name: 'Save and continue' }).click()
+  await win.getByRole('heading', { name: nextHeading }).waitFor()
+}
+await win.getByRole('button', { name: 'Skip for now' }).click()  // Unsplash is optional
+await win.getByRole('heading', { name: 'Publish through Metricool' }).waitFor()
+assert.equal(await win.getByRole('button', { name: 'Connect Metricool' }).count(), 1, 'Metricool connects with a button')
+await shot(win, '0d-setup-metricool')
+await win.getByRole('button', { name: 'Skip for now' }).click()
+await win.getByRole('heading', { name: "You're set up" }).waitFor()
+await shot(win, '0e-setup-done')
+await win.getByRole('button', { name: 'Start creating' }).click()
+await win.getByRole('status').filter({ hasText: 'Engine ready' }).waitFor({ timeout: 30_000 })
+await win.getByRole('heading', { name: /^(Good (morning|afternoon|evening)|Working late),/ }).waitFor() // the splash opens the Dashboard
+assert.equal(await win.locator('canvas').count(), 0, 'the white room has no background canvases')
+// the rail's hover label must paint over the page, not under it (owner report 2026-11-08). Motion on: the rail's
+// entrance animation keeps a transform, which gives the rail its own layer, and that is when the bug shows.
+{
+  await win.emulateMedia({ reducedMotion: 'no-preference' })
+  await win.waitForTimeout(1000)
+  const item = win.locator('nav[aria-label="Main"] button[aria-label="Library"]')
+  await item.hover()
+  await win.waitForTimeout(400)
+  const onTop = await item.evaluate((btn) => {
+    const tip = btn.querySelector('span[aria-hidden]')
+    const r = tip.getBoundingClientRect()
+    tip.style.pointerEvents = 'auto'  // hit-testing skips pointer-events: none, which the label uses
+    const hit = document.elementFromPoint(r.right - 4, r.top + r.height / 2)
+    tip.style.pointerEvents = ''
+    return hit === tip || tip.contains(hit)
+  })
+  assert.ok(onTop, 'rail label is drawn above the page')
+  await win.mouse.move(700, 450)
+  await win.emulateMedia({ reducedMotion: 'reduce' })
+}
 await win.keyboard.press('Control+N')
 await win.getByRole('heading', { name: 'New project' }).waitFor()
 assert.equal(await win.getByRole('listbox').count(), 0, 'no suggestion list pops open on arrival')
+await win.getByRole('heading', { name: 'What are you making?' }).waitFor()
+// the chooser's three photos ship inside the app (assets/create), every one decoded
+await win.waitForFunction(() => {
+  const imgs = [...document.querySelectorAll('button img')]
+  return imgs.length === 3 && imgs.every((i) => i.complete && i.naturalWidth > 0)
+}, undefined, { timeout: 15_000 })
 await shot(win, '1-create-empty')
 await assertNoHorizontalOverflow(win, 'create')
+
+// Quote images from the user's own lines: the preview sets those exact lines in the chosen design
+await win.getByRole('button', { name: /^Quote images/ }).click()
+await win.getByRole('heading', { name: 'Quote images' }).waitFor()
+await win.getByText('I have my own', { exact: true }).click()
+await win.getByLabel('Your quotes').fill(['Your comfort zone will kill you.', 'Life has no script. Live it. — Anonymous'].join(String.fromCharCode(10)))
+// bulk: a spreadsheet export with a header, quote + author columns, a skipped (too long) row
+const csvPath = join(root, 'quotes.csv')
+writeFileSync(csvPath, ['quote,author', '"Rest, then go again.",Seneca', 'Begin anyway.,', `${'x'.repeat(200)},Nobody`].join('\n'))
+await win.getByLabel('Import a CSV of quotes').setInputFiles(csvPath)
+await win.getByRole('status').filter({ hasText: 'Added 2 quotes from quotes.csv, 1 with an author.' }).waitFor()
+await win.getByText('Skipped 1: row 4 (over 180 characters).').waitFor()
+await win.getByText('4 quotes', { exact: true }).waitFor()
+await win.getByRole('button', { name: 'Next' }).click() // Quotes -> Design
+try {
+  await win.getByRole('group', { name: 'Image design' }).waitFor()
+} catch (e) {
+  await shot(win, 'debug-quote-design')
+  console.error('PAGE TEXT:', await win.evaluate(() => document.body.innerText.slice(0, 1500)))
+  throw e
+}
+await win.getByRole('group', { name: 'Image design' }).getByText('Noir poster', { exact: true }).click()
+await win.waitForFunction(() => document.querySelectorAll('section[aria-label="Preview"] img').length >= 2,
+  undefined, { timeout: 30_000 })
+await win.getByText('Your quotes, set exactly as they will render.', { exact: false }).waitFor()
+await win.getByText('001 · Noir poster', { exact: true }).waitFor({ timeout: 30_000 }) // the pick reaches the preview
+await win.locator('section[aria-label="Preview"] [aria-busy="false"]').waitFor()
+await win.locator('button[type="submit"]').waitFor() // the keys went in at setup, so it creates for real
+assert.equal(await win.getByRole('button', { name: 'Save as draft' }).count(), 0, 'keys from setup are live')
+await shot(win, '1b-quote-images')
+await assertNoHorizontalOverflow(win, 'quote-images')
+await win.getByRole('button', { name: 'All formats' }).click()
+await win.getByRole('heading', { name: 'What are you making?' }).waitFor()
 
 // Settings: keys (encrypted) + a plain-language choice
 await win.keyboard.press('Control+,')
@@ -198,14 +282,19 @@ await shot(win, '3-library-empty')
 
 // Create → generate (pieces + visuals): walk the Brief → Delivery → Look wizard, then create
 await win.keyboard.press('Control+N')
+await win.getByRole('button', { name: /^Narrated videos/ }).click()
 await win.getByLabel('Topic').fill('discipline')
 await win.getByLabel('Genre').click()
 await win.getByText('Hard Truth — speech edit', { exact: true }).click()
-await win.getByRole('group', { name: 'Quantity' }).getByText('3', { exact: true }).click()
+await win.getByRole('group', { name: 'How many' }).getByText('3', { exact: true }).click()
 await win.getByRole('button', { name: 'Next' }).click() // Brief -> Delivery
 await win.getByLabel('Narration voice').waitFor()
 await win.getByRole('button', { name: 'Next' }).click() // Delivery -> Look
 await win.getByLabel('Look').waitFor()
+await win.getByText('Also a 4:5 picture', { exact: true }).click() // video + designed image per piece
+// subtitles default on (owner decision 2026-11-08); burning them into six full-size renders pushes this walk past its
+// render timeouts, and the burn itself is covered by test_render's subtitle renders, so the smoke turns them off
+await win.getByRole('group', { name: 'Subtitles' }).getByText('Off', { exact: true }).click()
 await win.keyboard.press('Control+Enter') // Look -> create + generate
 await win.getByText(/Writing piece \d of 3|Planning 3 angles/).waitFor({ timeout: 15_000 })
 await shot(win, '4-generating')
@@ -310,6 +399,14 @@ assert.equal(await win.getByText('1080 × 1920').count(), 3)
 await win.getByText(/Used \d+ times?/).first().waitFor()
 assert.ok(await win.locator('main span[title^="#"]').count() >= 3, 'dominant color swatches shown')
 await shot(win, '6-library')
+// the full-screen carousel: a tile opens it, arrows step through, Escape closes
+await win.getByRole('button', { name: 'Pexels · Video' }).first().click()
+await win.getByRole('dialog').waitFor()
+await win.getByRole('button', { name: 'Next' }).waitFor()
+await shot(win, '6a-library-carousel')
+await win.keyboard.press('ArrowRight')
+await win.keyboard.press('Escape')
+await win.getByRole('dialog').waitFor({ state: 'detached' })
 await assertNoHorizontalOverflow(win, 'library')
 const choose = (legend, option) =>
   win.locator('fieldset').filter({ hasText: legend }).getByText(option, { exact: true }).click()
@@ -328,7 +425,25 @@ await win.getByRole('button', { name: 'Dashboard' }).click()
 await win.getByRole('heading', { name: 'Recent projects' }).waitFor()
 await win.getByText('3 of 3 written').waitFor()
 await assertNoHorizontalOverflow(win, 'dashboard with data')
-await win.getByText('Discipline').click()
+// the hero's crowd holds the project's real covers (clickable) and samples fill the rest
+await win.getByRole('button', { name: 'Open Discipline' }).first().waitFor()
+await win.waitForTimeout(1200) // the crowd's rise-in finishes
+await shot(win, '6b-dashboard-data')
+// the crowd never climbs into the buttons, at the default size or on a wide window (owner bug 2026-11-08)
+for (const [w, h] of [[1440, 900], [1920, 1020], [1024, 680]]) {
+  await win.setViewportSize({ width: w, height: h })
+  await win.waitForTimeout(400)
+  const gap = await win.evaluate(() => {
+    const buttons = [...document.querySelectorAll('section button')].find((b) => b.textContent.includes('New project'))
+    const tiles = [...document.querySelectorAll('[class*="container-type"] > div')]
+    const top = Math.min(...tiles.map((t) => t.getBoundingClientRect().top))
+    return top - buttons.getBoundingClientRect().bottom
+  })
+  assert.ok(gap > 8, `dashboard crowd overlaps the buttons at ${w}x${h} (gap ${gap}px)`)
+  if (w === 1920) await shot(win, '6c-dashboard-wide')
+}
+await win.setViewportSize({ width: 1440, height: 900 })
+await win.getByRole('button', { name: 'Pick up Discipline' }).click()
 await win.locator('blockquote').getByText(QUOTES[0]).waitFor()
 assert.equal(await win.locator('button[title^="renders/"]').count(), 6, 'renders survive restart')
 await win.getByRole('button', { name: 'Library' }).click()
@@ -344,9 +459,8 @@ const talk = join(root, 'talk.mp4')
   assert.equal(r.status, 0, `clip fixture failed: ${r.stderr}`)
 }
 await win.keyboard.press('Control+N')
-const chooseCreate = (legend, option) =>
-  win.locator('fieldset').filter({ hasText: legend }).getByText(option, { exact: true }).click()
-await chooseCreate('What do you want to make?', 'Clip from video')
+await win.getByRole('button', { name: /^Clips from a video/ }).click()
+assert.equal(await win.getByRole('button', { name: 'Choose a file' }).count(), 1, 'a video on this computer can be chosen')
 await win.getByLabel('Video', { exact: true }).fill(talk)
 await win.getByText('Advanced').click()
 await win.getByLabel('Shortest (s)').fill('5')

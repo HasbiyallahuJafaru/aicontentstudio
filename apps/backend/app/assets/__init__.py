@@ -5,6 +5,7 @@ scores, and stores every piece's candidates with the AI's picks pre-selected (co
 picks (`pick`), then the "visuals" job (`download_picks`) downloads exactly those and gives the project one palette."""
 import asyncio
 import hashlib
+import time
 import io
 import json
 import uuid
@@ -21,7 +22,10 @@ from app.errors import UserError
 SIMILAR_BITS = 10       # dHash bits that may differ before two assets count as "visually similar"
 MIN_HEIGHT = 720        # usable portrait footage/photos for 1080x1920 output
 VIDEO_MIN_S, VIDEO_MAX_S = 4, 90
-SEARCH_LIMIT = 5        # candidates per provider per query; thumbs only, full download happens for the winner
+SEARCH_LIMIT = 6        # candidates per provider per query (one request); thumbs only, the winner downloads later
+ENOUGH = 3              # usable candidates from one query that make asking the next provider unnecessary
+CACHE_SECS = 6 * 3600   # a repeated search (re-roll, "find another visual") is answered from memory, not the API
+PALETTE_WEIGHT = 0.35   # how much a chosen palette counts in the ranking (soft genre default: a third of that)
 SHOTS = 4               # distinct visuals a video piece is cut from (one clip on its own reads as a slideshow)
 
 
@@ -101,18 +105,36 @@ def _remember(provider: str, provider_asset_id: str, phash: str, themes: str,
 
 # --- selection --------------------------------------------------------------------------------------------------------
 
-async def _search_all(providers: list[VisualProvider], query: str, wanted: str) -> list[Candidate]:
-    async def one(p: VisualProvider):
-        return await (p.search_videos(query, SEARCH_LIMIT) if wanted == "video" else p.search_images(query, SEARCH_LIMIT))
+_CACHE: dict[tuple, tuple[float, list[Candidate]]] = {}
+SEARCHES = {"count": 0}  # real API search requests this process made; the job reports them (owner: mind rate limits)
 
-    found = await asyncio.gather(*(one(p) for p in providers), return_exceptions=True)
+
+async def _search_all(providers: list[VisualProvider], query: str, wanted: str, palette: str = "") -> list[Candidate]:
+    """Providers in order (Pexels first), one request each, stopping once a provider gave ENOUGH usable results.
+    Repeats come from a short-lived cache. `palette` filters photos at the source; videos cannot be filtered."""
     out: list[Candidate] = []
-    for res in found:
-        if isinstance(res, UserError):
-            raise res  # auth / rate-limit problems deserve to stop the run, not quietly empty one piece
-        if isinstance(res, BaseException):
-            raise UserError("Visual search failed unexpectedly.", repr(res))
+    for p in providers:
+        color = visual.PALETTES.get(palette, {}).get(p.name) if wanted == "image" else None
+        key = (p.name, " ".join(query.lower().split()), wanted, color)
+        hit = _CACHE.get(key)
+        if hit and time.monotonic() - hit[0] < CACHE_SECS:
+            res = hit[1]
+        else:
+            try:
+                if wanted == "video":
+                    res = await p.search_videos(query, SEARCH_LIMIT)
+                else:
+                    res = await (p.search_images(query, SEARCH_LIMIT, color) if color
+                                 else p.search_images(query, SEARCH_LIMIT))
+            except UserError:
+                raise  # auth / rate-limit problems deserve to stop the run, not quietly empty one piece
+            except Exception as e:  # noqa: BLE001
+                raise UserError("Visual search failed unexpectedly.", repr(e)) from e
+            SEARCHES["count"] += 1
+            _CACHE[key] = (time.monotonic(), res)
         out.extend(res)
+        if sum(1 for c in out if suitable(c)) >= ENOUGH:
+            break
     return out
 
 
@@ -194,12 +216,13 @@ def _wanted(brief: dict, content: dict) -> str:
 
 
 async def _options(providers: list[VisualProvider], query: str, wanted: str, ever: dict, recent: list[dict],
-                   weights: dict[str, float], known: dict[str, dict]) -> list[dict]:
+                   weights: dict[str, float], known: dict[str, dict], palette: str = "", soft: str = "") -> list[dict]:
     """Every suitable candidate for one query, thumbnail stored for the review screen, scored. Technically poor
     ones are never offered (PRD §78); used or recently similar ones are offered but flagged, and never pre-picked.
     `known` (key -> option) holds what earlier queries already offered: those only gain this query, no refetch."""
     out = []
-    candidates = sorted((c for c in await _search_all(providers, query, wanted) if suitable(c)), key=lambda c: c.provider)
+    candidates = sorted((c for c in await _search_all(providers, query, wanted, palette) if suitable(c)),
+                        key=lambda c: c.provider)
     for _, group in groupby(candidates, key=lambda c: c.provider):
         block = list(group)
         provider = next(p for p in providers if p.name == block[0].provider)
@@ -232,9 +255,12 @@ async def _options(providers: list[VisualProvider], query: str, wanted: str, eve
             # by look alone, as before review existed
             cool_themes = json.loads(themes) if row else []
             note = "used" if used[0] else "similar" if _cooled_out(phash, cool_themes, recent) else None
+            # the palette counts in the ranking: fully when the user chose one, softly for the genre's usual look
+            look = (PALETTE_WEIGHT * visual.palette_match(a, palette) if palette
+                    else PALETTE_WEIGHT / 3 * visual.palette_match(a, soft))
             known[key] = {"key": key, "queries": [query], "candidate": c.model_dump(),
                         "thumb": thumb_rel, "phash": phash, "themes": themes, "analysis": a, "note": note,
-                        "used": used[0], "score": round(score(c, rank, len(block), 0, weights, a), 4)}
+                        "used": used[0], "score": round(score(c, rank, len(block), 0, weights, a) + look, 4)}
             out.append(known[key])
     return out
 
@@ -264,10 +290,17 @@ async def _propose_one(brief: dict, piece: dict, providers: list[VisualProvider]
     wanted = _wanted(brief, content)
     want = SHOTS if wanted == "video" else 1
     queries = _queries(content)
+    palette = brief.get("palette", "auto")
+    palette, soft = (palette, "") if palette in visual.PALETTES else ("", visual.GENRE_PALETTE.get(brief["tone"], ""))
     options: list[dict] = []
     known: dict[str, dict] = {}  # one asset can answer two shot queries: offered once, fetched once
-    for q in queries:
-        options += await _options(providers, q, wanted, ever, recent, weights, known)
+    searched: list[str] = []
+    for q in queries:  # lazily: stop as soon as every needed shot has a fresh pick (an image usually needs one query)
+        options += await _options(providers, q, wanted, ever, recent, weights, known, palette, soft)
+        searched.append(q)
+        picks = _prepick(options, searched, want)
+        if len(picks) >= want and all(o["note"] is None for o in options if o["key"] in picks):
+            break
     if not options:
         raise UserError(f'No usable {wanted} turned up for the visual search "{content["visual"]["search_query"]}".')
     picked = _prepick(options, queries, want)
@@ -291,8 +324,11 @@ async def _propose_all(brief: dict, pieces: list[dict], report) -> None:
         return
     s = settings.get()
     ever, recent = _usage_state(s["asset_cooldown_days"])
+    start = SEARCHES["count"]
     for i, piece in enumerate(pieces, 1):
-        report(f"Finding footage options {i} of {n}", (n + i) / (2 * n + 1))
+        used = SEARCHES["count"] - start
+        report(f"Finding footage options {i} of {n} ({used} stock {'search' if used == 1 else 'searches'} so far)",
+               (n + i) / (2 * n + 1))
         try:
             await _propose_one(brief, piece, providers, ever, recent, s["asset_weights"])
         except UserError as e:

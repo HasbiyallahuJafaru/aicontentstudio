@@ -1,14 +1,18 @@
-import type { CSSProperties } from 'react'
+import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { ArrowRight, Plus } from '@phosphor-icons/react'
-import { FORMATS, formatDate, label, mediaUrl, useQuery, type Project } from '../lib/studio'
-import { Button, ErrorNote, Reveal, cx } from '../components/ui'
+import { formatDate, mediaUrl, useBusy, useQuery, type Project } from '../lib/studio'
+import { Button, ErrorNote, Reveal, cx, spot } from '../components/ui'
 import { Cover } from '../components/Cover'
 import { projectState } from '../components/ProjectList'
 
 type Stats = { projects: number; pieces: number; today: number; generating: number }
+// one piece in the crowd: its newest rendered image, or none yet (a draft: shown as its own words on a lit frame)
+type Showpiece = { id: string; quote: string; status: string; project_id: string; project: string; image: string | null }
 
 const at = (ms: number) => ({ '--d': `${ms}ms` }) as CSSProperties
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`
+// renders the studio's own design engine made, bundled: they fill the crowd until the user has seven of their own
+const SAMPLES = Object.values(import.meta.glob('../assets/splash/card-*.webp', { eager: true, import: 'default' })) as string[]
 
 function greeting(now = new Date()) {
   const h = now.getHours()
@@ -22,148 +26,157 @@ function summary(s?: Stats) {
   if (s.generating) parts.push(`${plural(s.generating, 'project')} ${s.generating === 1 ? 'is' : 'are'} generating right now.`)
   if (s.today) parts.push(`${plural(s.today, 'piece')} written today.`)
   if (!parts.length && s.projects) parts.push(`${plural(s.pieces, 'piece')} across ${plural(s.projects, 'project')} so far.`)
-  return parts.join(' ') || 'Everything you make is written, rendered and kept on this computer.'
+  return parts.join(' ') || 'Quote images, narrated videos and clips, written, rendered and kept on this computer.'
 }
 
-function describe(p: Project) {
-  const b = p.brief
-  if (b.kind === 'clip') return `Clips from video, ${b.orientation}`
-  const format = FORMATS.find((f) => f.value === b.format)?.label ?? b.format
-  return `${label(b.tone)}, ${format.toLowerCase()}, ${plural(b.quantity, 'piece')}`
-}
+// The crowd, like a group selfie: the newest work biggest and nearest in the middle, the rest stepping down and
+// leaning in toward it. Everything is measured in cqh, the height of the room left under the buttons, so the crowd
+// can never grow into the text (a width-based layout covered the buttons on wide windows) and on a wide window it
+// spreads sideways instead. o = centre offset from the middle, w = width, y = sink below the edge (% of the tile's
+// own height), r = tilt. Tiles are 4:5, so the middle one (w 76) stands 95cqh tall and sinks 5%.
+// offsets = the two half-widths + a 4cqh gap, so neighbours never overlap (owner report 2026-11-08); the tilt
+// grows outward, so the gaps open toward the top instead of closing
+const SLOTS = [
+  { o: -189, w: 50, y: 0, r: -10 }, { o: -132, w: 56, y: 3, r: -6 }, { o: -70, w: 61, y: 5, r: -3 },
+  { o: 0, w: 71, y: 5, r: 0 },
+  { o: 70, w: 61, y: 5, r: 3 }, { o: 132, w: 56, y: 3, r: 6 }, { o: 189, w: 50, y: 0, r: 10 },
+]
+const PROMINENCE = [3, 2, 4, 1, 5, 0, 6]  // newest work goes front and centre, then outward
 
 export function Dashboard({ onCreate, onOpen, onAll }: { onCreate: () => void; onOpen: (id: string) => void; onAll: () => void }) {
-  const { data, error, reload } = useQuery<Project[]>('projects.list', { limit: 9 })
-  const stats = useQuery<Stats>('app.stats').data
+  // everything reloads when a job finishes, so content generated or rendered while you sit here shows up
+  const busy = useBusy()
+  const [finished, setFinished] = useState(0)
+  const wasBusy = useRef(busy)
+  useEffect(() => { if (wasBusy.current && !busy) setFinished((n) => n + 1); wasBusy.current = busy }, [busy])
+  const { data, error, reload } = useQuery<Project[]>('projects.list', { limit: 9 }, finished)
+  const stats = useQuery<Stats>('app.stats', undefined, finished).data
+  const pieces = useQuery<Showpiece[]>('pieces.showcase', { limit: 7 }, finished).data
   const first = data?.length === 0
-  const [latest, ...rest] = data ?? []
+  const latest = data?.[0]
 
   return (
-    <div className="grid gap-10">
-      <header className="flex flex-wrap items-end justify-between gap-6">
-        <div className="grid gap-2">
-          <h1 className="font-display text-title font-semibold tracking-[-0.03em]"><Reveal text={greeting()} /></h1>
-          <p className="anim-drift min-h-[1.5em] max-w-[60ch] text-[15px] text-ink-2" style={at(260)}>{summary(stats)}</p>
-        </div>
-        <div className="anim-drift" style={at(200)}>
-          <Button variant="primary" onClick={onCreate} kbd="Ctrl N"><Plus size={14} weight="bold" />New project</Button>
-        </div>
-      </header>
+    <div className="grid gap-12">
+      <Hero latest={latest} pieces={pieces} summary={summary(stats)} onCreate={onCreate} onOpen={onOpen} first={first} />
       {error && <ErrorNote error={error} action={<Button onClick={reload}>Try again</Button>} />}
 
-      {first && <Welcome onCreate={onCreate} />}
-      {latest && <Continue project={latest} onOpen={() => onOpen(latest.id)} />}
+      {first && <FirstSteps />}
 
-      {latest && (
+      {!!data?.length && (
         <section className="grid gap-4">
           <div className="flex items-center justify-between">
             <h2 className="font-display text-[17px] font-semibold tracking-[-0.015em]">Recent projects</h2>
             <Button variant="ghost" onClick={onAll}>All projects<ArrowRight size={13} /></Button>
           </div>
-          {rest.length ? (
-            <ul className="grid grid-cols-[repeat(auto-fill,minmax(172px,1fr))] gap-5">
-              {rest.map((p, i) => (
-                <li key={p.id} className="anim-slot" style={{ '--i': i + 4 } as CSSProperties}>
-                  <button onClick={() => onOpen(p.id)} className="group grid w-full gap-3 rounded-[20px] text-left">
-                    <Cover src={p.cover} quote={p.quote} className="transition-transform duration-300 ease-[var(--ease-premium)] group-hover:-translate-y-1" />
-                    <span className="grid gap-0.5 px-1">
-                      <span className="truncate text-[13px] font-medium text-ink">{p.name}</span>
-                      <span className={cx('truncate text-xs', p.status === 'failed' ? 'text-danger' : p.status === 'generating' ? 'text-accent' : 'text-ink-3')}>
-                        {projectState(p)} · {formatDate(p.created_at)}
-                      </span>
+          <ul className="grid grid-cols-[repeat(auto-fill,minmax(172px,1fr))] gap-5">
+            {data.map((p, i) => (
+              <li key={p.id} className="anim-slot" style={{ '--i': i + 4 } as CSSProperties}>
+                <button onClick={() => onOpen(p.id)} className="group grid w-full gap-3 rounded-[20px] text-left">
+                  <Cover src={p.cover} quote={p.quote} className="transition-transform duration-300 ease-[var(--ease-premium)] group-hover:-translate-y-1" />
+                  <span className="grid gap-0.5 px-1">
+                    <span className="truncate text-[13px] font-medium text-ink">{p.name}</span>
+                    <span className={cx('truncate text-xs', p.status === 'failed' ? 'text-danger' : p.status === 'generating' ? 'text-accent-ink' : 'text-ink-3')}>
+                      {projectState(p)} · {formatDate(p.created_at)}
                     </span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="text-[13px] text-ink-3">Your other projects collect here as you make them.</p>
-          )}
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
         </section>
       )}
     </div>
   )
 }
 
-/** The latest project, front and centre: its real cover lights the card, with honest progress and one way in. */
-function Continue({ project: p, onOpen }: { project: Project; onOpen: () => void }) {
-  const total = p.brief.kind === 'clip' ? 0 : p.brief.quantity
-  const bars = total ? [['Written', p.pieces_written ?? 0], ['Rendered', p.rendered ?? 0]] as const : []
+/** The landing card: a centred two-line headline, one honest sentence, two ways in, and the user's own work
+ *  rising out of the bottom edge as a crowd of covers. */
+function Hero({ latest, pieces, summary, onCreate, onOpen, first }: {
+  latest?: Project; pieces?: Showpiece[]; summary: string; onCreate: () => void; onOpen: (id: string) => void; first?: boolean
+}) {
+  // the newest pieces, rendered or not: fresh content shows the moment it is written, as a labelled draft until it
+  // renders (a deleted render turns its piece back into a draft, never a fake finished post)
+  const own = (pieces ?? []).slice(0, SLOTS.length)
+  const tiles: ({ kind: 'piece'; p: Showpiece } | { kind: 'sample'; src: string })[] = [
+    ...own.map((p) => ({ kind: 'piece' as const, p })),
+    ...SAMPLES.slice(0, Math.max(0, SLOTS.length - own.length)).map((src) => ({ kind: 'sample' as const, src })),  // 8 bundled: never a repeat
+  ]
+  const placed = PROMINENCE.slice(0, tiles.length).map((slot, rank) => ({ slot, tile: tiles[rank], rank }))
+
   return (
-    <section className="grid gap-4">
-      <h2 className="font-display text-[17px] font-semibold tracking-[-0.015em]">Pick up where you left off</h2>
-      <article className="glass relative isolate grid grid-cols-[auto_minmax(0,1fr)] items-center gap-10 overflow-hidden p-8 max-[900px]:grid-cols-1">
-        {/* the cover itself, blurred huge behind the card: each project tints its own card */}
-        {p.cover ? (
-          <img aria-hidden src={mediaUrl(p.cover)} alt="" className="absolute inset-0 -z-10 size-full scale-125 object-cover opacity-25 blur-3xl" />
-        ) : (
-          <div aria-hidden className="absolute inset-0 -z-10 bg-[radial-gradient(60%_90%_at_15%_20%,rgb(240_135_58/0.28),transparent_70%)]" />
+    <section className="glass relative isolate flex h-[min(calc(100dvh-150px),780px)] min-h-[600px] flex-col items-center overflow-hidden px-10 pt-16 text-center">
+      <h1 className="max-w-[22ch] font-display text-hero font-semibold tracking-[-0.035em] text-balance">
+        <Reveal text={`${greeting()},`} delay={120} step={70} />
+        <br />
+        <Reveal text="what are we" delay={300} step={70} />{' '}
+        <Reveal text="making" delay={510} step={70} className="text-pop" />{' '}
+        <Reveal text="today?" delay={580} step={70} />
+      </h1>
+      <p className="anim-drift mt-5 min-h-[1.5em] max-w-[52ch] text-[15px] leading-relaxed text-ink-2" style={at(560)}>{summary}</p>
+      <div className="anim-drift mt-7 flex flex-wrap items-center justify-center gap-3" style={at(640)}>
+        <Button variant="primary" onClick={onCreate} kbd="Ctrl N"><Plus size={14} weight="bold" />{first ? 'Start your first project' : 'New project'}</Button>
+        {latest && (
+          <Button onClick={() => onOpen(latest.id)} className="pl-2">
+            {latest.cover
+              ? <img src={mediaUrl(latest.cover)} alt="" className="size-6 rounded-full object-cover" />
+              : <span aria-hidden className="size-6 rounded-full bg-accent" />}
+            <span className="max-w-[22ch] truncate">Pick up {latest.name}</span>
+          </Button>
         )}
-        <Cover src={p.cover} quote={p.quote} size="lg" className="w-[230px] max-[900px]:w-[180px]" />
-        <div className="grid gap-6">
-          <div className="grid gap-2">
-            <h3 className="font-display text-hero font-semibold tracking-[-0.035em] text-balance">
-              <button onClick={onOpen} className="text-left transition-colors duration-200 hover:text-accent">
-                <Reveal key={p.id} text={p.name} delay={220} step={70} />
-              </button>
-            </h3>
-            <p className="anim-drift text-[13px] text-ink-3" style={at(420)}>{describe(p)} · {formatDate(p.created_at)}</p>
-          </div>
-          {!!bars.length && (
-            <dl className="anim-drift grid max-w-[420px] gap-3" style={at(500)}>
-              {bars.map(([k, v]) => (
-                <div key={k} className="grid gap-1.5">
-                  <div className="flex justify-between text-xs"><dt className="text-ink-2">{k}</dt><dd className="tnum text-ink-3">{v} / {total}</dd></div>
-                  <div className="h-[3px] overflow-hidden rounded-full bg-white/[0.08]">
-                    <div className="h-full origin-left rounded-full bg-accent transition-transform duration-700 ease-[var(--ease-premium)]"
-                      style={{ transform: `scaleX(${Math.min(1, v / total)})` }} />
-                  </div>
-                </div>
-              ))}
-            </dl>
-          )}
-          <div className="anim-drift flex flex-wrap items-center gap-4" style={at(580)}>
-            <Button variant="primary" onClick={onOpen}>Open project<ArrowRight size={13} /></Button>
-            <span className={cx('text-[13px]', p.status === 'failed' ? 'text-danger' : p.status === 'generating' ? 'text-accent' : 'text-ink-2')}>
-              {projectState(p)}
-            </span>
-          </div>
-        </div>
-      </article>
+      </div>
+
+      {/* the crowd: each tile is positioned and tilted by its slot, rises in on its own beat, and lifts on hover */}
+      <div className="pointer-events-none relative -mx-10 mt-10 min-h-0 flex-1 self-stretch [container-type:size]">
+        {placed.map(({ slot, tile, rank }) => {
+          const s = SLOTS[slot]
+          const z = 10 - Math.abs(slot - 3)
+          const face = tile.kind === 'piece' ? (
+            <div className="relative">
+              <Cover src={tile.p.image} quote={tile.p.quote} className="w-full" />
+              {!tile.p.image && (
+                <span className="absolute left-3 top-3 rounded-full bg-black/55 px-2.5 py-1 text-2xs font-medium text-white backdrop-blur-sm">Draft</span>
+              )}
+            </div>
+          )
+            : <img src={tile.src} alt="" className="aspect-[4/5] w-full rounded-[18px] object-cover shadow-[0_18px_40px_-16px_rgb(17_18_20/0.22),inset_0_0_0_1px_rgb(17_18_20/0.1)]" />
+          return (
+            <div key={slot} className="absolute bottom-0" style={{ left: `calc(50% + ${s.o}cqh)`, width: `${s.w}cqh`, zIndex: z,
+              transform: `translate(-50%, ${s.y}%) rotate(${s.r}deg)`, transformOrigin: '50% 100%' }}>
+              <div className="anim-slot" style={{ '--i': rank + 6 } as CSSProperties}>
+                {tile.kind === 'piece' ? (
+                  <button onClick={() => onOpen(tile.p.project_id)} title={tile.p.project} aria-label={`Open ${tile.p.project}`}
+                    className="group pointer-events-auto block w-full rounded-[18px] transition-transform duration-300 ease-[var(--ease-premium)] hover:-translate-y-3">
+                    {face}
+                  </button>
+                ) : (
+                  <div aria-hidden className="opacity-90">{face}</div>
+                )}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+      {/* the card's floor: the crowd fades into the glass instead of ending on a hard line */}
     </section>
   )
 }
 
-/** First run: what the studio does, in its three real stages, and the one button that starts it. */
-function Welcome({ onCreate }: { onCreate: () => void }) {
+/** First run: the three real stages, under the hero. */
+function FirstSteps() {
   const steps = [
-    ['Brief', 'Pick a topic and a genre. Every option has a working default.'],
-    ['Write and render', 'The studio writes each piece, narrates it, finds footage and cuts the video.'],
+    ['Choose what to make', 'Quote images, narrated videos or clips from a long video. Every option has a working default.'],
+    ['Write and render', 'The studio writes each piece, finds the visuals, designs or cuts it, and renders the files.'],
     ['Export', 'Files and captions for every platform, ready to schedule.'],
   ] as const
   return (
-    <section className="glass relative isolate grid gap-10 overflow-hidden p-10">
-      <div aria-hidden className="absolute inset-0 -z-10 bg-[radial-gradient(70%_90%_at_85%_15%,rgb(240_135_58/0.3),transparent_65%),radial-gradient(50%_60%_at_10%_100%,rgb(150_96_120/0.18),transparent_70%)]" />
-      <div className="grid max-w-[34rem] gap-5">
-        <h2 className="font-display text-hero font-semibold tracking-[-0.035em]">
-          <Reveal text="Your first batch starts here" delay={240} step={70} />
-        </h2>
-        <p className="anim-drift max-w-[44ch] text-[15px] leading-relaxed text-ink-2" style={at(520)}>
-          Give it a topic and the studio plans distinct angles, then builds the visuals, narration and final renders for you.
-        </p>
-        <div className="anim-drift pt-1" style={at(600)}>
-          <Button variant="primary" onClick={onCreate} kbd="Ctrl N"><Plus size={14} weight="bold" />Start your first project</Button>
-        </div>
-      </div>
-      <ol className="grid grid-cols-3 gap-8 border-t border-line pt-8 max-[900px]:grid-cols-1">
-        {steps.map(([t, d], i) => (
-          <li key={t} className="anim-slot grid gap-2" style={{ '--i': i + 6 } as CSSProperties}>
-            <span className="tnum font-display text-[13px] font-semibold text-accent">{String(i + 1).padStart(2, '0')}</span>
-            <span className="text-[14px] font-medium text-ink">{t}</span>
-            <span className="text-[13px] leading-relaxed text-ink-3">{d}</span>
-          </li>
-        ))}
-      </ol>
-    </section>
+    <ol className="grid grid-cols-3 gap-8 max-[900px]:grid-cols-1">
+      {steps.map(([t, d], i) => (
+        <li key={t} className="anim-slot grid gap-2" style={{ '--i': i + 10 } as CSSProperties}>
+          <span className="tnum font-display text-[13px] font-semibold text-accent-ink">{String(i + 1).padStart(2, '0')}</span>
+          <span className="text-[14px] font-medium text-ink">{t}</span>
+          <span className="text-[13px] leading-relaxed text-ink-3">{d}</span>
+        </li>
+      ))}
+    </ol>
   )
 }

@@ -15,7 +15,7 @@ from unittest import mock
 
 os.environ.setdefault("ACS_DATA_DIR", tempfile.mkdtemp())
 
-CAPTURED = {"buffer": [], "host": [], "mcp": []}
+CAPTURED = {"buffer": [], "host": [], "mcp": [], "mcp_auth": [], "mc_register": [], "mc_token": []}
 
 
 class FakeRPC(BaseHTTPRequestHandler):
@@ -40,6 +40,8 @@ class FakeRPC(BaseHTTPRequestHandler):
             body = json.loads(raw or b"{}")
         else:  # OAuth token endpoints post form-encoded
             body = {k: v[0] for k, v in urllib.parse.parse_qs(raw.decode()).items()}
+        if self.headers.get("Authorization"):
+            CAPTURED["mcp_auth"].append(self.headers["Authorization"])
         reply, status, extra = self.respond(body)
         self._reply(status, extra, reply)
 
@@ -93,6 +95,16 @@ def buffer_auth(body):
     return {"access_token": "at-1", "refresh_token": "rt-1", "expires_in": 3600}, 200, None
 
 
+def metricool_auth(body):
+    """/register takes JSON with redirect_uris; /token takes a form with grant_type."""
+    if "redirect_uris" in body:
+        CAPTURED["mc_register"].append(body)
+        return {"client_id": "mc-client"}, 201, None
+    CAPTURED["mc_token"].append(body)
+    return {"access_token": f"mc-at-{len(CAPTURED['mc_token'])}", "refresh_token": "mc-rt",
+            "expires_in": 3600}, 200, None
+
+
 def host_api(body):
     return (None, 200, None)
 
@@ -119,6 +131,7 @@ buffer_srv, BUFFER_URL = _server(buffer_api)
 auth_srv, AUTH_URL = _server(buffer_auth)
 host_srv, HOST_URL = _server(host_api)
 mcp_srv, MCP_URL = _server(mcp_api)
+mc_auth_srv, MC_AUTH_URL = _server(metricool_auth)
 
 os.environ["ACS_BUFFER_URL"] = BUFFER_URL
 os.environ["ACS_BUFFER_AUTH_URL"] = AUTH_URL
@@ -133,6 +146,7 @@ from app.publish import host, metricool, oauth, store  # noqa: E402
 buffer_pub.API = BUFFER_URL
 oauth.AUTH = AUTH_URL
 metricool.URL = MCP_URL
+metricool.AUTH = MC_AUTH_URL
 
 
 def setUpModule():
@@ -296,29 +310,60 @@ class Calendar(unittest.TestCase):
 
 
 class MetricoolMCP(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls):
-        config.SECRETS["METRICOOL_API_KEY"] = "mc-test-key"
+    def setUp(self):
+        store.save("metricool", {"access_token": "mc-live", "refresh_token": "mc-rt",
+                                 "expires_at": "2099-01-01T00:00:00+00:00"})
 
-    @classmethod
-    def tearDownClass(cls):
-        config.SECRETS.pop("METRICOOL_API_KEY", None)
+    def test_not_connected_is_human(self):
+        metricool.disconnect()
+        self.assertFalse(metricool.connection()["connected"])
+        with self.assertRaisesRegex(UserError, "isn't connected"):
+            metricool.tools()
 
-    def test_needs_key_is_human(self):
-        config.SECRETS.pop("METRICOOL_API_KEY")
-        with self.assertRaisesRegex(UserError, "Metricool API key"):
-            metricool.status()
-        config.SECRETS["METRICOOL_API_KEY"] = "mc-test-key"
-
-    def test_handshake_tools_and_call(self):
-        status = metricool.status()
-        self.assertTrue(status["connected"])
-        self.assertEqual(status["tools"], ["schedule_post"])
+    def test_handshake_tools_and_call_carry_the_bearer(self):
+        self.assertEqual([t["name"] for t in metricool.tools()], ["schedule_post"])
         result = metricool.call_tool("schedule_post", {"text": "hello"})
         self.assertEqual(result, {"text": "posted ok", "is_error": False})
         self.assertEqual(CAPTURED["mcp"][-1]["params"]["arguments"]["text"], "hello")
+        self.assertEqual(CAPTURED["mcp_auth"][-1], "Bearer mc-live")
 
-    def test_bad_key_is_human(self):
+    def test_one_click_connect_registers_once_and_stores_tokens(self):
+        store.delete("metricool")
+        store.delete("metricool_client")
+        url = metricool.connect_url()
+        self.assertTrue(url.startswith(MC_AUTH_URL + "/authorize?"))
+        query = urllib.parse.parse_qs(urllib.parse.urlparse(url).query)
+        self.assertEqual(query["client_id"], ["mc-client"])
+        self.assertEqual(query["resource"], [metricool.RESOURCE])
+        self.assertEqual(CAPTURED["mc_register"][-1]["token_endpoint_auth_method"], "none")
+        import httpx
+        reply = httpx.get(f"http://127.0.0.1:{oauth.PORT}/callback",
+                          params={"code": "mc-code", "state": query["state"][0]}, timeout=10)
+        self.assertIn("Metricool connected", reply.text)
+        self.assertTrue(metricool.connection()["connected"])
+        sent = CAPTURED["mc_token"][-1]
+        self.assertEqual((sent["grant_type"], sent["code"], sent["client_id"]),
+                         ("authorization_code", "mc-code", "mc-client"))
+        self.assertIn("code_verifier", sent)
+        registered = len(CAPTURED["mc_register"])
+        metricool.connect_url()  # a second connect reuses the registration
+        self.assertEqual(len(CAPTURED["mc_register"]), registered)
+
+    def test_cancelled_consent_is_human(self):
+        query = urllib.parse.parse_qs(urllib.parse.urlparse(metricool.connect_url()).query)
+        import httpx
+        reply = httpx.get(f"http://127.0.0.1:{oauth.PORT}/callback",
+                          params={"error": "access_denied", "state": query["state"][0]}, timeout=10)
+        self.assertEqual(reply.status_code, 400)
+        self.assertIn("cancelled", reply.text)
+
+    def test_expired_token_refreshes(self):
+        store.save("metricool", {"access_token": "old", "refresh_token": "mc-rt",
+                                 "expires_at": "2000-01-01T00:00:00+00:00"})
+        self.assertTrue(metricool._bearer().startswith("mc-at-"))
+        self.assertEqual(CAPTURED["mc_token"][-1]["grant_type"], "refresh_token")
+
+    def test_revoked_token_disconnects(self):
         class Fake401:
             status_code = 401
             is_success = False
@@ -326,9 +371,10 @@ class MetricoolMCP(unittest.TestCase):
             content = b"{}"
             text = ""
 
-        with mock.patch.object(metricool.httpx, "post", lambda url, **kw: Fake401()):
-            with self.assertRaisesRegex(UserError, "API key"):
-                metricool.status()
+        with mock.patch.object(metricool.httpx, "request", lambda *a, **kw: Fake401()):
+            with self.assertRaisesRegex(UserError, "Connect it again"):
+                metricool.tools()
+        self.assertFalse(metricool.connection()["connected"])
 
 
 if __name__ == "__main__":

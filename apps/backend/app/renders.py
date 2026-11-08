@@ -8,7 +8,7 @@ import shutil
 import uuid
 from pathlib import Path
 
-from app import config, content, edit, motion, projects, render, settings, tts
+from app import config, content, design, edit, motion, projects, render, settings, tts
 from app.database import connect
 from app.errors import UserError
 
@@ -91,11 +91,14 @@ def render_project(project_id: str, report, piece_ids: list[str] | None = None) 
 
     n = len(pieces)
     for i, piece in enumerate(pieces, 1):
-        report(f"Narration {i} of {n}", (i - 0.5) / n)
         content_data = piece["content"]
+        kinds = _wanted_kinds(brief, piece)
         try:
-            narration = asyncio.run(engine.generate(content_data["narration"]["text"], voice,
-                                                    content_data["narration"].get("delivery", "")))
+            narration = None
+            if "video" in kinds:  # a quote image has no voice: never pay for (or wait on) narration it won't use
+                report(f"Narration {i} of {n}", (i - 0.5) / n)
+                narration = asyncio.run(engine.generate(content_data["narration"]["text"], voice,
+                                                        content_data["narration"].get("delivery", "")))
             pool = _assets_for(piece)
             if not pool:
                 raise UserError("This piece has no visual asset yet.", "Generate visuals, then render again.")
@@ -103,7 +106,7 @@ def render_project(project_id: str, report, piece_ids: list[str] | None = None) 
             report(f"Rendering {i} of {n}", i / n)
             with connect() as conn:
                 conn.execute("UPDATE content_pieces SET status = 'rendering' WHERE id = ?", (piece["id"],))
-            for kind in _wanted_kinds(brief, piece):
+            for kind in kinds:
                 out = Path("renders") / project_id / f"{piece['idx']:03d}-{kind}.{'mp4' if kind == 'video' else 'jpg'}"
                 full_out = config.MEDIA_DIR / out
                 try:
@@ -111,8 +114,8 @@ def render_project(project_id: str, report, piece_ids: list[str] | None = None) 
                         # clean video: no scrim, no quote text burned in (user decision 2026-09-20)
                         timeline = narration.duration + edit.TAIL
                         words = _words(content_data["narration"]["text"], narration.path, narration.duration)
-                        subs = _subtitles_ass(piece, words, timeline,
-                                              renderer.w, renderer.h) if brief["subtitles"] else None
+                        subs = _subtitles_ass(piece, words, timeline, renderer.w, renderer.h,
+                                              brief.get("captions")) if brief["subtitles"] else None
                         cut = edit.cut_for(brief["tone"])
                         look = cut["look"] if brief["look_filter"] == "auto" else brief["look_filter"]
                         report(f"Animating titles {i} of {n}", i / n)
@@ -138,10 +141,15 @@ def render_project(project_id: str, report, piece_ids: list[str] | None = None) 
                             image_src = config.MEDIA_DIR / "tmp" / f"{piece['id']}-frame.jpg"
                             render.thumbnail(config.MEDIA_DIR / asset["local_path"], image_src,
                                              at=max((asset["duration"] or 0) / 2, 0.5))
-                        renderer.render_image(src=image_src, out=full_out,
-                                              quote=content_data["quote"]["text"],
+                        quote = content_data["quote"]
+                        chosen = design.pick(content_data.get("image_design") or brief.get("image_design", "auto"),
+                                             brief["tone"], (content_data.get("design") or {}).get("composition"),
+                                             piece["idx"] - 1, quote["text"])
+                        renderer.render_image(src=image_src, out=full_out, quote=quote,
                                               subject_position=asset["subject_position"] or "center",
-                                              palette=content_data["palette"])
+                                              palette=content_data["palette"], design_name=chosen,
+                                              face=brief.get("image_font", "auto"),
+                                              position=brief.get("image_position", "auto"))
                         duration, fps, w, h = None, None, render.IMAGE_W, render.IMAGE_H
                 except UserError as e:
                     raise UserError(f"Piece {piece['idx']} ({kind}) failed to render: {e}", e.detail)
@@ -162,10 +170,16 @@ def render_project(project_id: str, report, piece_ids: list[str] | None = None) 
     report("Done", 1.0)
 
 
-def _subtitles_ass(piece: dict, words: list[dict], duration: float, w: int, h: int) -> Path:
-    """Burn-ready ASS for the narration, from the same word timings the edit cut to."""
+def _subtitles_ass(piece: dict, words: list[dict], duration: float, w: int, h: int,
+                   style: dict | None = None) -> Path:
+    """Burn-ready ASS for the narration, from the same word timings the edit cut to, in the brief's caption style.
+    Key words (the quote's emphasis and the callout words) take the highlight; "palette" uses the project accent."""
     from app.clipper.captions import captions
-    ass = captions(words, 0.0, duration, w, h)
+    c = piece["content"]
+    keys = ((c.get("quote") or {}).get("emphasis") or "").split() + [x.get("word", "") for x in c.get("callouts") or []]
+    pal = c.get("palette") or {}
+    ass = captions(words, 0.0, duration, w, h, keys, style, accent=design.accent(pal) if pal else "#E0B07A",
+                   plate=pal.get("dark", "#111111"))
     path = config.MEDIA_DIR / "tmp" / f"{piece['id']}-subs.ass"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(ass, encoding="utf-8")

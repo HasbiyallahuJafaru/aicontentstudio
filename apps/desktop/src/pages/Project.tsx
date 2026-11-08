@@ -116,7 +116,7 @@ export function Project({ id, onBack, onSettings }: { id: string; onBack: () => 
             <Button variant="ghost" onClick={() => call('jobs.cancel', { id: job.id })}>Cancel</Button>
           </div>
           <div className="h-0.5 overflow-hidden rounded-full bg-line" role="progressbar" aria-valuenow={Math.round(job.progress * 100)} aria-valuemin={0} aria-valuemax={100}>
-            <div className="h-full origin-left bg-accent transition-transform duration-500 ease-out-expo" style={{ transform: `scaleX(${Math.max(job.progress, 0.02)})` }} />
+            <div className="h-full origin-left bg-pop transition-transform duration-500 ease-out-expo" style={{ transform: `scaleX(${Math.max(job.progress, 0.02)})` }} />
           </div>
         </section>
       )}
@@ -128,7 +128,7 @@ export function Project({ id, onBack, onSettings }: { id: string; onBack: () => 
       {pieces?.length === 0 && !running && (
         <section className="grid max-w-md gap-3 py-12">
           <h2 className="text-base font-semibold">Nothing generated yet</h2>
-          <p className="text-ink-2">Generate writes {b.quantity === 1 ? 'one piece' : `${b.quantity} distinct pieces`} from this brief: a quote, spoken narration, a visual search and platform captions for each.</p>
+          <p className="text-ink-2">Generate writes {b.quantity === 1 ? 'one piece' : `${b.quantity} distinct pieces`} from this brief: {b.format === 'image' ? 'a quote, a photo search' : 'a quote, spoken narration, a visual search'} and platform captions for each.</p>
         </section>
       )}
 
@@ -195,7 +195,7 @@ function PieceRow({ piece: p, renders, onPreview, busy, onChanged, onError }: {
   }
   return (
     <li className="anim-slot grid grid-cols-[56px_minmax(0,1fr)_172px] gap-6 border-t border-line py-7 first:border-t-0 max-[1100px]:grid-cols-[56px_minmax(0,1fr)]">
-      <span className="tnum pt-2 font-display text-xs text-accent">{String(p.idx).padStart(3, '0')}</span>
+      <span className="tnum pt-2 font-display text-xs text-accent-ink">{String(p.idx).padStart(3, '0')}</span>
       <div className="grid gap-4">
         <div className="grid gap-2">
           <div className="flex items-center justify-between gap-4">
@@ -203,12 +203,12 @@ function PieceRow({ piece: p, renders, onPreview, busy, onChanged, onError }: {
             <div className="flex shrink-0 items-center gap-1.5">
               {p.status !== 'written' && p.status !== 'rendering' && (
                 <span className={cx('rounded-full px-2.5 py-0.5 text-2xs font-medium',
-                  p.status === 'ready' ? 'bg-white/[0.07] text-ink-2' : 'bg-ok/15 text-ok')}>{label(p.status)}</span>
+                  p.status === 'ready' ? 'bg-black/[0.07] text-ink-2' : 'bg-ok/15 text-ok')}>{label(p.status)}</span>
               )}
               {!!renders?.length && (
                 <>
                   {renders.map((r) => (
-                    <span key={r.id} className="group/chip inline-flex items-center rounded-full bg-accent/15 text-2xs font-medium text-accent">
+                    <span key={r.id} className="group/chip inline-flex items-center rounded-full bg-accent/15 text-2xs font-medium text-accent-ink">
                       <button onClick={onPreview} title={r.local_path}
                         className="inline-flex items-center gap-1 rounded-full py-0.5 pl-2.5 pr-1.5 hover:text-ink">
                         {r.kind === 'video' ? <Play size={8} weight="fill" /> : null}
@@ -231,7 +231,7 @@ function PieceRow({ piece: p, renders, onPreview, busy, onChanged, onError }: {
             {c.quote.text}
           </blockquote>
         </div>
-        <p data-selectable className="max-w-[68ch] text-[13px] leading-relaxed text-ink-2">{c.narration.text}</p>
+        {c.narration && <p data-selectable className="max-w-[68ch] text-[13px] leading-relaxed text-ink-2">{c.narration.text}</p>}
         <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-5 gap-y-1.5 text-xs">
           <dt className="text-ink-3">Visual</dt>
           <dd data-selectable className="text-ink-2">{label(c.visual.preferred_type)}: {c.visual.search_query}</dd>
@@ -239,8 +239,8 @@ function PieceRow({ piece: p, renders, onPreview, busy, onChanged, onError }: {
             <dt className="text-ink-3">Asset</dt>
             <dd className="text-danger">{c.visual_error}</dd>
           </>)}
-          <dt className="text-ink-3">Delivery</dt>
-          <dd className="text-ink-2">{label(c.narration.delivery.replace('_', ' '))}, {c.design.composition} composition, {c.design.animation} motion</dd>
+          <dt className="text-ink-3">{c.narration ? 'Delivery' : 'Design'}</dt>
+          <dd className="text-ink-2">{c.narration ? `${label(c.narration.delivery.replace('_', ' '))}, ` : ''}{c.design.composition} composition{c.narration ? `, ${c.design.animation} motion` : ''}</dd>
         </dl>
         <details className="group text-xs">
           <summary className="w-fit cursor-pointer list-none text-ink-3 hover:text-ink">Captions and metadata</summary>

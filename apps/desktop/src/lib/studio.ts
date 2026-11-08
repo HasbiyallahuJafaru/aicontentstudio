@@ -20,10 +20,19 @@ export const GENRES: { value: string; label: string }[] = [
 export type Format = 'automatic' | 'video' | 'image' | 'video_image'
 export type Platform = 'youtube_shorts' | 'instagram_reels' | 'instagram_feed' | 'tiktok'
 export type Look = 'auto' | 'none' | 'warm' | 'cool' | 'mono' | 'vivid'
-export type Brief = { kind?: never; topic: string; tone: string; mood: string; audience: string; format: Format; quantity: number; platforms: Platform[]; voice: string; fps: number; target_seconds: number | null; subtitles: boolean; look_filter: Look; blur_background: boolean; parallax: boolean }
+export type CaptionStyle = {
+  style: 'karaoke' | 'pop' | 'clean' | 'boxed' | 'minimal' | 'serif'; font: string
+  position: 'lower' | 'middle' | 'upper'; size: 'small' | 'medium' | 'large'
+  highlight: 'auto' | 'palette' | 'yellow' | 'orange' | 'green' | 'red' | 'white'; case: 'auto' | 'upper' | 'lower' | 'as_spoken'
+}
+export const DEFAULT_CAPTIONS: CaptionStyle = { style: 'karaoke', font: 'auto', position: 'lower', size: 'medium', highlight: 'auto', case: 'auto' }
+export type TextPosition = 'auto' | 'top' | 'center' | 'bottom'
+export type Brief = { kind?: never; topic: string; tone: string; mood: string; audience: string; format: Format; quantity: number; platforms: Platform[]; voice: string; fps: number; target_seconds: number | null; subtitles: boolean; look_filter: Look; blur_background: boolean; parallax: boolean
+  captions: CaptionStyle; image_design: string; image_font: string; image_position: TextPosition; quotes?: string[]; palette: string }
 export type ClipBrief = {
   kind: 'clip'; source: string; n: number | null; min_len: number; max_len: number
-  orientation: '9:16' | '16:9' | '1:1'; burn_captions: boolean; fps: number
+  orientation: '9:16' | '16:9' | '1:1'; burn_captions: boolean; fps: number; captions: CaptionStyle
+  thumb?: string  // the link's own thumbnail, fetched right after create (media path)
 }
 export type Project = { id: string; name: string; status: string; brief: Brief | ClipBrief; created_at: string; updated_at: string; pieces_written?: number
   rendered?: number; cover?: string | null; quote?: string | null }  // list-only: real output for cards
@@ -33,6 +42,11 @@ export type Clip = {
   posts: Record<string, string>; status: 'ready' | 'approved' | 'rejected' | 'exported'
   video_path: string; cover_path: string; created_at: string
 }
+export type DownloadStatus = {
+  status: 'fetching' | 'ready' | 'error'; progress: number; title: string | null; path: string | null
+  error: { message: string; detail?: string } | null
+}
+export type CalendarPlan = { scheduled: { clip_idx: number; title: string; due_at: string }[]; left: number[] }
 export type BufferChannel = { id: string; service: string; name: string; displayName: string; usable: boolean }
 export type Publication = {
   id: string; project_id: string; clip_idx: number; provider: string; channel_id: string; service: string
@@ -46,7 +60,7 @@ export type Job = {
 export type PieceContent = {
   plan: { angle: string; visual_subject: string; visual_type: 'video' | 'image'; intensity: string; narration_style: string }
   quote: { text: string }
-  narration: { text: string; delivery: string }
+  narration?: { text: string; delivery: string } | null  // quote images have none
   visual: { preferred_type: 'video' | 'image'; search_query: string; secondary_query: string; mood: string }
   design: { text_density: string; animation: string; composition: string }
   metadata: { title: string; description: string; caption: string; hashtags: string[]; keywords: string[]; alt_text: string }
@@ -94,7 +108,7 @@ export type BackendStatus = { state: 'starting' | 'ready' | 'crashed' | 'stopped
 export type VoiceList = { value: string; label: string }[]
 /** Narration picker options: Gemini voices from tts.voices, empty = the studio default (Charon). */
 export const voiceOptions = (voices?: VoiceList) => [{ value: '', label: 'Default · Charon' }, ...(voices ?? [])]
-export type SecretName = 'OPENROUTER_API_KEY' | 'PEXELS_API_KEY' | 'UNSPLASH_ACCESS_KEY' | 'METRICOOL_API_KEY'
+export type SecretName = 'OPENROUTER_API_KEY' | 'PEXELS_API_KEY' | 'UNSPLASH_ACCESS_KEY'
 
 export const TOPICS = ['Motivation', 'Discipline', 'Personal growth', 'Mindset', 'Productivity', 'Relationships',
   'Reflection', 'Confidence', 'Success', 'Resilience']
@@ -188,6 +202,20 @@ export function useJob(projectId: string) {
 
 /** Whether any job (writing, rendering, clipping) is running right now: the stats answer at load, then the live
  *  job.* events keep it current. Drives the ambient motion, so the app only moves while it really works. */
+/** Whether the OS asks for reduced motion; follows the setting live. */
+export function useReducedMotion() {
+  const query = '(prefers-reduced-motion: reduce)'
+  const [reduced, setReduced] = useState(() => window.matchMedia(query).matches)
+  useEffect(() => {
+    const m = window.matchMedia(query)
+    const on = () => setReduced(m.matches)
+    on()
+    m.addEventListener('change', on)
+    return () => m.removeEventListener('change', on)
+  }, [])
+  return reduced
+}
+
 export function useBusy() {
   const stats = useQuery<{ generating: number }>('app.stats').data
   const [running, setRunning] = useState<Set<string>>()

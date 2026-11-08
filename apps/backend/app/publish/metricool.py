@@ -1,38 +1,126 @@
 """Metricool through their MCP server (https://ai.metricool.com/mcp): this backend acts as a minimal MCP
-client over the streamable-HTTP transport — initialize handshake, tools/list, tools/call — authenticated with
-the account's API key (Metricool, Account Settings > API) via the X-Mc-Auth header, the same header n8n uses.
-# ponytail: only the three calls we need; SSE replies are parsed but the GET event stream (server-initiated
-# messages) is never read — nothing we call needs it."""
+client over the streamable-HTTP transport (initialize handshake, tools/list, tools/call).
+
+Connecting is one button: Metricool's authorization server (discovered 2026-11-08 from
+ai.metricool.com/.well-known/oauth-authorization-server) allows dynamic client registration and public PKCE
+clients, so the app registers itself once, opens Metricool's consent page in the browser, and the shared
+loopback catcher in oauth.py receives the code. No API key, no developer app, works on every Metricool plan.
+# ponytail: endpoints are hardcoded from that discovery doc, not fetched each time; read it again if they move.
+# ponytail: SSE replies are parsed but the GET event stream (server-initiated messages) is never read."""
 import json
 import os
 import ssl
+import urllib.parse
+from datetime import datetime, timedelta, timezone
 
 import httpx
 
-from app import config
 from app.errors import UserError
+from app.publish import oauth, store
 
 URL = os.environ.get("ACS_METRICOOL_URL", "https://ai.metricool.com/mcp")  # env: tests/fakes
+AUTH = os.environ.get("ACS_METRICOOL_AUTH_URL", "https://app.metricool.com/oauth")
+RESOURCE = "https://ai.metricool.com/mcp"  # RFC 8707: the token is minted for the MCP server
+SCOPE = "mcp:read mcp:write"
 PROTOCOL = "2025-06-18"
+SOON = timedelta(minutes=5)
+RECONNECT = "Metricool signed this app out. Connect it again in Settings, Publishing."
 
 
-def _key() -> str:
-    key = config.SECRETS.get("METRICOOL_API_KEY")
-    if not key:
-        raise UserError("Add your Metricool API key in Settings to publish through Metricool.")
-    return key
+def _http(method: str, url: str, timeout: float = 30, **kw) -> httpx.Response:
+    try:
+        return httpx.request(method, url, timeout=timeout, verify=ssl.create_default_context(), **kw)
+    except httpx.HTTPError as e:
+        raise UserError("Couldn't reach Metricool. Try again in a minute.", repr(e)) from e
+
+
+def _client_id() -> str:
+    """This install's OAuth client, registered with Metricool on first connect (RFC 7591) and kept."""
+    if client := store.load("metricool_client"):
+        return client["client_id"]
+    r = _http("POST", f"{AUTH}/register", json={
+        "client_name": "AI Content Studio", "redirect_uris": [oauth.REDIRECT], "scope": SCOPE,
+        "grant_types": ["authorization_code", "refresh_token"], "response_types": ["code"],
+        "token_endpoint_auth_method": "none"})
+    if not r.is_success or "client_id" not in r.text:
+        raise UserError("Metricool wouldn't register this app. Try again in a minute.",
+                        f"HTTP {r.status_code}: {r.text[:300]}")
+    store.save("metricool_client", {"client_id": r.json()["client_id"]})
+    return r.json()["client_id"]
+
+
+def connect_url() -> str:
+    """Metricool's consent page to open in the browser."""
+    cid = _client_id()
+    state, challenge = oauth.begin("metricool")
+    return f"{AUTH}/authorize?" + urllib.parse.urlencode({
+        "client_id": cid, "redirect_uri": oauth.REDIRECT, "response_type": "code", "scope": SCOPE,
+        "state": state, "code_challenge": challenge, "code_challenge_method": "S256", "resource": RESOURCE})
+
+
+def _token(form: dict) -> dict:
+    r = _http("POST", f"{AUTH}/token", data=form | {"client_id": _client_id(), "resource": RESOURCE})
+    if r.status_code in (400, 401):
+        if "invalid_client" in r.text:  # Metricool forgot our registration: register afresh next time
+            store.delete("metricool_client")
+        raise UserError("Metricool didn't accept the connection. Connect it again.", r.text[:300])
+    if not r.is_success:
+        raise UserError("Metricool had a problem. Try again in a minute.", f"HTTP {r.status_code}")
+    return r.json()
+
+
+def _keep(tokens: dict, refresh: str = "") -> str:
+    store.save("metricool", {"access_token": tokens["access_token"],
+                             "refresh_token": tokens.get("refresh_token") or refresh,
+                             "expires_at": (datetime.now(timezone.utc) +
+                                            timedelta(seconds=tokens.get("expires_in", 3600))).isoformat()})
+    return tokens["access_token"]
+
+
+def _exchange(pending: dict, code: str) -> str:
+    _keep(_token({"grant_type": "authorization_code", "code": code, "redirect_uri": oauth.REDIRECT,
+                  "code_verifier": pending["verifier"]}))
+    return "Metricool"
+
+
+oauth.EXCHANGES["metricool"] = _exchange
+
+
+def _bearer() -> str:
+    """The working access token, refreshed when close to expiry. No refresh possible: reconnect."""
+    account = store.load("metricool")
+    if account is None:
+        raise UserError("Metricool isn't connected yet. Connect it in Settings, Publishing.")
+    if datetime.fromisoformat(account["expires_at"]) > datetime.now(timezone.utc) + SOON:
+        return account["access_token"]
+    try:
+        if not account["refresh_token"]:
+            raise UserError(RECONNECT)
+        return _keep(_token({"grant_type": "refresh_token", "refresh_token": account["refresh_token"]}),
+                     account["refresh_token"])
+    except UserError as e:
+        store.delete("metricool")
+        raise UserError(RECONNECT, e.detail) from e
+
+
+def connection() -> dict:
+    return {"connected": store.load("metricool") is not None}
+
+
+def disconnect() -> None:
+    store.delete("metricool")  # the client registration stays: reconnecting reuses it
 
 
 def _post(payload: dict, extra: dict | None = None) -> tuple[dict, dict]:
     """One JSON-RPC exchange; returns (response headers, parsed reply). Servers may answer JSON or SSE."""
     headers = {"Content-Type": "application/json", "Accept": "application/json, text/event-stream",
-               "X-Mc-Auth": _key()} | (extra or {})
-    try:
-        r = httpx.post(URL, json=payload, headers=headers, timeout=60, verify=ssl.create_default_context())
-    except httpx.HTTPError as e:
-        raise UserError("Couldn't reach Metricool. Try again in a minute.", repr(e)) from e
-    if r.status_code in (401, 403):
-        raise UserError("Metricool didn't accept the API key. Check it in Metricool, Account Settings > API.")
+               "Authorization": f"Bearer {_bearer()}"} | (extra or {})
+    r = _http("POST", URL, json=payload, headers=headers, timeout=60)
+    if r.status_code == 401:  # revoked in Metricool, or expired early
+        store.delete("metricool")
+        raise UserError(RECONNECT)
+    if r.status_code == 403:
+        raise UserError("Metricool says this account can't do that. Check your Metricool plan.", r.text[:300])
     if not r.is_success:
         raise UserError("Metricool had a problem. Try again in a minute.", f"HTTP {r.status_code}: {r.text[:300]}")
     if r.status_code == 202 or not r.content:
@@ -79,9 +167,3 @@ def call_tool(name: str, arguments: dict | None = None) -> dict:
     result = _check(reply)
     text = "\n".join(block.get("text", "") for block in result.get("content", []) if block.get("type") == "text")
     return {"text": text, "is_error": bool(result.get("isError"))}
-
-
-def status() -> dict:
-    """Connection check: a successful tools/list is the whole handshake."""
-    return {"connected": True, "server": "Metricool MCP",
-            "tools": [t["name"] for t in tools()]}

@@ -5,10 +5,10 @@ from concurrent.futures import ThreadPoolExecutor
 
 from pydantic import ValidationError
 
-from app import (assets, clips, config, content, database, export, jobs, projects, queue, renders, settings, storage,
-                 tts)
+from app import (assets, clips, config, content, database, downloader, export, jobs, previews, projects, queue, quotes_csv, renders,
+                 settings, storage, tts)
 from app.publish import buffer as buffer_publish, host as publish_host, metricool
-from app.errors import UserError
+from app.errors import UserError, explain
 from app.events import emit, send
 
 log = logging.getLogger("rpc")
@@ -30,6 +30,9 @@ METHODS = {
     "tts.voices": tts.voices,
     "storage.usage": storage.usage,
     "storage.clear": storage.clear,
+    "design.previews": previews.designs,
+    "quotes.from_csv": quotes_csv.from_csv,
+    "captions.previews": previews.caption_styles,
     "projects.create": projects.create,
     "projects.list": projects.list_,
     "projects.get": projects.get,
@@ -37,6 +40,7 @@ METHODS = {
     "projects.delete": projects.delete,
     "pieces.list": content.pieces,
     "pieces.recent": content.recent,
+    "pieces.showcase": content.showcase,
     "pieces.regenerate": content.regenerate,
     "pieces.approve": content.approve,
     "assets.list": assets.list_assets,
@@ -49,6 +53,10 @@ METHODS = {
     "renders.list": renders.list_,
     "clips.list": clips.list_,
     "clips.review": clips.review,
+    "clips.update": clips.update,
+    "downloader.start": downloader.start,
+    "downloader.status": downloader.status,
+    "downloader.reveal": downloader.reveal,
     "queue.list": queue.list_,
     "exports.list": export.list_,
     "app.stats": content.stats,
@@ -65,7 +73,9 @@ METHODS = {
     "publish.remove": buffer_publish.remove,
     "publish.host_status": publish_host.status,
     "publish.host_save": publish_host.save,
-    "publish.metricool_status": metricool.status,
+    "publish.metricool_connection": metricool.connection,
+    "publish.metricool_connect_url": metricool.connect_url,
+    "publish.metricool_disconnect": metricool.disconnect,
     "publish.metricool_call": metricool.call_tool,
 }
 
@@ -84,7 +94,8 @@ def handle(msg: dict) -> dict:
         return {"id": rid, "error": {"message": "Some values are not valid.", "detail": e.json()}}
     except Exception as e:
         log.exception("method %s failed", msg.get("method"))
-        return {"id": rid, "error": {"message": "Something went wrong in the backend.", "detail": repr(e)}}
+        message, detail = explain(e)
+        return {"id": rid, "error": {"message": message, "detail": detail}}
 
 
 def serve() -> None:

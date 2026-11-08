@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Shell, type Page } from '../layouts/Shell'
+import { PageBoundary } from '../components/PageBoundary'
 import { Dashboard } from '../pages/Dashboard'
 import { Create } from '../pages/Create'
 import { Library } from '../pages/Library'
@@ -9,11 +10,14 @@ import { Queue } from '../pages/Queue'
 import { Exports } from '../pages/Exports'
 import { Settings } from '../pages/Settings'
 import { Splash } from '../pages/Splash'
+import { Setup } from '../pages/Setup'
+import { studio } from '../lib/studio'
 
 export function App() {
   const [page, setPage] = useState<Page>('dashboard')
   const [openProject, setOpenProject] = useState<string>()
   const [entered, setEntered] = useState(false)
+  const [setup, setSetup] = useState(false)
   const [leaving, setLeaving] = useState(false)
   const pending = useRef<ReturnType<typeof setTimeout>>(undefined)
 
@@ -46,11 +50,19 @@ export function App() {
     return () => window.removeEventListener('keydown', onKey)
   })  // re-bound each render so the shortcuts always navigate from the current page
 
-  if (!entered) return <Splash onCreate={() => setEntered(true)} />
+  // first run (or a required key still missing): the setup screens sit between the splash and the studio
+  const fromSplash = async () => {
+    const keys = await studio.secretsStatus().catch(() => null)
+    setSetup(!!keys && !(keys.OPENROUTER_API_KEY && keys.PEXELS_API_KEY))
+    setEntered(true)
+  }
+  if (!entered) return <Splash onCreate={fromSplash} />
+  if (setup) return <Setup onDone={() => setSetup(false)} />
 
   return (
     <Shell page={page} onNavigate={(p) => go(p)}>
       <div key={page === 'project' ? `project-${openProject}` : page} className={leaving ? 'anim-page-out' : 'anim-page'}>
+        <PageBoundary onHome={() => go('dashboard')}>
         {page === 'dashboard' && <Dashboard onCreate={() => go('create')} onOpen={open} onAll={() => go('projects')} />}
         {page === 'create' && <Create onCreated={open} />}
         {page === 'projects' && <Projects onOpen={open} onCreate={() => go('create')} />}
@@ -61,6 +73,7 @@ export function App() {
           <Project id={openProject} onBack={() => go('projects')} onSettings={() => go('settings')} />
         )}
         {page === 'settings' && <Settings />}
+        </PageBoundary>
       </div>
     </Shell>
   )

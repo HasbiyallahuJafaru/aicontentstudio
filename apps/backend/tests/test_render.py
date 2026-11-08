@@ -319,3 +319,42 @@ class RenderJob(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class QuoteImages(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        database.migrate()
+
+    def test_image_only_render_never_calls_narration(self):
+        """A quote image has no voice: rendering it must not touch TTS (no key, no cost, no wait)."""
+        p = projects.create({**BRIEF, "format": "image", "platforms": ["instagram_feed"], "image_design": "noir",
+                             "quotes": ["Begin before you feel ready."]})
+        with database.connect() as conn:
+            conn.execute("DELETE FROM asset_usage")
+        make_thumbs("q1")
+        run_job_with([FakeProvider2([cand("q1", "image", 1600, 1200, 0)])], FakeModel(["The model's own line, ignored."]),
+                     p["id"])
+        piece = content.pieces(p["id"])[0]
+        with database.connect() as conn:
+            row = conn.execute("SELECT local_path FROM assets WHERE id = ?",
+                               (piece["content"]["asset"]["id"],)).fetchone()
+        Image.new("RGB", (1200, 1600), (70, 60, 50)).save(config.MEDIA_DIR / row["local_path"], "JPEG")
+
+        class NoTTS(tts.TTSProvider):
+            name = "none"
+
+            async def generate(self, text, voice, speed):
+                raise AssertionError("narration was generated for an image-only piece")
+
+        with mock.patch.object(renders.tts, "get_tts", lambda: NoTTS()), mock.patch.object(jobs, "emit"):
+            job = jobs.start(p["id"], kind="render")
+            for _ in range(400):
+                job = jobs.get(job["id"])
+                if job["status"] not in ("queued", "running"):
+                    break
+                time.sleep(0.05)
+        piece = content.pieces(p["id"])[0]
+        self.assertEqual((job["status"], piece["status"]), ("completed", "ready"), piece["content"].get("render_error"))
+        self.assertEqual([r["kind"] for r in renders.list_(p["id"])], ["image"])
+        self.assertEqual(piece["content"]["quote"]["text"], "Begin before you feel ready.")

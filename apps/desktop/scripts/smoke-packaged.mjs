@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url'
 import assert from 'node:assert/strict'
 
 const here = dirname(fileURLToPath(import.meta.url))
-const unpacked = join(here, '..', 'release', 'win-unpacked')
+const unpacked = process.env.ACS_UNPACKED || join(here, '..', 'release', 'win-unpacked')  // env: a build made elsewhere
 const exe = join(unpacked, 'AI Social Content Studio.exe')
 assert.ok(existsSync(exe), `no packaged build at ${exe} - run npm run package first`)
 
@@ -63,6 +63,16 @@ const app = await electron.launch({ executablePath: exe, args: [`--user-data-dir
 const win = await app.firstWindow()
 await win.getByRole('button', { name: "Let's create content" }).waitFor({ timeout: 60_000 })
 await win.getByRole('button', { name: "Let's create content" }).click()
+
+// A fresh install has no keys: the setup screens come first. Skip through them (Unsplash and Metricool are optional).
+await win.getByRole('heading', { name: 'Connect the AI' }).waitFor({ timeout: 30_000 })
+await win.screenshot({ path: join(out, 'packaged-setup.png') })
+for (let i = 1; i <= 4; i++) {
+  await win.getByText(`Step ${i} of 5`).waitFor()
+  await win.getByRole('button', { name: 'Skip for now' }).click()
+}
+await win.getByRole('heading', { name: 'Almost there' }).waitFor()
+await win.getByRole('button', { name: 'Start creating' }).click()
 
 // "Engine ready" only appears once the frozen backend has migrated its database and answered over stdio.
 await win.getByRole('status').filter({ hasText: 'Engine ready' }).waitFor({ timeout: 60_000 })

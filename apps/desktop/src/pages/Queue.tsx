@@ -45,13 +45,13 @@ export function Queue({ onOpen }: { onOpen: (id: string) => void }) {
                 <span className="min-w-0 truncate"><span className="font-medium text-ink">{j.project}</span>
                   <span className="text-ink-3"> · {j.stage || 'Starting'}</span></span>
                 <span className="flex shrink-0 items-center gap-3">
-                  <span className="tnum text-xs text-accent">{Math.round(j.progress * 100)}%</span>
+                  <span className="tnum text-xs text-accent-ink">{Math.round(j.progress * 100)}%</span>
                   <Button variant="ghost" onClick={() => call('jobs.cancel', { id: j.id }).then(reload)}>Cancel</Button>
                 </span>
               </div>
-              <div className="h-[3px] overflow-hidden rounded-full bg-white/[0.08]" role="progressbar"
+              <div className="h-[3px] overflow-hidden rounded-full bg-black/[0.08]" role="progressbar"
                 aria-valuenow={Math.round(j.progress * 100)} aria-valuemin={0} aria-valuemax={100}>
-                <div className="h-full origin-left rounded-full bg-accent transition-transform duration-500 ease-[var(--ease-premium)]"
+                <div className="h-full origin-left rounded-full bg-pop transition-transform duration-500 ease-[var(--ease-premium)]"
                   style={{ transform: `scaleX(${Math.max(j.progress, 0.02)})` }} />
               </div>
             </div>
@@ -61,17 +61,17 @@ export function Queue({ onOpen }: { onOpen: (id: string) => void }) {
 
       {/* the stages read as one pipeline: a single track, each stage a step along it */}
       <div role="tablist" aria-label="Queue stages"
-        className="mb-7 flex w-fit max-w-full flex-wrap items-center gap-0.5 rounded-[18px] bg-black/30 p-1 shadow-[inset_0_0_0_1px_rgb(255_244_232/0.06)]">
+        className="mb-7 flex w-fit max-w-full flex-wrap items-center gap-0.5 rounded-[18px] bg-black/[0.05] p-1 shadow-[inset_0_0_0_1px_rgb(17_18_20/0.06)]">
         {STAGES.map((s, i) => (
           <Fragment key={s.id}>
             {i > 0 && s.id !== 'failed' && <CaretRight aria-hidden size={10} className="mx-0.5 text-ink-3/60" />}
             {s.id === 'failed' && <span aria-hidden className="mx-1.5 h-4 w-px bg-line-strong" />}
             <button role="tab" aria-selected={stage === s.id} onClick={() => setStage(s.id)}
               className={cx('no-drag flex h-9 items-center gap-2 rounded-[14px] px-4 text-[13px] transition-[background-color,color] duration-200',
-                stage === s.id ? 'bg-ink font-medium text-ground' : 'text-ink-2 hover:bg-white/[0.06] hover:text-ink')}>
+                stage === s.id ? 'chip-on' : 'text-ink-2 hover:bg-black/[0.06] hover:text-ink')}>
               {s.text}
               <span className={cx('tnum text-2xs', stage === s.id ? 'opacity-70'
-                : counts[s.id] && (s.id === 'failed' ? 'text-danger' : s.id === 'rendering' ? 'text-accent' : 'text-ink-2') || 'text-ink-3')}>
+                : counts[s.id] && (s.id === 'failed' ? 'text-danger' : s.id === 'rendering' ? 'text-accent-ink' : 'text-ink-2') || 'text-ink-3')}>
                 {counts[s.id]}
               </span>
             </button>
@@ -88,7 +88,7 @@ export function Queue({ onOpen }: { onOpen: (id: string) => void }) {
               <button onClick={() => onOpen(p.project_id)} className="group grid w-full gap-3 text-left">
                 <div className="relative">
                   <Cover src={p.cover} quote={p.quote} className="transition-transform duration-300 ease-[var(--ease-premium)] group-hover:-translate-y-1" />
-                  <span className="tnum absolute left-3 top-3 rounded-full bg-black/55 px-2 py-0.5 text-2xs font-medium text-ink backdrop-blur">
+                  <span className="tnum absolute left-3 top-3 rounded-full bg-black/55 px-2 py-0.5 text-2xs font-medium text-white backdrop-blur">
                     {String(p.idx).padStart(3, '0')}
                   </span>
                 </div>

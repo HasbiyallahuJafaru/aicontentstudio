@@ -1,0 +1,290 @@
+/* Vendored from React Bits Masonry (see Masonry.tsx). Changed from upstream: the caption is a solid band instead of a
+   gradient scrim, the lightbox is the app's white room (dark controls), and .masonry__action (the delete slot). */
+.masonry {
+  position: relative;
+  width: 100%;
+}
+
+.masonry__item {
+  position: absolute;
+  top: 0;
+  left: 0;
+  will-change: transform;
+}
+
+.masonry__item[data-dragging] {
+  z-index: 10;
+}
+
+.masonry__item[data-hidden] {
+  visibility: hidden;
+}
+
+.masonry__card {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: var(--masonry-radius, 12px);
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  text-decoration: none;
+  outline: none;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transform: perspective(900px) rotateX(var(--masonry-tilt-x, 0deg)) rotateY(var(--masonry-tilt-y, 0deg))
+    translateY(var(--masonry-lift, 0px)) scale(var(--masonry-scale, 1));
+  transition:
+    transform 0.5s cubic-bezier(0.2, 0.8, 0.2, 1),
+    box-shadow 0.5s cubic-bezier(0.2, 0.8, 0.2, 1),
+    opacity 0.35s ease;
+}
+
+.masonry__card:focus-visible {
+  outline: 2px solid var(--color-ink);
+  outline-offset: 3px;
+}
+
+.masonry[data-hover='lift'] .masonry__item:hover .masonry__card {
+  --masonry-lift: -6px;
+  --masonry-scale: 1.02;
+  box-shadow: 0 22px 40px -22px rgb(17 18 20 / 0.45);
+}
+
+.masonry[data-hover='tilt'] .masonry__card {
+  transition:
+    transform 0.25s cubic-bezier(0.2, 0.8, 0.2, 1),
+    box-shadow 0.5s cubic-bezier(0.2, 0.8, 0.2, 1),
+    opacity 0.35s ease;
+}
+
+.masonry[data-hover='tilt'] .masonry__item:hover .masonry__card {
+  --masonry-scale: 1.03;
+  box-shadow: 0 26px 44px -24px rgb(17 18 20 / 0.45);
+}
+
+.masonry__item[data-dragging] .masonry__card {
+  --masonry-scale: 1.05;
+  box-shadow: 0 34px 60px -26px rgb(17 18 20 / 0.5);
+  cursor: grabbing;
+}
+
+.masonry__item[data-dimmed] .masonry__card {
+  opacity: 0.35;
+}
+
+.masonry__media {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  border-radius: var(--masonry-radius, 12px);
+  background: var(--color-raised);
+  isolation: isolate;
+}
+
+.masonry__parallax {
+  position: absolute;
+  inset: 0;
+  display: block;
+}
+
+.masonry__image {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0;
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-drag: none;
+  transition:
+    opacity 0.5s ease,
+    transform 0.8s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.masonry__image[data-loaded] {
+  opacity: 1;
+}
+
+.masonry[data-hover='zoom'] .masonry__item:hover .masonry__image {
+  transform: scale(1.07);
+}
+
+/* a solid band, not a gradient scrim */
+.masonry__caption {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+  color: #ffffff;
+  background: rgb(17 18 20 / 0.82);
+  pointer-events: none;
+  transition:
+    opacity 0.35s ease,
+    transform 0.5s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.masonry__caption[data-mode='hover'] {
+  opacity: 0;
+  transform: translateY(6px);
+}
+
+.masonry__item:hover .masonry__caption[data-mode='hover'],
+.masonry__card:focus-visible .masonry__caption[data-mode='hover'] {
+  opacity: 1;
+  transform: none;
+}
+
+.masonry__title {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.3;
+  letter-spacing: -0.01em;
+}
+
+.masonry__text {
+  font-size: 12px;
+  line-height: 1.4;
+  opacity: 0.8;
+}
+
+/* the tile's own slot (Library: palette swatches and delete); [data-reveal] parts show on hover or keyboard focus */
+.masonry__action {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 2;
+}
+
+.masonry__action [data-reveal] {
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.masonry__item:hover .masonry__action [data-reveal],
+.masonry__action [data-reveal]:focus-visible {
+  opacity: 1;
+}
+
+.masonry__ghost {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+}
+
+.masonry-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+}
+
+.masonry-lightbox__backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgb(242 243 245 / 0.97);
+}
+
+.masonry-lightbox__image {
+  position: fixed;
+  top: 0;
+  left: 0;
+  display: block;
+  object-fit: cover;
+  transform-origin: 0 0;
+  will-change: transform;
+  cursor: zoom-out;
+  user-select: none;
+  -webkit-user-drag: none;
+  box-shadow: 0 30px 80px -40px rgb(17 18 20 / 0.55);
+}
+
+.masonry-lightbox__caption {
+  position: fixed;
+  right: 0;
+  left: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 0 72px;
+  color: var(--color-ink);
+  font-size: 14px;
+  line-height: 1.4;
+  text-align: center;
+  pointer-events: none;
+}
+
+.masonry-lightbox__caption a {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: inherit;
+  font-weight: 600;
+  text-decoration: none;
+  pointer-events: auto;
+  opacity: 0.8;
+  transition: opacity 0.2s ease;
+}
+
+.masonry-lightbox__caption a:hover,
+.masonry-lightbox__caption a:focus-visible {
+  opacity: 1;
+}
+
+.masonry-lightbox__muted {
+  color: var(--color-ink-2);
+}
+
+.masonry-lightbox__button {
+  position: absolute;
+  display: grid;
+  width: 44px;
+  height: 44px;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  color: #ffffff;
+  background: var(--color-ink);
+  cursor: pointer;
+  transition: background 0.2s ease, transform 0.15s ease;
+}
+
+.masonry-lightbox__button:hover {
+  background: var(--color-ink-2);
+}
+
+.masonry-lightbox__button:active {
+  transform: scale(0.96);
+}
+
+.masonry-lightbox__button:focus-visible {
+  outline: 2px solid var(--color-ink);
+  outline-offset: 2px;
+}
+
+.masonry-lightbox__close {
+  top: 16px;
+  right: 16px;
+}
+
+.masonry-lightbox__prev {
+  top: calc(50% - 22px);
+  left: 16px;
+}
+
+.masonry-lightbox__next {
+  top: calc(50% - 22px);
+  right: 16px;
+}

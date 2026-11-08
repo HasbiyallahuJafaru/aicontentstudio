@@ -80,14 +80,12 @@ void main() {
   // the light moves like smoke: a slow warp, never a visible pattern
   p += uMotion * 0.045 * vec2(snoise(vec3(p * 1.6, t * 0.05)), snoise(vec3(p * 1.6 + 7.3, t * 0.05)));
   float m = uMotion;
-  vec3 col = vec3(13.0, 12.0, 11.0) / 255.0;  // --color-ground
-  col = over(col, p, vec2(0.5 + m * 0.08 * sin(t * 0.11), 1.1 - m * 0.05 * sin(t * 0.07)),
-             vec2(0.70, 0.60) * (1.0 + m * 0.08 * sin(t * 0.19)), vec3(120.0, 70.0, 40.0) / 255.0, 0.18);
-  col = over(col, p, vec2(0.18 + m * 0.07 * sin(t * 0.09 + 1.0), 0.30 + m * 0.08 * sin(t * 0.13)),
-             vec2(0.45, 0.50) * (1.0 + m * 0.10 * sin(t * 0.17 + 2.0)), vec3(150.0, 96.0, 120.0) / 255.0, 0.16);
+  vec3 col = vec3(17.0, 18.0, 22.0) / 255.0;  // --color-ground, Galaxy Black
+  col = over(col, p, vec2(0.10 + m * 0.07 * sin(t * 0.09 + 1.0), 0.90 + m * 0.08 * sin(t * 0.13)),
+             vec2(0.55, 0.55) * (1.0 + m * 0.10 * sin(t * 0.17 + 2.0)), vec3(74.0, 76.0, 80.0) / 255.0, 0.30);  // Seal Grey haze
   col = over(col, p, vec2(0.72 + m * 0.07 * sin(t * 0.08 + 3.0), 0.08 + m * 0.07 * sin(t * 0.12 + 1.0)),
-             vec2(0.60, 0.55) * (1.0 + m * 0.10 * sin(t * 0.15)), vec3(240.0, 135.0, 58.0) / 255.0,
-             0.20 * (1.0 + m * 0.18 * sin(t * 0.21)));
+             vec2(0.60, 0.55) * (1.0 + m * 0.10 * sin(t * 0.15)), vec3(230.0, 116.0, 81.0) / 255.0,
+             0.14 * (1.0 + m * 0.18 * sin(t * 0.21)));
   // a whisper of dither: smooth gradients band on 8-bit displays without it
   col += (fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453) - 0.5) / 255.0;
   gl_FragColor = vec4(col, 1.0);
@@ -127,8 +125,7 @@ void main() {
 const SILK_FRAGMENT = /* glsl */ `
 uniform vec3 uGround;
 uniform vec3 uDeep;
-uniform vec3 uEmber;
-uniform vec3 uGlow;
+uniform vec3 uRim;
 uniform float uIntensity;
 varying vec3 vWorld;
 varying vec3 vNormal;
@@ -137,14 +134,16 @@ varying vec2 vUv;
 void main() {
   vec3 n = normalize(vNormal);
   vec3 v = normalize(cameraPosition - vWorld);
-  vec3 l = normalize(vec3(0.55, 0.9, 0.4));  // the warm key from the upper right, where the studio lamp sits
+  vec3 l = normalize(vec3(0.55, 0.9, 0.4));  // the key light from the upper right
   float diffuse = max(dot(n, l), 0.0);
   float fresnel = pow(1.0 - max(dot(n, v), 0.0), 3.0);
   float spec = pow(max(dot(n, normalize(l + v)), 0.0), 64.0);
   float ridge = smoothstep(-0.2, 1.1, vHeight);
-  vec3 col = mix(uGround, uDeep, diffuse * 0.85 + ridge * 0.3);
-  col += uEmber * (fresnel * 0.55 + diffuse * ridge * 0.28);
-  col += uGlow * spec * 0.6;
+  // Seal Grey silk: lit faces catch the grey, folds fall away into Galaxy Black, and a thin Sunrise Orange rim
+  // catches the grazing edges
+  vec3 col = mix(uDeep, uGround, clamp(diffuse * 0.9 + ridge * 0.25, 0.0, 1.0));
+  col = mix(col, uRim, clamp(fresnel * 0.45, 0.0, 0.6));
+  col += vec3(spec * 0.25);
   // the cloth dissolves into the glows at its edges, so there is never a visible border
   float edge = smoothstep(0.0, 0.3, vUv.y) * smoothstep(1.0, 0.72, vUv.y)
     * smoothstep(0.0, 0.18, vUv.x) * smoothstep(1.0, 0.82, vUv.x);
@@ -176,7 +175,7 @@ uniform float uGlow;
 varying float vAlpha;
 void main() {
   float a = smoothstep(0.5, 0.0, length(gl_PointCoord - 0.5)) * vAlpha * uGlow;
-  gl_FragColor = vec4(vec3(240.0, 135.0, 58.0) / 255.0, a);
+  gl_FragColor = vec4(vec3(230.0, 116.0, 81.0) / 255.0, a);
 }
 `
 
@@ -248,8 +247,8 @@ export default function Ember({ live, intensity = 1, embers = true, wave = 0.8 }
       depthTest: false, depthWrite: false,
       uniforms: {
         uTime: { value: 14 }, uIntensity: { value: props.current.wave },
-        uGround: { value: new THREE.Color('#0d0c0b') }, uDeep: { value: new THREE.Color('#3a1e0e') }, uEmber: { value: new THREE.Color('#f0873a') },
-        uGlow: { value: new THREE.Color('#ffc896') },
+        uGround: { value: new THREE.Color('#5d6066') }, uDeep: { value: new THREE.Color('#111216') },
+        uRim: { value: new THREE.Color('#e67451') },
       },
     })
     // fine enough that the fold silhouettes trace curves, not facets

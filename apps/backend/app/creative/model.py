@@ -11,7 +11,7 @@ from pydantic import BaseModel, ValidationError
 
 from app import config, settings
 from app.creative import prompts
-from app.creative.schemas import BatchPlan, PieceContent, PlanItem
+from app.creative.schemas import BatchPlan, PieceContent, PlanItem, VideoPieceContent
 from app.errors import UserError
 
 log = logging.getLogger("creative")
@@ -52,7 +52,8 @@ class OpenRouterModel(CreativeModel):
         return plan
 
     def write_piece(self, brief, plan, item, avoid):
-        return self._json(prompts.piece(brief, plan, item, avoid), PieceContent)
+        schema = PieceContent if prompts.quotes_only(brief) else VideoPieceContent
+        return self._json(prompts.piece(brief, plan, item, avoid), schema)
 
     def _json(self, messages: list[dict], schema: type[BaseModel]):
         """Call, validate; if invalid, ask the model to repair once; if still invalid, regenerate once (PRD §100)."""

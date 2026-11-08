@@ -2,7 +2,9 @@
 public client (Buffer issues no secret for PKCE apps — the user registers their own OAuth app in Buffer and
 pastes its client id into Settings). The browser returns to a loopback listener this module runs on
 127.0.0.1:8787; Buffer's refresh tokens are single-use and rotated on every refresh, so the stored one is
-replaced atomically or the connection breaks."""
+replaced atomically or the connection breaks.
+The same listener catches Metricool's reply too (metricool.py): each pending state names its provider, and
+EXCHANGES maps that name to the function that turns the code into stored tokens."""
 import base64
 import hashlib
 import os
@@ -27,6 +29,7 @@ STATE_TTL = timedelta(minutes=10)
 SOON = timedelta(minutes=10)  # refresh when the access token is this close to expiry (they last an hour)
 
 _listener: "HTTPServer | None" = None
+EXCHANGES: dict = {}  # provider -> fn(pending state, code) -> display name; filled at the bottom and by metricool.py
 
 
 class _Catch(BaseHTTPRequestHandler):
@@ -36,10 +39,16 @@ class _Catch(BaseHTTPRequestHandler):
         parsed = urllib.parse.urlparse(self.path)
         query = urllib.parse.parse_qs(parsed.query)
         try:
-            if parsed.path != "/callback" or "code" not in query or "state" not in query:
+            if parsed.path != "/callback" or "state" not in query:
                 raise UserError("The connect reply was missing its code. Start again.")
-            _exchange(query["state"][0], query["code"][0])
-            message = "Buffer connected — you can close this tab and go back to the app."
+            pending = store.load(f"oauth:{query['state'][0]}")
+            store.delete(f"oauth:{query['state'][0]}")  # one-time: a replayed callback finds nothing
+            if not pending or not _fresh(pending):
+                raise UserError("This connection attempt has expired. Start again from the app.")
+            if "code" not in query:  # the user pressed cancel/deny on the provider's page
+                raise UserError("The connection was cancelled. Start again from the app when you're ready.")
+            name = EXCHANGES[pending.get("provider", "buffer")](pending, query["code"][0])
+            message = f"{name} connected. You can close this tab and go back to the app."
         except UserError as e:
             message = str(e)
             self.send_response(400)
@@ -66,23 +75,32 @@ def _stop() -> None:
     if _listener:
         server, _listener = _listener, None
         server.shutdown()
+        server.server_close()
 
 
-def connect_url() -> str:
-    """The authorize URL to open in the browser; also starts the loopback catcher for the reply."""
+def begin(provider: str) -> tuple[str, str]:
+    """Start a connect: store a pending PKCE state for `provider` and make sure the loopback catcher listens.
+    Returns (state, code_challenge) for the authorize URL."""
     global _listener
     verifier, state = secrets.token_urlsafe(48), secrets.token_urlsafe(24)
     challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b"=").decode()
-    store.save(f"oauth:{state}", {"verifier": verifier,
+    store.save(f"oauth:{state}", {"verifier": verifier, "provider": provider,
                                   "made": datetime.now(timezone.utc).isoformat()})
     if _listener is None:
         try:
             _listener = HTTPServer(("127.0.0.1", PORT), _Catch)
         except OSError:
-            raise UserError(f"Port {PORT} is busy, so Buffer's reply can't be received. "
+            raise UserError(f"Port {PORT} is busy, so the sign-in reply can't be received. "
                             "Close whatever uses it and connect again.")
         threading.Thread(target=_listener.serve_forever, daemon=True).start()
-    query = urllib.parse.urlencode({"client_id": client_id(), "redirect_uri": REDIRECT, "response_type": "code",
+    return state, challenge
+
+
+def connect_url() -> str:
+    """Buffer's authorize URL to open in the browser."""
+    cid = client_id()
+    state, challenge = begin("buffer")
+    query = urllib.parse.urlencode({"client_id": cid, "redirect_uri": REDIRECT, "response_type": "code",
                                     "scope": SCOPE, "state": state, "code_challenge": challenge,
                                     "code_challenge_method": "S256", "prompt": "consent"})
     return f"{AUTH}/auth?{query}"
@@ -93,18 +111,18 @@ def _fresh(state: dict) -> bool:
     return datetime.now(timezone.utc) - made < STATE_TTL
 
 
-def _exchange(state: str, code: str) -> None:
-    """Turn the browser's code into stored tokens. One-time: the pending state is consumed either way."""
-    pending = store.load(f"oauth:{state}")
-    store.delete(f"oauth:{state}")
-    if not pending or not _fresh(pending):
-        raise UserError("This connection attempt has expired. Start again.")
+def _exchange(pending: dict, code: str) -> str:
+    """Turn Buffer's code into stored tokens."""
     tokens = _token_request({"grant_type": "authorization_code", "code": code, "redirect_uri": REDIRECT,
                              "client_id": client_id(), "code_verifier": pending["verifier"]})
     account = {"access_token": tokens["access_token"], "refresh_token": tokens.get("refresh_token", ""),
                "expires_at": (datetime.now(timezone.utc) +
                               timedelta(seconds=tokens.get("expires_in", 3600))).isoformat()}
     store.save("buffer", account)
+    return "Buffer"
+
+
+EXCHANGES["buffer"] = _exchange
 
 
 def _token_request(form: dict) -> dict:

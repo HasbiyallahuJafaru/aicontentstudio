@@ -1,7 +1,7 @@
 """Renderers (PRD §32-34). FFmpeg runs as a subprocess with argument arrays (never shell strings).
 
 Video: 1080x1920 H.264 + AAC, source FPS preserved (§19), narration mixed over optional user-supplied music (§31).
-Images: 1080x1350 JPEG, rendered with PIL (better typography: variable font weight, exact wrapping).
+Images: 1080x1350 JPEG, art-directed designs drawn with PIL (app/design.py).
 Text placement follows the M4 analysis (§26): subject left -> text right, subject right -> text left, center -> lower
 block, over a subtle scrim built from the piece palette (§27). Quote lines are wrapped with the bundled Sora font.
 """
@@ -13,7 +13,7 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont, UnidentifiedImageError
 
-from app import config, edit, motion
+from app import config, design, edit, motion
 from app.errors import UserError
 
 FONT_PATH = Path(__file__).resolve().parents[1] / "assets" / "fonts" / "Sora-Variable.ttf"
@@ -22,7 +22,7 @@ IMAGE_W, IMAGE_H = 1080, 1350
 MARGIN = 96
 SIZES = (96, 84, 72, 64, 56)  # §25: size follows quote length and line count
 STALL_SECS = 180  # no ffmpeg progress for this long = wedged; real renders emit progress ~2x/sec
-SUBTITLES_FONTS = Path(__file__).resolve().parents[1] / "app" / "clipper" / "assets" / "fonts"
+SUBTITLES_FONTS = design.FONTS_DIR  # every bundled face, so any caption font resolves
 
 
 def _font(size: int, weight: int = 600) -> ImageFont.FreeTypeFont:
@@ -277,7 +277,7 @@ class FFmpegRenderer:
             dress.append(f"drawbox=x=0:y=ih*{1 - style['bars']:g}:w=iw:h=ih*{style['bars']:g}:color=black@1:t=fill")
         chain.append(f"[{prev}]{','.join(dress) or 'null'}[film]")
         prev = "film"
-        if subtitles is not None:  # burned karaoke-style subtitles (Montserrat, same styling as clips)
+        if subtitles is not None:  # burned subtitles in the brief's caption style
             sub_file = esc(str(subtitles).replace("\\", "/"))
             fonts_dir = esc(str(SUBTITLES_FONTS).replace("\\", "/"))
             chain.append(f"[{prev}]ass='{sub_file}':fontsdir='{fonts_dir}'[sub]")
@@ -359,35 +359,21 @@ class FFmpegRenderer:
                                 errf.read().decode("utf-8", "replace")[-800:])
         return validate_video(out, {"fps": fps, "duration": duration}, self.w, self.h)
 
-    def render_image(self, *, src: Path, out: Path, quote: str, subject_position: str, palette: dict) -> None:
-        try:
-            img = Image.open(src)
-        except UnidentifiedImageError as e:
-            # videos must be frame-grabbed before they get here (renders.py); anything else is bad source data
-            raise UserError("This visual isn't an image the studio can crop.", f"{src} ({e})") from e
-        with img:
-            img = img.convert("RGB")
-            scale = max(IMAGE_H / img.height, IMAGE_W / img.width)
-            rw, rh = round(img.width * scale), round(img.height * scale)
-            img = img.resize((rw, rh))
-            overflow = max(rw - IMAGE_W, 0)  # §21/§26: crop keeps the subject side, centres stay centred
-            x0 = {"left": 0, "right": overflow, "center": overflow // 2}[subject_position]
-            img = img.crop((x0, (rh - IMAGE_H) // 2, x0 + IMAGE_W, (rh - IMAGE_H) // 2 + IMAGE_H))
-
-        where = placement(quote, subject_position, "image")
-        scrim_img = Image.new("RGBA", (IMAGE_W, IMAGE_H))
-        a0, a1 = 20, 170
-        grad = Image.new("RGBA", (1, IMAGE_H))
-        dr, dg, db = (int(palette["overlay"][i:i + 2], 16) for i in (1, 3, 5))
-        grad.putdata([(dr, dg, db, round(a0 + (a1 - a0) * y / (IMAGE_H - 1))) for y in range(IMAGE_H)])
-        scrim_img.paste(grad.resize((IMAGE_W, IMAGE_H)), (0, 0))
-        img = Image.alpha_composite(img.convert("RGBA"), scrim_img)
-
-        draw = ImageDraw.Draw(img)
-        font = _font(where["size"])
-        for (x, y), line in zip(where["positions"], where["lines"]):
-            draw.text((x + 2, y + 3), line, font=font, fill=(0, 0, 0, 115))  # soft shadow
-            draw.text((x, y), line, font=font, fill=palette["text"])
+    def render_image(self, *, src: Path | None, out: Path, quote: dict | str, subject_position: str, palette: dict,
+                     design_name: str = "classic", face: str = "auto", position: str = "auto") -> None:
+        """The 4:5 still, art-directed by `design_name` (app/design.py); `src` None is fine for type-only designs."""
+        if isinstance(quote, str):
+            quote = {"text": quote}
+        photo = None
+        if src is not None:
+            try:
+                photo = Image.open(src)
+                photo.load()
+            except UnidentifiedImageError as e:
+                # videos must be frame-grabbed before they get here (renders.py); anything else is bad source data
+                raise UserError("This visual isn't an image the studio can crop.", f"{src} ({e})") from e
+        img = design.compose(design_name, photo, quote, palette, IMAGE_W, IMAGE_H, subject=subject_position,
+                             face=face, position=position)
         out.parent.mkdir(parents=True, exist_ok=True)
-        img.convert("RGB").save(out, "JPEG", quality=90)
+        img.convert("RGB").save(out, "JPEG", quality=92, subsampling=0)  # 4:4:4: fine type stays sharp
         validate_image(out)

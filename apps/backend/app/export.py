@@ -1,5 +1,6 @@
 """Export (PRD §47, §68-73): one folder per piece under exports/<date>/ with renders, cover frame, caption and
 platform-adapted metadata.json. File organization only - nothing is published (§48)."""
+import csv
 import json
 import re
 import shutil
@@ -8,6 +9,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from app import clips, config, content, platforms, projects, render
+from app.clipper import select
 from app.database import connect
 from app.errors import UserError
 
@@ -111,12 +113,28 @@ def _export_clips(project_id: str, report) -> dict:
         (folder / "metadata.json").write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
         with connect() as conn:
             conn.execute("UPDATE clips SET status = 'exported' WHERE id = ?", (c["id"],))
+    _clip_sheets(abs_root, project["name"], rows)
     if report:
         report("Done", 1.0)
     with connect() as conn:  # one row per run; the date folder holds every clip folder of the run
         conn.execute("INSERT INTO exports (id, project_id, dir, pieces) VALUES (?,?,?,?)",
                      (uuid.uuid4().hex[:12], project_id, str(root), n))
     return {"dir": str(abs_root), "pieces": n}
+
+
+def _clip_sheets(root: Path, name: str, rows: list[dict]) -> None:
+    """Every exported clip's copy in one table (ported from ClipperAi's package): <project>_clips.csv, one column
+    per platform, with a BOM so Excel reads it as UTF-8, and the same as <project>_clips.json."""
+    copy, facts = ["idx", "title", "hook", "description", "hashtags"], ["start_s", "end_s", "score", "reason"]
+    table = [{"idx": c["idx"], "title": c["title"], "hook": c["hook"], "description": c["description"],
+              "hashtags": " ".join(c["hashtags"]), **{n: c["posts"].get(n, "") for n in select.LIMITS},
+              "start_s": round(c["start_at"], 2), "end_s": round(c["end_at"], 2), "score": c["score"],
+              "reason": c["reason"]} for c in rows]
+    with open(root / f"{_slug(name)}_clips.csv", "w", encoding="utf-8-sig", newline="") as f:
+        writer = csv.DictWriter(f, [*copy, *select.LIMITS, *facts])
+        writer.writeheader()
+        writer.writerows(table)
+    (root / f"{_slug(name)}_clips.json").write_text(json.dumps(table, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 def delete(export_id: str) -> dict:
@@ -136,6 +154,8 @@ def delete(export_id: str) -> dict:
         for folder in root.iterdir():
             if folder.is_dir() and folder.name[:3].isdigit() and any(folder.name.endswith(s) for s in suffixes):
                 shutil.rmtree(folder)
+        for ext in ("csv", "json"):  # the clip project's summary sheets
+            (root / f"{_slug(project['name'])}_clips.{ext}").unlink(missing_ok=True)
         if not any(root.iterdir()):
             root.rmdir()
     with connect() as conn:  # a re-export the same day wrote into the same folders: those records go too

@@ -4,9 +4,14 @@ import uuid
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
+from app import config
+from app.clipper import preview
+from app.clipper.captions import CaptionStyle
 from app.database import connect
+from app.design import DESIGNS, HEADLINE_FONTS
+from app.visual import PALETTES
 from app.errors import UserError
 from app.settings import Genre as Tone
 
@@ -24,7 +29,25 @@ class CreativeBrief(BaseModel):
     voice: str = Field("", max_length=120)  # "engine:voice" from the Create picker; empty = Settings default
     fps: Literal[30, 60] = 30
     target_seconds: int | None = Field(None, ge=10, le=180)  # narration length target; None = writer's default
-    subtitles: bool = False                   # burn spoken-word subtitles into rendered videos
+    subtitles: bool = True                    # burn spoken-word subtitles (on: most viewers watch muted)
+    captions: CaptionStyle = Field(default_factory=CaptionStyle)  # how those subtitles look
+    image_design: Literal[("auto", *DESIGNS)] = "auto"            # auto = the genre's designs, rotated per piece
+    image_font: Literal[tuple(HEADLINE_FONTS)] = "auto"           # auto = the design's own pairing
+    image_position: Literal["auto", "top", "center", "bottom"] = "auto"
+    # footage colour: filters photo searches at the source and ranks every candidate; auto = genre look, softly
+    palette: Literal[("auto", *PALETTES)] = "auto"
+    # the user's own quotes, one per piece ("Line. — Author" keeps an attribution); empty = the AI writes them
+    quotes: list[str] = Field(default_factory=list, max_length=100)  # bulk: pasted or imported from a CSV
+
+    @model_validator(mode="after")
+    def _own_quotes(self):
+        self.quotes = [" ".join(q.split()) for q in self.quotes if q.strip()]
+        for q in self.quotes:
+            if not 3 <= len(q) <= 180:
+                raise ValueError("each quote needs 3 to 180 characters")
+        if self.quotes:
+            self.quantity = len(self.quotes)
+        return self
     look_filter: Literal["auto", "none", "warm", "cool", "mono", "vivid"] = "auto"  # auto = the genre's grade
     blur_background: bool = False             # blurred full-bleed background, sharp centred footage
     parallax: bool = False                    # slow push-in on video pieces (stills always push in)
@@ -39,6 +62,7 @@ class ClipBrief(BaseModel):
     max_len: float = Field(60, ge=10, le=900)
     orientation: Literal["9:16", "16:9", "1:1"] = "9:16"
     burn_captions: bool = True
+    captions: CaptionStyle = Field(default_factory=CaptionStyle)
     fps: Literal[30, 60] = 30
 
 
@@ -70,6 +94,8 @@ def _create_clip(b: ClipBrief) -> dict:
     with connect() as conn:
         conn.execute("INSERT INTO projects (id, name, brief) VALUES (?, ?, ?)",
                      (pid, name[:80], b.model_dump_json()))
+    if is_url:  # the video's real name and picture while it waits (the brief's `thumb` is set only by this)
+        preview.start(pid, source, name[:80])
     return get(pid)
 
 
@@ -94,7 +120,8 @@ def list_(limit: int = 200) -> list[dict]:
             (SELECT count(DISTINCT r.piece_id) FROM renders r WHERE r.project_id = p.id) AS rendered,
             COALESCE((SELECT r.local_path FROM renders r WHERE r.project_id = p.id AND r.kind = 'image'
                       ORDER BY r.created_at DESC LIMIT 1),
-                     (SELECT k.cover_path FROM clips k WHERE k.project_id = p.id ORDER BY k.idx LIMIT 1)) AS cover,
+                     (SELECT k.cover_path FROM clips k WHERE k.project_id = p.id ORDER BY k.idx LIMIT 1),
+                     json_extract(p.brief, '$.thumb')) AS cover,
             (SELECT c.quote FROM content_pieces c WHERE c.project_id = p.id AND c.status != 'failed'
              ORDER BY c.idx LIMIT 1) AS quote
             FROM projects p ORDER BY created_at DESC, rowid DESC LIMIT ?""", (limit,)).fetchall()
@@ -112,4 +139,5 @@ def get(id: str) -> dict:
 def delete(id: str) -> dict:
     with connect() as conn:
         n = conn.execute("DELETE FROM projects WHERE id = ?", (id,)).rowcount
+    (config.MEDIA_DIR / preview.THUMBS / f"{id}.jpg").unlink(missing_ok=True)
     return {"deleted": n}

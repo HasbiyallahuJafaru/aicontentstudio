@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, Menu, net, protocol, screen, shell } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, Menu, net, protocol, screen, shell } from 'electron'
 import { existsSync } from 'node:fs'
 import { join, resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -108,6 +108,14 @@ app.whenReady().then(() => {
   ipcMain.handle('app:minimize', () => BrowserWindow.getAllWindows()[0]?.minimize())
   ipcMain.handle('app:close', () => BrowserWindow.getAllWindows()[0]?.close())
   ipcMain.handle('app:openDataDir', () => shell.openPath(dataDir))
+  // The clipper's "Choose a file": a native picker, so the renderer only ever learns the path the user chose.
+  ipcMain.handle('app:pickVideo', async () => {
+    const win = BrowserWindow.getAllWindows()[0]
+    const opts = { title: 'Choose a video to clip', properties: ['openFile' as const],
+      filters: [{ name: 'Videos', extensions: ['mp4', 'mov', 'mkv', 'webm', 'avi', 'm4v', 'wmv', 'flv', 'mpg', 'mpeg'] }] }
+    const r = win ? await dialog.showOpenDialog(win, opts) : await dialog.showOpenDialog(opts)
+    return r.canceled ? null : r.filePaths[0]
+  })
   // Only export folders may be opened by path (PRD §47 "open export folder"); nothing else from the renderer.
   ipcMain.handle('app:openExportPath', (_e, p: string) => {
     const root = join(dataDir, 'exports')

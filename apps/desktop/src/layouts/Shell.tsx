@@ -1,11 +1,14 @@
-import { lazy, Suspense, type CSSProperties, type ReactNode } from 'react'
+import type { CSSProperties, ReactNode } from 'react'
 import { Aperture, CopySimple, Export, Folders, GearSix, Images, ListChecks, Minus, PlusCircle, SquaresFour, X, type Icon } from '@phosphor-icons/react'
-import { studio, useBackendStatus, useBusy, useFullScreen } from '../lib/studio'
+import { studio, useBackendStatus, useFullScreen } from '../lib/studio'
 import { CreatedBy } from '../components/Branding'
 import { Button, ErrorNote, cx } from '../components/ui'
+import { DomeBackground } from '../components/DomeBackground'
 
-// three.js loads in its own chunk, after the shell has painted
-const Ember = lazy(() => import('../components/Ember'))
+// the background dome plays short looping clips (2.5 s animated WebP, built by scripts/make-dome-clips.py from free
+// Pexels footage, credits in assets/dome/CREDITS.json) so the room feels like video, not repeated posters
+const CLIPS = Object.values(import.meta.glob('../assets/dome/clip-*.webp', { eager: true, import: 'default' })) as string[]
+
 
 export type Page = 'dashboard' | 'create' | 'projects' | 'project' | 'library' | 'queue' | 'exports' | 'settings'
 
@@ -27,13 +30,13 @@ function RailItem({ id, label, icon: I, active, onClick, i = 0 }: { id: Page; la
       aria-current={active ? 'page' : undefined}
       className={cx(
         'no-drag group relative grid size-11 place-items-center rounded-2xl transition-[background-color,color,transform] duration-150 active:scale-95',
-        active ? 'bg-white/[0.11] text-ink shadow-[inset_0_0_0_1px_rgb(255_244_232/0.1)]' : 'text-ink-3 hover:bg-white/[0.06] hover:text-ink',
+        active ? 'bg-accent text-on-accent' : 'text-white/60 hover:bg-white/[0.1] hover:text-white',
       )}
     >
       <I size={20} weight={active ? 'fill' : 'regular'}
         className="transition-transform duration-700 ease-out-expo group-hover:rotate-[360deg]" />
       <span aria-hidden
-        className="pointer-events-none absolute left-full top-1/2 z-50 ml-2 -translate-x-3 -translate-y-1/2 whitespace-nowrap rounded-field bg-black/90 px-2.5 py-1 text-2xs font-medium text-ink opacity-0 shadow-[inset_0_0_0_1px_rgb(255_244_232/0.12),0_8px_24px_-8px_rgb(0_0_0/0.8)] transition-all duration-200 ease-out group-hover:translate-x-0 group-hover:opacity-100">
+        className="pointer-events-none absolute left-full top-1/2 z-50 ml-2 -translate-x-3 -translate-y-1/2 whitespace-nowrap rounded-field bg-ink px-2.5 py-1 text-2xs font-medium text-white opacity-0 shadow-[0_8px_24px_-12px_rgb(17_18_20/0.5)] transition-all duration-200 ease-out group-hover:translate-x-0 group-hover:opacity-100">
         {label}
       </span>
     </button>
@@ -48,14 +51,14 @@ function BackendIndicator() {
   const beating = s.state === 'ready' || s.state === 'starting'
   return (
     <div role="status" aria-live="polite"
-      className="no-drag group relative grid size-9 shrink-0 place-items-center rounded-full transition-colors duration-150 hover:bg-white/[0.06]">
+      className="no-drag group relative grid size-9 shrink-0 place-items-center rounded-full transition-colors duration-150 hover:bg-black/[0.05]">
       <span className="relative grid place-items-center">
         {beating && <span aria-hidden className={cx('absolute size-2 rounded-full opacity-60 motion-safe:animate-ping', color)} />}
         <span className={cx('relative size-2 rounded-full', color)} />
       </span>
       <span className="sr-only">{text}</span>
       <span aria-hidden
-        className="pointer-events-none absolute right-full top-1/2 z-50 mr-1 -translate-y-1/2 translate-x-3 whitespace-nowrap rounded-field bg-black/90 px-2.5 py-1 text-2xs font-medium text-ink opacity-0 shadow-[inset_0_0_0_1px_rgb(255_244_232/0.12),0_8px_24px_-8px_rgb(0_0_0/0.8)] transition-all duration-200 ease-out group-hover:translate-x-0 group-hover:opacity-100">
+        className="pointer-events-none absolute right-full top-1/2 z-50 mr-1 -translate-y-1/2 translate-x-3 whitespace-nowrap rounded-field bg-ink px-2.5 py-1 text-2xs font-medium text-white opacity-0 shadow-[0_8px_24px_-12px_rgb(17_18_20/0.5)] transition-all duration-200 ease-out group-hover:translate-x-0 group-hover:opacity-100">
         {text}
       </span>
     </div>
@@ -65,7 +68,7 @@ function BackendIndicator() {
 /** Windows hides its own caption buttons in fullscreen (and maximize is fullscreen here), so the bar draws the same
  * three in the same corner: minimize, restore (leave fullscreen), close. Outside fullscreen the native ones show. */
 function WindowControls() {
-  const cls = 'no-drag grid h-11 w-[46px] place-items-center text-ink-2 transition-colors duration-150 hover:bg-white/[0.08] hover:text-ink'
+  const cls = 'no-drag grid h-11 w-[46px] place-items-center text-ink-2 transition-colors duration-150 hover:bg-black/[0.06] hover:text-ink'
   return (
     <div className="flex">
       <button type="button" aria-label="Minimize" className={cls} onClick={() => studio.minimize()}><Minus size={14} /></button>
@@ -78,28 +81,26 @@ function WindowControls() {
 export function Shell({ page, onNavigate, children }: { page: Page; onNavigate: (p: Page) => void; children: ReactNode }) {
   const status = useBackendStatus()
   const full = useFullScreen()
-  const busy = useBusy()
   return (
-    <div className="ambient grain relative isolate grid h-full grid-cols-[76px_minmax(0,1fr)] grid-rows-[44px_minmax(0,1fr)] overflow-hidden">
-      {/* the studio lamp itself, alive: a still frame while idle, drifting light and rising embers while a job runs */}
-      <div aria-hidden className="pointer-events-none absolute inset-0 -z-10">
-        <Suspense fallback={null}><Ember live={busy} embers={busy} /></Suspense>
-      </div>
+    <div className="ambient relative isolate grid h-full grid-cols-[76px_minmax(0,1fr)] grid-rows-[44px_minmax(0,1fr)] overflow-hidden">
+      {/* the room's background: a dome of short looping clips turning slowly behind the pages (owner request 2026-11-08) */}
+      <div className="absolute inset-0 -z-10"><DomeBackground images={CLIPS} /></div>
       {/* windowed: room for the native caption buttons; fullscreen: ours sit flush in the top-right corner */}
-      <header className={cx('anim-shell-head drag col-span-2 flex items-center gap-3 pl-5', full ? 'pr-0' : 'titlebar-inset')}>
-        <Aperture size={20} weight="fill" className="text-accent" />
+      <header className={cx('anim-shell-head drag col-span-2 flex items-center gap-3 bg-ground pl-5', full ? 'pr-0' : 'titlebar-inset')}>
+        <span className="grid size-7 place-items-center rounded-[9px] bg-ink"><Aperture size={16} weight="fill" className="text-accent" /></span>
         <span className="font-display text-[13px] font-semibold tracking-[-0.01em]">AI Social Content Studio</span>
         <div className="ml-auto flex h-full items-center gap-3"><BackendIndicator />{full && <WindowControls />}</div>
       </header>
 
-      <nav aria-label="Main" className="anim-shell-rail mb-3 ml-3 flex flex-col items-center gap-2 rounded-[24px] bg-black/35 py-3 shadow-[inset_0_0_0_1px_rgb(255_244_232/0.06)]">
+      {/* z-20: the rail's hover labels stick out over the page, so its layer must sit above the page's */}
+      <nav aria-label="Main" className="anim-shell-rail relative z-20 mb-3 ml-3 flex flex-col items-center gap-2 rounded-[24px] bg-ink py-3">
         {NAV.map((n, i) => <RailItem key={n.id} {...n} i={i} active={page === n.id || (n.id === 'projects' && page === 'project')} onClick={onNavigate} />)}
         <div className="mt-auto" style={{ '--i': NAV.length } as CSSProperties}>
           <RailItem id="settings" label="Settings" icon={GearSix} active={page === 'settings'} onClick={onNavigate} />
         </div>
       </nav>
 
-      <main className="anim-shell-main relative mx-3 mb-3 min-w-0 overflow-x-hidden overflow-y-auto rounded-[30px] bg-white/[0.025] shadow-[inset_0_0_0_1px_rgb(255_244_232/0.06)]">
+      <main className="anim-shell-main relative mx-3 mb-3 min-w-0 overflow-x-hidden overflow-y-auto rounded-[30px]">
         <div className="mx-auto flex min-h-full max-w-[1240px] flex-col px-10 pt-9 pb-6">
           {status.message && status.state !== 'ready' && (
             <div className="mb-6">

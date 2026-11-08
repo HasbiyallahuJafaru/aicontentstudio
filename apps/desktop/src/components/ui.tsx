@@ -1,5 +1,5 @@
 // The small shared component set. Every screen builds from these; no one-off button or input styles.
-import type { ButtonHTMLAttributes, CSSProperties, InputHTMLAttributes, ReactNode } from 'react'
+import type { ButtonHTMLAttributes, CSSProperties, InputHTMLAttributes, ReactNode, TextareaHTMLAttributes } from 'react'
 import { Fragment, useEffect, useId, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { CaretDown, Check } from '@phosphor-icons/react'
@@ -16,9 +16,9 @@ export function Button({ variant = 'secondary', kbd, className, children, ...res
         'no-drag inline-flex h-10 items-center gap-2 rounded-control px-5 text-[13px] font-medium whitespace-nowrap',
         'transition-[background-color,color,transform,box-shadow] duration-150 active:scale-[0.97]',
         'disabled:pointer-events-none disabled:opacity-40',
-        variant === 'primary' && 'bg-ink text-ground shadow-[0_8px_24px_-8px_rgb(255_240_225/0.35)] hover:bg-white',
-        variant === 'secondary' && 'bg-white/[0.07] text-ink hover:bg-white/[0.12]',
-        variant === 'ghost' && 'px-3 text-ink-2 hover:bg-white/[0.06] hover:text-ink',
+        variant === 'primary' && 'bg-pop btn-shine text-white font-semibold hover:bg-ink-2',
+        variant === 'secondary' && 'bg-panel text-ink shadow-[0_0_0_1px_var(--color-line-strong)] hover:bg-raised',
+        variant === 'ghost' && 'px-3 text-ink-2 hover:bg-black/[0.05] hover:text-ink',
         variant === 'danger' && 'text-danger hover:bg-danger/10',
         className,
       )}
@@ -40,13 +40,28 @@ export function Field({ label, hint, error, children }: { label: string; hint?: 
   )
 }
 
+/** Multi-line field with the Input look; grows with its rows. */
+export function Textarea({ className, ...rest }: TextareaHTMLAttributes<HTMLTextAreaElement>) {
+  return (
+    <textarea
+      {...rest}
+      className={cx(
+        'no-drag w-full resize-y rounded-field border border-line bg-white px-3.5 py-3 text-[13px] leading-relaxed text-ink',
+        'placeholder:text-ink-3 hover:border-line-strong focus:border-ink focus:bg-white focus:outline-none',
+        'transition-colors duration-150',
+        className,
+      )}
+    />
+  )
+}
+
 export function Input({ className, ...rest }: InputHTMLAttributes<HTMLInputElement>) {
   return (
     <input
       {...rest}
       className={cx(
-        'no-drag h-10 w-full rounded-field border border-line bg-black/20 px-3.5 text-[13px] text-ink',
-        'placeholder:text-ink-3 hover:border-line-strong focus:border-accent/70 focus:bg-black/30 focus:outline-none',
+        'no-drag h-10 w-full rounded-field border border-line bg-white px-3.5 text-[13px] text-ink',
+        'placeholder:text-ink-3 hover:border-line-strong focus:border-ink focus:bg-white focus:outline-none',
         'transition-colors duration-150',
         className,
       )}
@@ -74,7 +89,7 @@ export function Choices<T extends string | number>({ legend, options, value, onC
             className={cx(
               'no-drag relative flex h-9 items-center rounded-control border px-4 text-[13px]',
               'transition-colors duration-150 has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-accent',
-              selected(o.value) ? 'border-transparent bg-ink font-medium text-ground' : 'border-line bg-white/[0.03] text-ink-2 hover:border-line-strong hover:text-ink',
+              selected(o.value) ? 'chip-on' : 'border-line bg-black/[0.03] text-ink-2 hover:border-line-strong hover:text-ink',
             )}
           >
             <input
@@ -98,7 +113,7 @@ export function Choices<T extends string | number>({ legend, options, value, onC
 
 export function ErrorNote({ error, action }: { error: { message: string; detail?: string }; action?: ReactNode }) {
   return (
-    <div role="alert" className="grid gap-2 rounded-field bg-danger/[0.09] px-5 py-4 text-[13px] shadow-[inset_0_0_0_1px_rgb(242_144_127/0.18)]">
+    <div role="alert" className="grid gap-2 rounded-field bg-danger/[0.09] px-5 py-4 text-[13px] shadow-[inset_0_0_0_1px_rgb(180_22_27/0.18)]">
       <div className="flex items-start justify-between gap-4">
         <p className="text-ink">{error.message}</p>
         {action}
@@ -132,10 +147,10 @@ export function Dialog({ label, width, onClose, className, children }: {
 
   return createPortal(
     <div role="dialog" aria-modal="true" aria-label={label} onClick={onClose}
-      className="fixed inset-0 z-40 grid place-items-center bg-black/70 p-6 backdrop-blur-sm">
+      className="fixed inset-0 z-40 grid place-items-center bg-ink/40 p-6 backdrop-blur-sm">
       <div onClick={(e) => e.stopPropagation()} style={{ maxWidth: width }}
-        className={cx('grid max-h-[calc(100dvh-3rem)] w-full rounded-panel bg-[#17181a]',
-          'shadow-[inset_0_0_0_1px_rgb(255_244_232/0.09),0_32px_80px_-24px_rgb(0_0_0/0.8)]', className)}>
+        className={cx('grid max-h-[calc(100dvh-3rem)] w-full rounded-panel bg-panel',
+          'shadow-[inset_0_0_0_1px_rgb(17_18_20/0.09),0_32px_80px_-24px_rgb(17_18_20/0.22)]', className)}>
         {children}
       </div>
     </div>,
@@ -145,13 +160,20 @@ export function Dialog({ label, width, onClose, className, children }: {
 
 /** Text that arrives word by word: each word rises into place from behind its own mask, coming into focus.
  *  `delay` (ms) starts the line; `step` (ms) staggers the words (kept short: a whole line lands inside ~0.5 s). */
-export function Reveal({ text, delay = 0, step = 55 }: { text: string; delay?: number; step?: number }) {
+/** Feeds `.spotlight`: the card's colour light follows the cursor. Use as onMouseMove on a .spotlight element. */
+export function spot(e: React.MouseEvent<HTMLElement>) {
+  const r = e.currentTarget.getBoundingClientRect()
+  e.currentTarget.style.setProperty('--mx', `${e.clientX - r.left}px`)
+  e.currentTarget.style.setProperty('--my', `${e.clientY - r.top}px`)
+}
+
+export function Reveal({ text, delay = 0, step = 55, className }: { text: string; delay?: number; step?: number; className?: string }) {
   const words = text.split(/\s+/).filter(Boolean)
   return (
     <>
       {words.map((w, i) => (
         <Fragment key={i}>
-          <span className="reveal-word"><span style={{ '--d': `${delay + i * step}ms` } as CSSProperties}>{w}</span></span>
+          <span className="reveal-word"><span className={className} style={{ '--d': `${delay + i * step}ms` } as CSSProperties}>{w}</span></span>
           {i < words.length - 1 && ' '}
         </Fragment>
       ))}
@@ -172,8 +194,8 @@ export function PageHeader({ title, children }: { title: string; children?: Reac
 
 /** Shared dropdown popup look: black background, white text, rounded, airier spacing.
  * Anchored absolutely to its field, so it travels with the field on scroll and resize. */
-const POPUP_CLS = 'absolute left-0 right-0 top-full z-50 mt-1.5 grid max-h-[70vh] gap-1.5 overflow-y-auto rounded-field bg-black p-1.5 shadow-[inset_0_0_0_1px_rgb(255_244_232/0.1),0_24px_48px_-16px_rgb(0_0_0/0.85)]'
-const OPTION_CLS = 'flex w-full items-center justify-between gap-2 rounded-[10px] px-3.5 py-2.5 text-left text-[13px] text-ink transition-colors duration-100 hover:bg-white/[0.08]'
+const POPUP_CLS = 'absolute left-0 right-0 top-full z-50 mt-1.5 grid max-h-[70vh] gap-1.5 overflow-y-auto rounded-field bg-panel p-1.5 shadow-[inset_0_0_0_1px_rgb(17_18_20/0.1),0_24px_48px_-16px_rgb(17_18_20/0.22)]'
+const OPTION_CLS = 'flex w-full items-center justify-between gap-2 rounded-[10px] px-3.5 py-2.5 text-left text-[13px] text-ink transition-colors duration-100 hover:bg-black/[0.08]'
 
 function useDismiss(open: boolean, ref: React.RefObject<HTMLElement | null>, close: () => void) {
   useEffect(() => {
@@ -221,9 +243,9 @@ export function Select<T extends string>({ id, value, options, onChange, classNa
     <div ref={ref} className={cx('relative', className)}>
       <button type="button" id={id} aria-haspopup="listbox" aria-expanded={open} disabled={disabled}
         onClick={toggle} onKeyDown={onKeyDown}
-        className={cx('flex h-10 w-full items-center justify-between gap-2 rounded-field border bg-black/20 px-3.5 text-left text-[13px] text-ink',
+        className={cx('flex h-10 w-full items-center justify-between gap-2 rounded-field border bg-white px-3.5 text-left text-[13px] text-ink',
           'transition-colors duration-150 focus:outline-none',
-          open ? 'border-accent/70 bg-black/30' : 'border-line hover:border-line-strong')}>
+          open ? 'border-ink bg-white' : 'border-line hover:border-line-strong')}>
         {current?.label}
         <CaretDown size={13} className={cx('shrink-0 text-ink-3 transition-transform duration-150', open && 'rotate-180')} />
       </button>
@@ -234,9 +256,9 @@ export function Select<T extends string>({ id, value, options, onChange, classNa
               <button type="button" role="option" aria-selected={o.value === value}
                 onMouseEnter={() => setActive(i)}
                 onClick={() => { setOpen(false); onChange(o.value) }}
-                className={cx(OPTION_CLS, i === active && 'bg-white/[0.08]', o.value === value && 'font-medium')}>
+                className={cx(OPTION_CLS, i === active && 'bg-black/[0.08]', o.value === value && 'font-medium')}>
                 {o.label}
-                {o.value === value && <Check size={13} weight="bold" className="shrink-0 text-accent" />}
+                {o.value === value && <Check size={13} weight="bold" className="shrink-0 text-accent-ink" />}
               </button>
             </li>
           ))}
@@ -294,7 +316,7 @@ export function Autocomplete({ id, value, suggestions, onChange, onFocus, ...res
               <button type="button" role="option" aria-selected={i === active}
                 onMouseEnter={() => setActive(i)}
                 onClick={() => { onChange(s); setOpen(false); setActive(-1) }}
-                className={cx(OPTION_CLS, i === active && 'bg-white/[0.08]')}>
+                className={cx(OPTION_CLS, i === active && 'bg-black/[0.08]')}>
                 {s}
               </button>
             </li>

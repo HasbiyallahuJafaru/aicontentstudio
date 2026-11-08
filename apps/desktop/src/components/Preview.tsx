@@ -51,7 +51,7 @@ export function Preview({ piece, renders, assets, voice, onClose, onChanged }: {
     <Dialog label={`Preview ${piece.idx}`} width={1180} onClose={onClose}
       className="h-[min(780px,calc(100dvh-3rem))] grid-cols-[minmax(0,1fr)_368px] max-[1040px]:h-[calc(100dvh-3rem)] max-[1040px]:grid-cols-1 max-[1040px]:grid-rows-[minmax(0,1fr)_auto]">
       <section className="grid min-h-0 grid-rows-[minmax(0,1fr)_auto] gap-2 p-3">
-        <div className="grid min-h-0 place-items-center overflow-auto rounded-field bg-black/35">
+        <div className="grid min-h-0 place-items-center overflow-auto rounded-field bg-black">
           {video ? (
             <video src={mediaUrl(video.local_path)} controls className="max-h-full max-w-full rounded-[10px]" />
           ) : image ? (
@@ -90,7 +90,7 @@ export function Preview({ piece, renders, assets, voice, onClose, onChanged }: {
           </div>
           <h2 className="line-clamp-3 font-display text-[17px] font-semibold leading-snug tracking-[-0.02em]">{piece.quote}</h2>
           {piece.status !== 'written' && (
-            <span className="w-fit rounded-full bg-white/[0.07] px-3 py-1 text-2xs font-medium text-ink-2">{label(piece.status)}</span>
+            <span className="w-fit rounded-full bg-black/[0.07] px-3 py-1 text-2xs font-medium text-ink-2">{label(piece.status)}</span>
           )}
         </header>
 
@@ -100,7 +100,7 @@ export function Preview({ piece, renders, assets, voice, onClose, onChanged }: {
           <div className="grid gap-1.5">
             <p className="text-[13px] font-medium text-ink">Redo one part</p>
             <div className="flex flex-wrap gap-1.5">
-              {SCOPES.map((s) => (
+              {SCOPES.filter((s) => s !== 'narration' || piece.content.narration).map((s) => (  // quote images have no narration
                 <Button key={s} variant="ghost" disabled={busy !== null} onClick={() => regenerate(s)}>
                   <ArrowClockwise size={13} />{busy === s ? 'Redoing…' : label(s)}
                 </Button>

@@ -141,6 +141,7 @@ class Selection(unittest.TestCase):
         database.migrate()
 
     def setUp(self):
+        assets._CACHE.clear()  # fake providers share names and queries across tests
         with assets.connect() as conn:  # cooldown state is global, so every test starts from an empty library
             conn.execute("DELETE FROM asset_usage")
             conn.execute("DELETE FROM assets")
@@ -297,6 +298,7 @@ class Review(unittest.TestCase):
         database.migrate()
 
     def setUp(self):
+        assets._CACHE.clear()  # fake providers share names and queries across tests
         with assets.connect() as conn:
             conn.execute("DELETE FROM asset_usage")
             conn.execute("DELETE FROM assets")
@@ -360,6 +362,7 @@ class JobIntegration(unittest.TestCase):
         database.migrate()
 
     def setUp(self):
+        assets._CACHE.clear()  # fake providers share names and queries across tests
         with assets.connect() as conn:
             conn.execute("DELETE FROM asset_usage")
             conn.execute("DELETE FROM assets")

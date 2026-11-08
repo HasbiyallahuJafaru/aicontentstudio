@@ -5,6 +5,8 @@ import shutil
 import uuid
 from pathlib import Path
 
+from pydantic import BaseModel, Field
+
 from app import config, motion, projects, settings
 from app.clipper import acquire, select, tighten, transcribe
 from app.clipper.ff import silences
@@ -68,7 +70,8 @@ def run(project_id: str, report) -> None:
         layers = motion.layers("clip", *ORIENTATIONS[b["orientation"]][1], hook=clip.hook)  # animated title
         ranges, zooms = tighten.plan(words, start, end, cold, silences(video, start, end))
         render_clip(video, start, end, path, words, b["burn_captions"], b["orientation"], fps=b["fps"],
-                    ranges=ranges, zooms=zooms, emphasis=clip.emphasis, layers=layers)
+                    ranges=ranges, zooms=zooms, emphasis=clip.emphasis, layers=layers,
+                    caption_style=b.get("captions"))
         clip.hook = clip.hook.replace("*", "")  # the keyword marks are for the animation, not the stored copy
         with connect() as conn:
             conn.execute("INSERT INTO clips (id, project_id, idx, start_at, end_at, score, reason, hook, title, "
@@ -102,13 +105,49 @@ def delete(clip_id: str) -> dict:
 def list_(project_id: str) -> list[dict]:
     with connect() as conn:
         rows = conn.execute("SELECT * FROM clips WHERE project_id = ? ORDER BY idx", (project_id,)).fetchall()
-    out = []
-    for r in rows:
-        d = dict(r)
-        d["hashtags"] = json.loads(d["hashtags"])
-        d["posts"] = json.loads(d["posts"])
-        out.append(d)
-    return out
+    return [_present(r) for r in rows]
+
+
+def _present(r) -> dict:
+    return {**dict(r), "hashtags": json.loads(r["hashtags"]), "posts": json.loads(r["posts"])}
+
+
+class ClipEdit(BaseModel):
+    """A person's own copy for a clip (ported from ClipperAi's ClipEdit). Omitted fields stay as they are."""
+    title: str | None = Field(None, min_length=1, max_length=300)
+    hook: str | None = Field(None, max_length=300)
+    description: str | None = Field(None, max_length=5000)
+    hashtags: list[str] | None = Field(None, max_length=30)
+    posts: dict[str, str] | None = None
+
+
+def update(id: str, **fields) -> dict:
+    """Replace a clip's copy. A post over its network's limit is refused with the numbers, never shortened:
+    select.Posts trims the model's copy, not a person's words."""
+    edit = ClipEdit.model_validate(fields)
+    for network, text in (edit.posts or {}).items():
+        if network not in select.LIMITS:
+            raise UserError("Unknown platform in the post copy.", network)
+        if len(text) > select.LIMITS[network]:
+            raise UserError(f"The {label(network)} post is {len(text)} characters long; {label(network)} allows "
+                            f"{select.LIMITS[network]}. Shorten it and save again.")
+    with connect() as conn:
+        row = conn.execute("SELECT posts FROM clips WHERE id = ?", (id,)).fetchone()
+        if row is None:
+            raise UserError("This clip no longer exists.", id)
+        changes = edit.model_dump(exclude_none=True, exclude={"posts", "hashtags"})
+        if edit.hashtags is not None:
+            changes["hashtags"] = json.dumps([t.strip() for t in edit.hashtags if t.strip()], ensure_ascii=False)
+        if edit.posts is not None:  # merge: a platform left out keeps its copy
+            changes["posts"] = json.dumps(json.loads(row["posts"]) | edit.posts, ensure_ascii=False)
+        if changes:
+            conn.execute(f"UPDATE clips SET {', '.join(f'{k} = ?' for k in changes)} WHERE id = ?",  # keys: model fields
+                         (*changes.values(), id))
+        return _present(conn.execute("SELECT * FROM clips WHERE id = ?", (id,)).fetchone())
+
+
+def label(network: str) -> str:
+    return {"tiktok": "TikTok", "youtube": "YouTube", "linkedin": "LinkedIn", "x": "X"}.get(network, network.title())
 
 
 def review(id: str, status: str) -> dict:

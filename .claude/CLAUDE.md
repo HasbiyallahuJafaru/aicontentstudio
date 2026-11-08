@@ -22,15 +22,19 @@ story > hook > pacing > clarity > visual quality > audio quality > platform-safe
 **Content taxonomy = genres, not tones** (researched against top performers 2026-09-20): Hope (hopecore spoken
 word, soulsigh-style), Hard Truth (Goggins/Jocko speech edits), Stoic Wisdom (Daily Stoic), Historical Voices and
 Book Wisdom (real attributed public-domain quotes only — modern books are copyrighted, keep it pre-1929), and
-Cinematic Minimal (Mateusz M). Each genre's full voice spec lives in `app/creative/prompts.py GENRES`; the write
-prompt demands a scroll-stopping hook in line one, second person, concrete body-level images, and one
-screenshot-able closing line.
+Cinematic Minimal (Mateusz M). Each genre's quote style and narration voice live in `app/creative/prompts.py GENRES`. Since 2026-11-08 there
+are two writers: QUOTES_SYSTEM for quote images (quotes only, no narration/hook/shots; `PieceContent.narration` is
+None) and VIDEO_SYSTEM for narrated shorts (`VideoPieceContent` requires narration). Both open with TOPIC_RULES: the
+topic read literally is the brief, the planner writes a one-line `reading` that every piece is written against, and
+clock-time/alarm/self-help-scene openers are banned unless the topic asks. Never reintroduce a fixed scene recipe.
 
 **Output bar — renders must look EDITED, never plain:** multi-shot timelines (2-3 cuts from the asset with
 alternating zoom-in / pan / zoom-out motion), a still cutaway merged between video shots, the genre's color
 grade (`brief.look_filter`, default `auto` = genre grade), film dressing (vignette + grain), loudnorm narration,
 optional karaoke subtitles (`brief.subtitles`). Quote text is NOT burned into videos (user decision). Rendering
 belongs to `render.py render_video(shots=...)`; renders.py builds the shot plan in `_shots_for`.
+Stills are art-directed designs in `app/design.py` (seven designs, bundled OFL fonts, typographic rules in its
+docstring); subtitles are styled by `CaptionStyle` in `app/clipper/captions.py`. Never fall back to plain text on a scrim.
 
 Backlog + integration statuses (IP routing research, Metricool/Buffer open items) live in
 `.claude/handover.md` under "Feature backlog / product direction". Publishing integrations must stay OAuth-based
@@ -60,16 +64,36 @@ Skip long design ceremonies; one screenshot review round per UI phase.
   only renderer API: `window.studio`), `src/lib/studio.ts` (typed calls, hooks, shared constants),
   `src/components/ui.tsx` (all primitives), `src/components/Preview.tsx` (piece preview + regenerate/approve),
   `src/components/Branding.tsx` (developer socials + created-by footer), `src/components/Ember.tsx` (three.js
-  living background: CSS-ambient glows shader + ember silk wave + embers), `src/components/Cover.tsx` (real-output
+  living background, unmounted since the white redesign), `src/components/Cover.tsx` (real-output
   cover tiles), `src/components/FootageReview.tsx` (pick footage before download), `src/pages/*` (Splash first,
   then the Shell pages incl. Queue + Exports), `src/styles/index.css` (design tokens + the motion system).
 - `.claude/skills/threejs-*` (CloudAI-X threejs-skills, MIT; also installed globally): read the relevant one
   before touching `Ember.tsx`.
 
 ## Owner decisions (2026-11-07, keep them)
-- **Splash is approved as is: do not change it** (living glow + embers, no wave, staged word-by-word entrance).
-- **App background = the ember silk wave**, vivid, smooth (MSAA, display DPR up to 2). Still while idle, flows with
-  embers only while a job runs (`useBusy`). Never a flat brown background.
+- **Splash layout is approved as is: do not change it** (since 2026-11-08 at the owner's request: white theme, a tilted wall of the bundled renders drifting past,
+  `components/TiltedTiles.tsx`, our own CSS take on React Bits Pro Tilted Tiles (no license), content on a solid
+  white panel; staged word-by-word entrance,
+  and since 2026-11-08 at the owner's request a React Bits BounceCards fan of five bundled design-engine renders
+  in place of the aperture icon, `src/assets/splash/`).
+- **White, flat, colourful contrast (owner pick 2026-11-08, after Lumin / Cloud Dock / Flix references; replaces the
+  Galaxy Black / Seal Grey / Sunrise Orange palette):** cool off-white room `--color-ground` #f2f3f5, white panels
+  (`.glass` is now a solid white panel), black `--color-ink` for text, the nav rail, primary buttons (`bg-pop` =
+  black) and media frames, one vivid lime `--color-accent` #c6f432 used only as a solid fill (`chip-on` selection,
+  the active rail item, `text-pop` = lime marker block behind one headline word); lime-coloured words use
+  `text-accent-ink` #3d6b00. Create's three kind cards are full-bleed bundled photos (`src/assets/create/`, built
+  once by `scripts/make-create-art.py` from Pexels, owner request 2026-11-08) with words on a solid white band.
+  **No gradients anywhere** (no radial glows, no scrims: captions sit on solid bands). Fonts: Bricolage Grotesque
+  headings (self-hosted from the backend's bundled OFL cuts, `src/assets/fonts/`) + Geist body.
+- **App background = a dome gallery** (owner request + reference 2026-11-08): `components/DomeBackground.tsx`, the
+  camera inside a sphere lined with rounded tiles of short looping clips (colour at 55%, `grayscale(0.45)`) (`src/assets/dome/`, animated WebP
+  built by `apps/desktop/scripts/make-dome-clips.py` from free Pexels footage: every clip a different length, 3.2-5.4 s,
+  with a crossfaded seamless loop, so tiles never visibly restart together), turning once every 3 minutes (CSS 3D,
+  `dome-spin`, still under reduced motion), ghosted to 30% so page text reads on top. No WebGL: the silk wave
+  (`Ember.tsx`) and cursor ink (`SplashCursor.tsx`) are no longer mounted (files kept, unimported). The splash is a tilted wall of renders
+  (`TiltedTiles.tsx`) with its content on a solid white panel.
+- **Library = React Bits Masonry** (`components/Masonry.tsx`, vendored, Phosphor icons, `renderAction` slot for
+  delete + swatches): clicking a tile opens the full-screen carousel (arrows, Escape).
 - **No full-size footage downloads before the user picks.** Generation proposes candidates (thumbnails only) with
   the AI's picks pre-selected; the user confirms on "Choose the footage"; the `visuals` job downloads exactly those.
 - **One colour palette per project** (all pieces share it; later pieces inherit it).
@@ -93,8 +117,8 @@ Skip long design ceremonies; one screenshot review round per UI phase.
 - **Motion (motion-design skill, "Premium"):** `--ease-premium` in, `--ease-exit` out, exits shorter than entrances,
   never fade-only. Headings use `Reveal`; pages exit then enter via `App.go()`. A container holding `.glass` panels
   animates transform only (opacity/filter on an ancestor breaks backdrop-filter). Reduced motion turns it all off.
-- **three.js:** plain `three` (no React Three Fiber, no drei: 2 MB chunk, drei fetches from gstatic). A fresh canvas
-  per mount (StrictMode reuses a force-lost canvas and paints white). The silk/glow canvas is the only WebGL.
+- **three.js:** no WebGL layer is mounted since the 2026-11-08 white redesign (`three` stays installed for
+  `Ember.tsx` if it ever returns). If it does: plain `three`, a fresh canvas per mount.
 - **Tests run motion off** (`ACS_NO_MOTION=1`), so any code path that only runs with animated titles needs its own
   test (the 2026-11-07 render crash hid there). In `render.py` never name a local `motion` (it is the module).
 - **Smoke windows are real windows:** nobody may click them during a run; a click navigates away mid-job and fails

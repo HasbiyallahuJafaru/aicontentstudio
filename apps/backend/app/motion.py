@@ -20,7 +20,7 @@ from app.clipper.tighten import bare
 log = logging.getLogger("motion")
 
 HERE = Path(__file__).parent / "motion_assets"
-FONT = Path(__file__).parent / "clipper" / "assets" / "fonts" / "Montserrat-ExtraBold.ttf"
+FONT = Path(__file__).resolve().parents[1] / "assets" / "fonts" / "Montserrat-ExtraBold.ttf"
 BROWSERS = [r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
             r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
             r"C:\Program Files\Google\Chrome\Application\chrome.exe",

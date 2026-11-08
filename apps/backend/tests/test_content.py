@@ -217,3 +217,63 @@ class OverlongModelLines(unittest.TestCase):
                         "intensity": "low", "narration_style": "warm"}]})
         self.assertEqual(len(plan.pieces[0].angle), 80)
         self.assertEqual(len(plan.pieces[1].visual_subject), 80)
+
+
+class OwnQuotes(unittest.TestCase):
+    """Quote images from the user's own lines: the AI writes around them, the text is never changed."""
+
+    @classmethod
+    def setUpClass(cls):
+        database.migrate()
+
+    def test_quantity_follows_the_quotes_and_blank_lines_drop(self):
+        p = projects.create({**BRIEF, "format": "image", "quantity": 9,
+                             "quotes": ["  Waste no more   time arguing. — Marcus Aurelius", "", "Begin anyway."]})
+        self.assertEqual((p["brief"]["quantity"], len(p["brief"]["quotes"])), (2, 2))
+
+    def test_the_users_text_and_author_survive_whatever_the_model_writes(self):
+        p = projects.create({**BRIEF, "format": "image", "quotes": ["Waste no more time arguing. — Marcus Aurelius",
+                                                                     "Begin anyway."]})
+        seen = []
+
+        class Echo(FakeModel):
+            def write_piece(self, brief, plan, item, avoid):
+                seen.append(brief.get("given_quote"))
+                return super().write_piece(brief, plan, item, avoid)
+
+        job = run_job(p["id"], Echo(["Something the model made up entirely.", "Another invented line here."]))
+        self.assertEqual(job["status"], "completed")
+        quotes = [x["content"]["quote"] for x in content.pieces(p["id"])]
+        self.assertEqual([q["text"] for q in quotes], ["Waste no more time arguing.", "Begin anyway."])
+        self.assertEqual([q["author"] for q in quotes], ["Marcus Aurelius", None])
+        self.assertEqual(seen, ["Waste no more time arguing.", "Begin anyway."], "the prompt carries the fixed line")
+
+    def test_prompt_locks_the_quote(self):
+        from app.creative import prompts
+        msgs = prompts.piece({**BRIEF, "given_quote": "Begin anyway.", "given_author": None},
+                             BatchPlan.model_validate(plan_json(1)), BatchPlan.model_validate(plan_json(1)).pieces[0], [])
+        self.assertIn('fixed, written by the user: "Begin anyway."', msgs[1]["content"])
+
+
+class BulkQuotes(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        database.migrate()
+
+    def test_more_than_twenty_own_quotes_plan_in_chunks(self):
+        quotes = [f"Line number {i} of the bulk import." for i in range(25)]
+        p = projects.create({**BRIEF, "format": "image", "quotes": quotes})
+        self.assertEqual(p["brief"]["quantity"], 25)
+        sizes = []
+
+        class Bulk(FakeModel):
+            def plan_batch(self, brief, avoid):
+                sizes.append(len(brief["quotes"]))
+                return BatchPlan.model_validate({"batch_theme": "bulk", "pieces": [
+                    {"angle": f"angle {i}", "visual_subject": f"subject {i}", "visual_type": "image",
+                     "intensity": "low", "narration_style": "calm"} for i in range(brief["quantity"])]})
+
+        job = run_job(p["id"], Bulk([f"model line {i}" * 2 for i in range(25)]))
+        self.assertEqual(job["status"], "completed")
+        self.assertEqual(sizes, [20, 5])
+        self.assertEqual([x["content"]["quote"]["text"] for x in content.pieces(p["id"])], quotes)

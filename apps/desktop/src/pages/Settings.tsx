@@ -7,7 +7,6 @@ const KEYS: { name: SecretName; label: string }[] = [
   { name: 'OPENROUTER_API_KEY', label: 'OpenRouter API key' },
   { name: 'PEXELS_API_KEY', label: 'Pexels API key' },
   { name: 'UNSPLASH_ACCESS_KEY', label: 'Unsplash access key (optional)' },
-  { name: 'METRICOOL_API_KEY', label: 'Metricool API key' },
 ]
 
 // OpenRouter model ids (checked against openrouter.ai/api/v1/models 2026-11-07), labelled by cost, not by claims.
@@ -92,15 +91,13 @@ function Section({ title, description, children }: { title: string; description:
   )
 }
 
-type BufferConnection = { connected: boolean }
+type Connection = { connected: boolean }
 
-function Publishing({ form, set }: { form: S; set: <K extends keyof S>(k: K, v: S[K]) => void }) {
-  const { data: buffer, reload: reloadBuffer } = useQuery<BufferConnection>('publish.buffer_connection')
-  const { data: host } = useQuery<{ configured: boolean; keys_set: boolean }>('publish.host_status')
-  const [connecting, setConnecting] = useState(false)
-  const [hostKeys, setHostKeys] = useState({ access_key_id: '', secret_access_key: '' })
-  const [metricool, setMetricool] = useState<string>()
-  const [error, setError] = useState<BackendError>()
+// One-click OAuth: the backend hands back the provider's consent page, the browser returns to its loopback
+// catcher, and we poll until the tokens land.
+export function useConnection(provider: 'buffer' | 'metricool', setError: (e?: BackendError) => void) {
+  const { data, reload } = useQuery<Connection>(`publish.${provider}_connection`)
+  const [waiting, setWaiting] = useState(false)
   const poll = useRef<number | undefined>(undefined)
 
   useEffect(() => () => window.clearInterval(poll.current), [])
@@ -108,22 +105,31 @@ function Publishing({ form, set }: { form: S; set: <K extends keyof S>(k: K, v: 
   async function connect() {
     setError(undefined)
     try {
-      const url = await call<string>('publish.buffer_connect_url')
-      studio.openExternal(url)
-      setConnecting(true)
+      studio.openExternal(await call<string>(`publish.${provider}_connect_url`))
+      setWaiting(true)
       window.clearInterval(poll.current)
       poll.current = window.setInterval(async () => {
-        const c = await call<BufferConnection>('publish.buffer_connection').catch(() => null)
-        if (c?.connected) { window.clearInterval(poll.current); setConnecting(false); reloadBuffer() }
+        const c = await call<Connection>(`publish.${provider}_connection`).catch(() => null)
+        if (c?.connected) { window.clearInterval(poll.current); setWaiting(false); reload() }
       }, 2000)
-      window.setTimeout(() => { setConnecting(false); window.clearInterval(poll.current) }, 300_000)
+      window.setTimeout(() => { setWaiting(false); window.clearInterval(poll.current) }, 300_000)
     } catch (e) { setError(e as BackendError) }
   }
 
   async function disconnect() {
     setError(undefined)
-    try { await call('publish.buffer_disconnect'); reloadBuffer() } catch (e) { setError(e as BackendError) }
+    try { await call(`publish.${provider}_disconnect`); reload() } catch (e) { setError(e as BackendError) }
   }
+
+  return { connected: data?.connected, waiting, connect, disconnect }
+}
+
+function Publishing({ form, set }: { form: S; set: <K extends keyof S>(k: K, v: S[K]) => void }) {
+  const { data: host } = useQuery<{ configured: boolean; keys_set: boolean }>('publish.host_status')
+  const [hostKeys, setHostKeys] = useState({ access_key_id: '', secret_access_key: '' })
+  const [error, setError] = useState<BackendError>()
+  const buffer = useConnection('buffer', setError)
+  const metricool = useConnection('metricool', setError)
 
   async function saveHost() {
     setError(undefined)
@@ -131,14 +137,6 @@ function Publishing({ form, set }: { form: S; set: <K extends keyof S>(k: K, v: 
       public_url: form.publish_host_public_url, region: form.publish_host_region, ...hostKeys })
       setHostKeys({ access_key_id: '', secret_access_key: '' })
     } catch (e) { setError(e as BackendError) }
-  }
-
-  async function checkMetricool() {
-    setError(undefined); setMetricool(undefined)
-    try {
-      const r = await call<{ connected: boolean; tools: string[] }>('publish.metricool_status')
-      setMetricool(`Connected · ${r.tools.length} tools available`)
-    } catch (e) { setMetricool(`Not connected: ${(e as BackendError).message}`) }
   }
 
   return (
@@ -149,14 +147,14 @@ function Publishing({ form, set }: { form: S; set: <K extends keyof S>(k: K, v: 
         <div className="flex items-center justify-between gap-4">
           <div>
             <p className="text-[13px] font-medium text-ink">Buffer</p>
-            <p className="mt-0.5 text-xs text-ink-3">{buffer?.connected
+            <p className="mt-0.5 text-xs text-ink-3">{buffer.connected
               ? 'Connected — approved clips can be published to your channels.'
               : 'Register a public OAuth app at developers.buffer.com, add http://127.0.0.1:8787/callback as a redirect URL, paste its client id here, then connect.'}</p>
           </div>
-          {buffer?.connected
-            ? <Button variant="ghost" onClick={disconnect}>Disconnect</Button>
-            : <Button disabled={connecting} onClick={connect}>
-                <Plug size={14} />{connecting ? 'Waiting for Buffer…' : 'Connect Buffer'}</Button>}
+          {buffer.connected
+            ? <Button variant="ghost" onClick={buffer.disconnect}>Disconnect</Button>
+            : <Button disabled={buffer.waiting} onClick={buffer.connect}>
+                <Plug size={14} />{buffer.waiting ? 'Waiting for Buffer…' : 'Connect Buffer'}</Button>}
         </div>
         <Field label="Buffer client id" hint="From your OAuth app at developers.buffer.com. Saved with the changes button above.">
           {(id) => <Input id={id} value={form.buffer_client_id} spellCheck={false}
@@ -207,12 +205,16 @@ function Publishing({ form, set }: { form: S; set: <K extends keyof S>(k: K, v: 
         <div className="flex items-center justify-between gap-4">
           <div>
             <p className="text-[13px] font-medium text-ink">Metricool</p>
-            <p className="mt-0.5 text-xs text-ink-3">Uses the Metricool API key above. Posts a clip's copy through
-              Metricool's own scheduler.</p>
+            <p className="mt-0.5 text-xs text-ink-3">{metricool.connected
+              ? 'Connected. Clips can be scheduled through Metricool.'
+              : metricool.waiting ? 'Approve the app in the browser window that opened, then come back here.'
+              : 'Sign in to Metricool and approve the app. Works on every Metricool plan, nothing to copy or paste.'}</p>
           </div>
-          <Button onClick={checkMetricool}><PlugsConnected size={14} />Check connection</Button>
+          {metricool.connected
+            ? <Button variant="ghost" onClick={metricool.disconnect}>Disconnect</Button>
+            : <Button disabled={metricool.waiting} onClick={metricool.connect}>
+                <PlugsConnected size={14} />{metricool.waiting ? 'Waiting for Metricool…' : 'Connect Metricool'}</Button>}
         </div>
-        {metricool && <p className="text-xs text-ink-2">{metricool}</p>}
       </div>
     </div>
   )

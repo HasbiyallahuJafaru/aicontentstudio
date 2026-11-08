@@ -16,7 +16,8 @@ FADE = 0.01  # seconds of audio fade at every join: a hard cut mid-waveform clic
 
 def render(video, start: float, end: float, out: Path, words: list[dict], burn: bool = True,
            orientation: str = "9:16", fps: int | None = None, ranges: list[tuple[float, float]] | None = None,
-           emphasis: list[str] = (), layers: list[dict] = (), zooms: list[float] | None = None) -> None:
+           emphasis: list[str] = (), layers: list[dict] = (), zooms: list[float] | None = None,
+           caption_style: dict | None = None) -> None:
     """Write out (mp4), its .ass captions and a .jpg cover. `ranges`: the source spans to keep, in play order
     (tighten.plan); default the whole [start, end]. `zooms`: each range's push-in (1.0 = the tracked crop as is).
     `burn`: draw the captions into the video (off when the source already has its own); the .ass file is written
@@ -27,7 +28,7 @@ def render(video, start: float, end: float, out: Path, words: list[dict], burn: 
     out = out.resolve()
     timed = retime(words, ranges)
     total = sum(b - a for a, b in ranges)
-    out.with_suffix(".ass").write_text(captions(timed, 0, total, width, height, emphasis), encoding="utf-8")
+    out.with_suffix(".ass").write_text(captions(timed, 0, total, width, height, emphasis, caption_style), encoding="utf-8")
 
     # one input seek to the earliest kept second, then every range is trimmed relative to it
     s0, s1 = min(a for a, _ in ranges), max(b for _, b in ranges)

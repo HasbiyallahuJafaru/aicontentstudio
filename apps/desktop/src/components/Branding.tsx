@@ -44,13 +44,13 @@ export function SocialLinks({ size = 18 }: { size?: number }) {
         <a key={l.id} href={l.url} aria-label={l.label}
           onClick={(e) => { e.preventDefault(); studio.openExternal(l.url) }}
           className={cx('no-drag group relative grid size-9 place-items-center rounded-2xl',
-            'transition-[color,background-color,transform] duration-500 hover:bg-white/[0.08] hover:text-ink active:scale-95',
+            'transition-[color,background-color,transform] duration-500 hover:bg-black/[0.08] hover:text-ink active:scale-95',
             i === focus ? 'text-ink' : 'text-ink-3')}>
           <span style={{ width: size, height: size, scale: i === focus ? 1 : 0.68 }}
             className={cx('block transition-[scale] duration-500 ease-out-expo [&>svg]:size-full',
               i === focus && 'anim-vibrate')}>{l.icon}</span>
           <span aria-hidden
-            className="pointer-events-none absolute -top-9 left-1/2 -translate-x-1/2 translate-y-1 whitespace-nowrap rounded-field bg-black/90 px-2.5 py-1 text-2xs font-medium text-ink opacity-0 shadow-[inset_0_0_0_1px_rgb(255_244_232/0.12),0_8px_24px_-8px_rgb(0_0_0/0.8)] transition-all duration-150 group-hover:translate-y-0 group-hover:opacity-100">
+            className="pointer-events-none absolute -top-9 left-1/2 -translate-x-1/2 translate-y-1 whitespace-nowrap rounded-field bg-ink px-2.5 py-1 text-2xs font-medium text-white opacity-0 shadow-[0_8px_24px_-8px_rgb(17_18_20/0.22)] transition-all duration-150 group-hover:translate-y-0 group-hover:opacity-100">
             {l.label}
           </span>
         </a>

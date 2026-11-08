@@ -3,8 +3,7 @@ import { safeStorage } from 'electron'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 
 // OPENROUTER covers every AI call (writing, clip selection, transcription); the rest are not AI services.
-export const SECRET_NAMES = ['OPENROUTER_API_KEY', 'PEXELS_API_KEY', 'UNSPLASH_ACCESS_KEY',
-  'METRICOOL_API_KEY'] as const
+export const SECRET_NAMES = ['OPENROUTER_API_KEY', 'PEXELS_API_KEY', 'UNSPLASH_ACCESS_KEY'] as const
 export type SecretName = (typeof SECRET_NAMES)[number]
 
 export function createSecrets(file: string) {

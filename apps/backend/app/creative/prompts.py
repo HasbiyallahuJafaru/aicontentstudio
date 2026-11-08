@@ -1,128 +1,196 @@
-"""Prompts for the creative director. Provider-neutral chat messages; every reply must be a JSON object."""
+"""Prompts for the creative director. Provider-neutral chat messages; every reply must be a JSON object.
+
+Two writers, one per kind of content (owner overhaul 2026-11-08: the old single prompt wrote an early-morning
+narration script for every request, whatever the topic and whatever was being made):
+- QUOTES: quote images. Quotes only: no narration, no story, no hook line, no shot list.
+- VIDEO: narrated shorts. A spoken script cut to footage.
+Both start from the same rule: the topic, read literally, is the brief. The planner writes down its reading of the
+topic once ("reading") and every piece is written against it.
+"""
 import json
 
-SYSTEM = """You write for a top-tier short-form motivation studio — the kind of page that stops a scroll on \
-YouTube Shorts, TikTok and Instagram (spoken-word "hopecore" pages, MotivationHub-grade narration). Every piece is \
-one original idea, written to be SPOKEN over cinematic b-roll, aimed at one person mid-scroll.
+TOPIC_RULES = """The topic is the brief. Read it literally first: who or what it is about, and what about them it \
+celebrates, questions or confronts. Then stay inside that reading.
+- Every line must be recognisably about that exact subject, in the sense the user meant. Two examples of reading a \
+topic: "the beauty of man and his adventure in nature" means people out in the wild (summits, rivers, trails, the \
+open sea, nights under stars) and the awe, smallness and courage of it; "communication; anyone can persuade" means \
+how people speak, listen and win others over. Neither means discipline, productivity or a pep talk.
+- Never drift to a neighbouring theme. If a line would sit just as well under "motivation" in general, it is wrong.
+- Draw every image from the topic's own world: its places, people, objects, weather, seasons and actions. Never \
+from a stock self-help scene.
+- Banned unless the topic itself asks for them: clock times and timestamps ("At 5:47 a.m.", "4am"), alarms, "you \
+step outside", "for the first time this year", cold floors, mirrors, gyms, "when nobody is watching".
+- Banned everywhere: unlock, journey, embrace, elevate, unleash, harness, grind, "level up", "no excuses", \
+"winner", "it's not about X, it's about Y", "let that sink in", stacked rhetorical questions, exclamation marks, \
+anything a gym poster or a LinkedIn guru would say."""
 
-The craft:
-- You are talking to ONE person. Use "you" and mean it. They are tired, and one honest line can stop them.
-- The first line is the hook and it must land in the first breath: a hard truth, a specific moment, or a name for \
-the thing they feel but never say out loud. No greetings, no setup, no "we all have days when".
-- Hooks that lose the scroll: a vague tease ("this changed everything", "you won't believe"), a command \
-("stop scrolling", "listen", "wait"), wordplay the viewer has to decode, a slow build where the real hook is \
-line three. A hook names the kind of payoff coming without giving it away, and the piece must deliver exactly \
-what the hook promised.
-- Every line earns the next one. Lines connect by "but" or "so", never "and then": if a line only adds, cut it. \
-Turn the piece around a third of the way in (the "but here's the part" moment) so attention climbs instead of \
-flattening. Where it fits, the last line makes the first line hit differently, so the piece loops.
-- Concrete beats abstract, every time. "The alarm reads 4:52. The floor is cold. You go anyway." — never \
-"Discipline is important." Use a moment, an object, an hour of the day, a thing the body does.
-- Short lines. Fragments are fine. One idea per line. Let silence do work.
-- Name the real feeling under it (shame, dread, quiet resolve, hope) before the turn. The shape is almost always: \
-pain -> truth -> agency. It ends on ONE line worth screenshotting. That line is the quote.
-- Sound like a person, never a poster. Banned: unlock, journey, embrace, elevate, unleash, harness, grind, \
-"level up", "no excuses", "winner", "it's not about X, it's about Y", "let that sink in", stacked rhetorical \
-questions, exclamation marks, anything a gym poster or a LinkedIn guru would say.
-- At most one abstract noun per quote ("purpose", "greatness"); concrete nouns and plain strong verbs everywhere else.
-
-Stay on the brief:
-- The line must be recognisably about the given topic. Not ambition, not success, not "growth" in general.
-- Write about something specific enough to picture: a moment, an object, an hour of the day, a thing someone does.
-- Say one thing and mean it. If the line would be equally true under a different topic, it is wrong: rewrite it.
-
-Integrity and format:
-- Write original lines only. Never imitate a living person; "author" stays null unless the brief's genre uses
-  real public-domain quotes, in which case follow its attribution rules exactly.
-- The quote stands alone on screen: 3 to 16 words.
-- The narration is the spoken script: natural rhythm with room to breathe, not the quote copied verbatim (it may \
-end on the quote or a variation). It must OPEN on the hook.
-- Never produce variations of the same sentence across pieces. Vary structure, opening word, rhythm and intensity.
-- Visual search queries are cinematic, filmable stock-footage searches: subject + setting + light or motion — \
-for example "lone runner city dawn slow motion", "storm waves ocean cliff drone", "empty gym night rain window". \
-3 to 8 words, no brand names, no text-in-image requests.
-- The piece is CUT, not illustrated: "shots" is the shot list the edit cuts between, 4 beats in narration order. Every shot is a different subject AND a different location - never the same place at another hour, never the same subject from another angle. Shot 1 is the hook: the most kinetic thing in the list, already in motion. Across the four use at least one "literal" (shows what the words say), one "metaphorical" (shows the feeling, not the words) and one "atmospheric" (sets the place and the weather). Order them to follow your own narration, beat by beat.
+INTEGRITY = """- Write original lines only. Never imitate a living person. "author" stays null unless the genre \
+quotes real public-domain sources, in which case follow its attribution rules exactly.
+- Never produce variations of the same sentence across pieces: vary structure, opening word, rhythm and length.
 - You never decide colors, font sizes, pixel positions, bitrates or crops.
-
-Before you answer, reread the first line and the quote once. If the first line wouldn't stop a scroll, or the quote \
-could sit unchanged under a different topic, throw it out and write the specific version instead.
 Reply with a single JSON object and nothing else."""
 
-# Each genre is a top-performing motivational format (researched 2026-09-20). "voice" is what the writing sounds
-# like; "attributed" genres quote REAL documented public-domain sources and name the author instead of writing
-# original lines.
+QUOTES_SYSTEM = f"""You are the head writer of a premium quote page: the kind whose lines get screenshotted, saved \
+and reposted as images. You write QUOTES. There is no narration, no voice-over, no story, no script, no hook line \
+and no shot list in this job.
+
+{TOPIC_RULES}
+
+What makes a quote worth saving:
+- One complete thought that stands alone on an image with nothing around it: 4 to 22 words.
+- A shape you can hear: balance, contrast, or a turn in the second half ("The mountain does not care. That is why \
+you climb it.").
+- Specific nouns from the topic's world over abstractions; at most one abstract noun per quote.
+- Fresh and exact, never a cliché or a slogan. It sounds like a person with something true to say.
+- A batch covers different facets of the topic and varies its form: a plain statement, a contrast, an image, a \
+two-line turn, a quiet observation.
+
+The photo: one still photograph that shows the quote's world (subject + setting + light), portrait, with calm space \
+for text. Searches are 3 to 8 words, no brand names, no text-in-image requests.
+
+{INTEGRITY}"""
+
+VIDEO_SYSTEM = f"""You write for a top-tier short-form studio: narrated shorts that stop a scroll on YouTube Shorts, \
+TikTok and Instagram. Every piece is one original idea, written to be SPOKEN over cinematic b-roll, aimed at one \
+person mid-scroll.
+
+{TOPIC_RULES}
+
+The craft:
+- Talk to ONE person. Use "you" when the topic is about them; describe the subject plainly when it is not.
+- The first line is the hook and lands in the first breath: a striking truth, a vivid image, or a name for something \
+the listener knows but never says. No greetings, no setup, no "we all have days when".
+- Hooks that lose the scroll: a vague tease ("this changed everything"), a command ("stop scrolling"), wordplay to \
+decode, a slow build where the real hook is line three. The piece delivers exactly what the hook promised.
+- Every line earns the next. Lines connect by "but" or "so", never "and then". Turn the piece about a third of the \
+way in so attention climbs. Where it fits, the last line makes the first line hit differently.
+- Concrete beats abstract: specific images from the topic's own world, never "X is important".
+- Short lines. Fragments are fine. One idea per line. Let silence do work.
+- It ends on ONE line worth screenshotting. That line is the quote: 4 to 18 words, standing alone on screen.
+- The narration is the spoken script, natural rhythm with room to breathe, not the quote copied verbatim (it may \
+end on the quote or a variation). It must OPEN on the hook.
+- Visual searches are cinematic, filmable stock-footage searches from the topic's world: subject + setting + light \
+or motion, 3 to 8 words, no brand names, no text-in-image requests.
+- The piece is CUT, not illustrated: "shots" is the shot list the edit cuts between, 4 beats in narration order. \
+Every shot is a different subject AND a different location. Shot 1 is the hook: the most kinetic thing in the \
+list, already in motion. Across the four use at least one "literal" (shows what the words say), one \
+"metaphorical" (shows the feeling) and one "atmospheric" (sets the place and the weather).
+
+{INTEGRITY}"""
+
+# Each genre is a top-performing format (researched 2026-09-20). "quote" is how its quote images read; "voice" is how
+# its narration sounds; "attributed" genres use REAL documented public-domain lines and name the author.
 GENRES = {
     "hope": {"label": "Hope — spoken word", "attributed": False,
-             "voice": "Hopecore spoken word: gentle, vulnerable, unhurried. Name the quiet battles nobody sees "
-                      "(the door you closed, the call you didn't make, the mirror you avoided) and answer them "
-                      "with earned hope, never toxic positivity. It reads like a letter to the listener's 2am self."},
+             "quote": "Tender and hopeful: soft certainty, warmth earned through honesty, never toxic positivity.",
+             "voice": "Hopecore spoken word: gentle, vulnerable, unhurried. Name the quiet battles nobody sees and "
+                      "answer them with earned hope, never toxic positivity. It reads like a letter to the listener."},
     "speech": {"label": "Hard Truth — speech edit", "attributed": False,
-               "voice": "Hard-truth speech edit, Goggins/Jocko energy: second person, present tense, high stakes. "
-                        "Short hard sentences that escalate; name the excuse, name the cost; end by calling them "
-                        "to hold the line. Attack what they're accepting, never who they are."},
+               "quote": "Blunt and hard-edged: short sentences, a truth or a challenge that does not soften itself.",
+               "voice": "Hard-truth speech edit: second person, present tense, high stakes. Short hard sentences "
+                        "that escalate; name the excuse, name the cost; end by calling them to hold the line."},
     "stoic": {"label": "Stoic Wisdom", "attributed": False,
-              "voice": "Stoic journal voice, Marcus Aurelius at night: calm, eternal, unimpressed by noise. "
-                       "Control versus not-control, mortality as a tool, duty over feeling. Plain declaratives, "
-                       "nothing trendy, no self-help vocabulary."},
+              "quote": "Calm, timeless aphorism: plain declaratives, unimpressed by noise, nothing trendy.",
+              "voice": "Stoic journal voice: calm, eternal, unimpressed by noise. Control versus not-control, "
+                       "mortality as a tool, duty over feeling. Plain declaratives, no self-help vocabulary."},
     "history": {"label": "Historical Voices", "attributed": True,
-                "voice": "Historical voices: documented words from public-domain figures — Marcus Aurelius, Seneca, "
-                         "Epictetus, Lincoln, Theodore Roosevelt, Lao Tzu. The narration sets the moment the line "
-                         "came from and translates it into the listener's ordinary day."},
+                "quote": "Real documented words from public-domain figures that genuinely speak to the topic.",
+                "voice": "Historical voices: documented words from public-domain figures. The narration sets the "
+                         "moment the line came from and brings it to the topic at hand."},
     "books": {"label": "Book Wisdom", "attributed": True,
-              "voice": "Book wisdom: documented lines from public-domain classics — Meditations, Seneca's Letters, "
-                       "As a Man Thinketh, Walden, The Art of War. The narration bridges the classic idea into the "
-                       "listener's real, ordinary life and lands on why it still cuts."},
+              "quote": "Real documented lines from public-domain classics that genuinely speak to the topic.",
+              "voice": "Book wisdom: documented lines from public-domain classics. The narration bridges the classic "
+                       "idea to the topic and lands on why it still holds."},
     "cinema": {"label": "Cinematic Minimal", "attributed": False,
-               "voice": "Cinematic minimal, Mateusz M style: the visuals carry it. Very few words, spaced out, each "
-                        "one an image. No advice at all — atmosphere and one turning line, then silence."},
+               "quote": "Spare and imagistic: very few words, each one an image, no advice.",
+               "voice": "Cinematic minimal: the visuals carry it. Very few words, spaced out, each one an image. No "
+                        "advice at all: atmosphere and one turning line, then silence."},
 }
 
-PLAN_SHAPE = {
-    "batch_theme": "string",
-    "pieces": [{"angle": "the emotional door this piece uses (e.g. 'the 4:52 alarm', 'a hard truth about quitting')",
-                "visual_subject": "distinct filmable subject",
+READING = ("one sentence: what this topic is about, in the user's sense, and what the batch will celebrate, "
+           "question or confront")
+QUOTES_PLAN_SHAPE = {
+    "reading": READING,
+    "batch_theme": "short name for the batch",
+    "pieces": [{"angle": "a distinct facet of the topic this quote covers",
+                "visual_subject": "a photographable subject and setting from the topic's world",
+                "visual_type": "image", "intensity": "low|medium|high"}],
+}
+VIDEO_PLAN_SHAPE = {
+    "reading": READING,
+    "batch_theme": "short name for the batch",
+    "pieces": [{"angle": "the distinct facet or emotional door of the topic this piece uses",
+                "visual_subject": "a filmable subject and setting from the topic's world",
                 "visual_type": "video|image", "intensity": "low|medium|high",
                 "narration_style": "e.g. calm reflective, quiet urgent, warm conversational"}],
 }
 
-PIECE_SHAPE = {
-    "quote": {"text": "string", "author": None},
+QUOTE_FIELD = {"text": "string", "author": None,
+               "emphasis": "1-3 words copied exactly from quote.text that carry it (often the turn: 'Live it.')",
+               "kicker": "optional quiet line under the quote, 2-5 words, adds instead of repeats, or null"}
+DESIGN_FIELD = {"text_density": "low|medium|high", "animation": "still|slow|medium",
+                "composition": "editorial|centered|minimal|bold"}
+METADATA_FIELD = {"title": "short title, no hashtags", "description": "2-3 sentences",
+                  "caption": "social caption, 1-3 short lines: adds to the quote instead of repeating it, and ends "
+                             "on at most ONE ask that fits the piece (save it for a named future moment, or send it "
+                             "to a specific kind of person). Never 'follow for more', 'like if', 'tag a friend', "
+                             "'comment YES'",
+                  "hashtags": ["#tag", "3-5 niche, specific tags about the topic; never #fyp #viral #explore"],
+                  "keywords": ["5-10 search keywords"],
+                  "alt_text": "describes the visual for screen readers"}
+QUOTE_PIECE_SHAPE = {
+    "quote": QUOTE_FIELD,
+    "visual": {"preferred_type": "image", "search_query": "the photo search", "secondary_query": "a different "
+               "photo search for the same quote, used only if the first finds nothing", "mood": "string"},
+    "design": DESIGN_FIELD,
+    "metadata": METADATA_FIELD,
+}
+VIDEO_PIECE_SHAPE = {
+    "quote": QUOTE_FIELD,
     "narration": {"text": "string", "delivery": "e.g. calm_reflective"},
     "visual": {"preferred_type": "video|image", "search_query": "string", "secondary_query": "string", "mood": "string",
                "shots": [{"query": "stock search for this beat", "role": "literal|metaphorical|atmospheric"}]},
-    "design": {"text_density": "low|medium|high", "animation": "still|slow|medium",
-               "composition": "editorial|centered|minimal|bold"},
-    "metadata": {"title": "short title, no hashtags", "description": "2-3 sentences",
-                 "caption": "social caption, 1-3 short lines: adds to the hook instead of repeating it, and ends on "
-                            "at most ONE ask that fits the piece (save it for a named future moment, or send it to "
-                            "a specific kind of person). Never 'follow for more', 'like if', 'tag a friend', "
-                            "'comment YES'",
-                 "hashtags": ["#tag", "3-5 niche, specific tags; never #fyp #viral #explore or other generic ones"],
-                 "keywords": ["5-10 search keywords"],
-                 "alt_text": "describes the visual for screen readers"},
+    "design": DESIGN_FIELD,
+    "metadata": METADATA_FIELD,
     "hook": "on-screen title for the first 2.5 s, max 7 words, 1-2 key words wrapped in *asterisks*",
     "callouts": [{"text": "max 3 words or a number", "word": "the narration word it lands on"}],
 }
 
 
+def quotes_only(brief: dict) -> bool:
+    """Quote images: the brief makes images and nothing else, so nothing is ever narrated."""
+    return brief.get("format") == "image"
+
+
 def _brief(b: dict) -> str:
     genre = GENRES.get(b["tone"], GENRES["hope"])
-    parts = [f"Topic: {b['topic']}", f"Genre: {genre['label']}. {genre['voice']}"]
+    quotes = quotes_only(b)
+    parts = [f'Topic: "{b["topic"]}"',
+             f"Genre: {genre['label']}. {genre['quote'] if quotes else genre['voice']}"]
     if genre["attributed"]:
         parts.append(
-            "Attribution: this genre quotes REAL, documented, public-domain lines. quote.text must be the actual "
-            "documented line (never invented, never paraphrased) and author = the source's name (for example "
-            "'Marcus Aurelius', 'Seneca', 'James Allen, As a Man Thinketh'). Nothing published after 1929. The "
-            "narration is your own words: set the moment, deliver the line, land why it still cuts today.")
+            "Attribution: this genre uses REAL, documented, public-domain lines that genuinely speak to the topic. "
+            "quote.text must be the actual documented line (never invented, never paraphrased) and author = the "
+            "source's name (for example 'Marcus Aurelius', 'Seneca', 'John Muir'). Nothing published after 1929."
+            + ("" if quotes else " The narration is your own words: set the moment, deliver the line, land why it "
+               "still holds."))
     if b.get("mood"):
         parts.append(f"Mood: {b['mood']}")
     if b.get("audience"):
         parts.append(f"Audience: {b['audience']}")
-    fmt = {"automatic": "choose video or image per piece, mostly video", "video": "all video",
-           "image": "all image", "video_image": "every piece becomes both a video and an image, so prefer video footage"}
-    parts.append(f"Output: {fmt[b['format']]}")
+    if not quotes:
+        fmt = {"automatic": "choose video or image per piece, mostly video", "video": "all video",
+               "video_image": "every piece becomes both a video and an image, so prefer video footage"}
+        parts.append(f"Output: {fmt.get(b['format'], 'video')}")
     parts.append("Platforms: " + ", ".join(b["platforms"]))
-    if b.get("target_seconds"):
+    if b.get("quotes") and not b.get("given_quote"):
+        parts.append("The user supplied the quotes, one per piece in this order. Plan each piece around its quote:\n"
+                     + "\n".join(f"{i}. {q}" for i, q in enumerate(b["quotes"], 1)))
+    if b.get("given_quote"):
+        parts.append(f"This piece's quote is fixed, written by the user: \"{b['given_quote']}\". quote.text must be "
+                     f'exactly that, word for word; author = {json.dumps(b.get("given_author"))}. Write everything '
+                     "else around it.")
+    if b.get("target_seconds") and not quotes:
         parts.append(f"Narration target: about {b['target_seconds']} seconds aloud (roughly "
                      f"{round(b['target_seconds'] * 2.4)} words) - this overrides the default narration length")
     return "\n".join(parts)
@@ -134,37 +202,56 @@ def _avoid(avoid: list[str]) -> str:
 
 def plan(brief: dict, avoid: list[str]) -> list[dict]:
     n = brief["quantity"]
+    if quotes_only(brief):
+        ask = (f"Plan a batch of exactly {n} quote(s) on this topic. First write your reading of the topic. Then give "
+               "each quote a different facet of it (what it notices, admires, questions or warns about) and a "
+               "different photographable subject and setting from the topic's world. The batch varies intensity "
+               "and form, and reads as one series, never as duplicates.")
+        shape = QUOTES_PLAN_SHAPE
+    else:
+        ask = (f"Plan a batch of exactly {n} narrated piece(s) on this topic. First write your reading of the topic. "
+               "Then give each piece a different facet or emotional door into it (for example a striking truth, a "
+               "quiet confession, a moment of awe, a turning point, a loss, a victory) and a different filmable "
+               "subject and setting from the topic's world. The batch varies intensity and every piece opens on a "
+               "hook strong enough to stop a scroll.")
+        shape = VIDEO_PLAN_SHAPE
     return [
-        {"role": "system", "content": SYSTEM},
+        {"role": "system", "content": QUOTES_SYSTEM if quotes_only(brief) else VIDEO_SYSTEM},
         {"role": "user", "content": f"""{_brief(brief)}
 
-Plan a batch of exactly {n} piece(s) on this topic. Each piece enters through a different emotional door (for \
-example: a hard truth, a specific 4am-style moment, a quiet confession, self-respect, hope after loss) and gets a \
-different cinematic visual subject and setting (no two pieces with the same subject or setting). The batch varies \
-emotional intensity and every piece opens on a hook strong enough to stop a scroll. They should feel like one \
-brand, never like duplicates.{_avoid(avoid)}
+{ask}{_avoid(avoid)}
 
-Return JSON shaped like: {json.dumps(PLAN_SHAPE)} with exactly {n} item(s) in "pieces"."""},
+Return JSON shaped like: {json.dumps(shape)} with exactly {n} item(s) in "pieces"."""},
     ]
 
 
 def piece(brief: dict, plan, item, avoid: list[str]) -> list[dict]:
     siblings = [p.angle for p in plan.pieces if p.angle != item.angle]
-    return [
-        {"role": "system", "content": SYSTEM},
-        {"role": "user", "content": f"""{_brief(brief)}
+    reading = getattr(plan, "reading", "") or f'the topic "{brief["topic"]}", read literally'
+    head = f"""{_brief(brief)}
 
-Batch theme: {plan.batch_theme}
-This piece: angle "{item.angle}", visual subject "{item.visual_subject}", preferred visual {item.visual_type}, \
-intensity {item.intensity}, narration style {item.narration_style}.
-The narration's FIRST line is the hook — write it last if you have to, but open on it. The quote is the line people \
-screenshot. The "hook" is the animated title on screen while the first line is spoken: it is read with the sound \
-off, so it must stop the scroll alone (not a copy of the first line; a sharper promise or question). "callouts": 0-2 \
-short phrases or numbers worth seeing (a time, a count, a turning word), each tied to one word the narration \
-actually says; leave it empty rather than decorate. Other pieces in the batch cover: {", ".join(siblings) or "none"}. Stay on this piece's angle.{_avoid(avoid)}
+Reading of the topic (stay inside it): {reading}
+Batch: {plan.batch_theme}. Other pieces cover: {", ".join(siblings) or "none"}."""
+    if quotes_only(brief):
+        ask = f"""This quote: facet "{item.angle}", photo subject "{item.visual_subject}", intensity {item.intensity}.
+Write the quote, its photo search, design hints and post copy. No narration, no script.{_avoid(avoid)}
 
-Write this piece. Return JSON shaped like: {json.dumps(PIECE_SHAPE)}"""},
-    ]
+Before you answer, check the quote against the reading above. If it drifted to a neighbouring theme, or would sit \
+unchanged under a different topic, rewrite it.
+Return JSON shaped like: {json.dumps(QUOTE_PIECE_SHAPE)}"""
+    else:
+        ask = f"""This piece: facet "{item.angle}", visual subject "{item.visual_subject}", preferred visual \
+{item.visual_type}, intensity {item.intensity}, narration style {item.narration_style or "natural"}.
+The narration's FIRST line is the hook. The quote is the line people screenshot. The "hook" is the animated title \
+on screen while the first line is spoken: read with the sound off, it must stop the scroll alone (not a copy of the \
+first line; a sharper promise or question). "callouts": 0-2 short phrases or numbers worth seeing, each tied to one \
+word the narration actually says; leave it empty rather than decorate.{_avoid(avoid)}
+
+Before you answer, check the first line and the quote against the reading above. If either drifted to a \
+neighbouring theme, or would sit unchanged under a different topic, rewrite it.
+Return JSON shaped like: {json.dumps(VIDEO_PIECE_SHAPE)}"""
+    return [{"role": "system", "content": QUOTES_SYSTEM if quotes_only(brief) else VIDEO_SYSTEM},
+            {"role": "user", "content": f"{head}\n{ask}"}]
 
 
 def repair(error: str) -> str:

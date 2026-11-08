@@ -1,33 +1,50 @@
 @import "tailwindcss";
-@import "@fontsource-variable/sora";
 @import "@fontsource-variable/geist";
+
+/* Bricolage Grotesque (SIL OFL, assets/fonts/BricolageGrotesque-OFL.txt): the static cuts the backend already ships */
+@font-face { font-family: "Bricolage Grotesque"; src: url("../assets/fonts/BricolageGrotesque-Regular.ttf") format("truetype"); font-weight: 400 500; font-display: swap; }
+@font-face { font-family: "Bricolage Grotesque"; src: url("../assets/fonts/BricolageGrotesque-Bold.ttf") format("truetype"); font-weight: 600 800; font-display: swap; }
 
 /* Design tokens. One source of truth; components use these names only. */
 @theme {
+  /* Bricolage Grotesque carries the headings (the same face the quote-image engine bundles, so the app and its
+     output share a voice); Geist keeps body text calm and readable. */
   --font-sans: "Geist Variable", "Segoe UI Variable Text", system-ui, sans-serif;
-  --font-display: "Sora Variable", "Geist Variable", system-ui, sans-serif;
+  --font-display: "Bricolage Grotesque", "Geist Variable", system-ui, sans-serif;
 
-  --color-ground: #0d0c0b;   /* window, warm charcoal */
-  --color-panel: #151312;    /* solid fallback for glass */
-  --color-raised: #24211f;   /* inputs, hover */
-  --color-line: rgb(255 244 232 / 0.08);
-  --color-line-strong: rgb(255 244 232 / 0.16);
-  --color-ink: #f4efe9;
-  --color-ink-2: #b9b1a9;
-  --color-ink-3: #8c847d;
-  --color-accent: #f0873a;   /* ember orange: activity, focus, key numbers */
-  --color-danger: #f2907f;
-  --color-ok: #b9d97a;
+  /* White and flat (owner pick 2026-11-08, after Lumin / Cloud Dock / Flix references): cool off-white room, white
+     panels, black for text, the rail, primary actions and media frames, and one vivid lime used only as a solid
+     fill (selection, the active place, the headline highlight). Lime is too light for text on white: lime-coloured
+     words use --color-accent-ink. No gradients anywhere. */
+  --color-ground: #f2f3f5;
+  --color-panel: #ffffff;
+  --color-raised: #e9eaee;   /* inputs on hover, quiet fills */
+  --color-line: rgb(17 18 20 / 0.08);
+  --color-line-strong: rgb(17 18 20 / 0.16);
+  --color-ink: #111214;
+  --color-ink-2: #4a4d55;
+  --color-ink-3: #6b6f79;
+  --color-accent: #c6f432;   /* lime: fills only */
+  --color-accent-ink: #3d6b00;  /* lime family, dark enough for text on white */
+  --color-on-accent: #111214;
+  --color-pop: #111214;      /* primary actions and progress are black, like the references */
+  /* content colours: solid tiles behind real imagery, one per kind of work */
+  --color-tile-lime: #c6f432;
+  --color-tile-violet: #8f7bff;
+  --color-tile-coral: #ff7a59;
+  --color-tile-sky: #6cc4ff;
+  --color-danger: #c42b2b;
+  --color-ok: #23803a;
 
   --radius-control: 999px;   /* controls are pills */
   --radius-field: 14px;      /* inputs, inner blocks */
-  --radius-panel: 26px;      /* glass panels */
+  --radius-panel: 26px;      /* panels */
 
   --text-2xs: 0.6875rem;
-  --text-title: 2.125rem;
-  --text-title--line-height: 1.1;
-  --text-hero: 3.25rem;
-  --text-hero--line-height: 1.05;
+  --text-title: 2.25rem;
+  --text-title--line-height: 1.05;
+  --text-hero: 3.5rem;
+  --text-hero--line-height: 1;
 
   --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
   /* Motion identity (motion-design skill, "Premium"): one decelerating curve for every entrance, an accelerating one
@@ -39,7 +56,7 @@
 }
 
 @layer base {
-  html, body, #root { height: 100%; color-scheme: dark; }
+  html, body, #root { height: 100%; color-scheme: light; }
   body {
     background: var(--color-ground);
     color: var(--color-ink);
@@ -51,9 +68,9 @@
     cursor: default;
   }
   input, textarea, [data-selectable] { user-select: text; }
-  ::selection { background: color-mix(in oklab, var(--color-accent) 40%, transparent); color: var(--color-ink); }
-  input { caret-color: var(--color-accent); }
-  :focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; border-radius: 12px; }
+  ::selection { background: var(--color-accent); color: var(--color-on-accent); }
+  input { caret-color: var(--color-ink); }
+  :focus-visible { outline: 2px solid var(--color-ink); outline-offset: 2px; border-radius: 12px; }
   ::-webkit-scrollbar { width: 10px; height: 10px; }
   ::-webkit-scrollbar-thumb { background: var(--color-line-strong); border-radius: 10px; border: 3px solid transparent; background-clip: content-box; }
   ::-webkit-scrollbar-thumb:hover { background-color: var(--color-ink-3); }
@@ -63,39 +80,42 @@
   p { text-wrap: pretty; }
 }
 
-/* Warm ambient light behind everything (the "studio lamp"), plus fine grain so dark surfaces aren't sterile. */
-.ambient {
-  background:
-    radial-gradient(60% 55% at 72% 8%, rgb(240 135 58 / 0.20), transparent 70%),
-    radial-gradient(45% 50% at 18% 30%, rgb(150 96 120 / 0.16), transparent 70%),
-    radial-gradient(70% 60% at 50% 110%, rgb(120 70 40 / 0.18), transparent 70%),
-    var(--color-ground);
-}
-.grain::after {
-  content: "";
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  z-index: 1;
-  opacity: 0.05;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
-}
+/* the room: flat, no light effects */
+.ambient { background: var(--color-ground); }
 
-/* Frosted panel: translucent fill, blur, 1px inner edge and a top highlight for refraction. */
+/* primary actions and progress: solid black */
+.bg-pop { background-color: var(--color-pop); }
+/* the one "selected" look everywhere (chips, tabs, filters): solid lime, black text */
+.chip-on {
+  background-color: var(--color-accent);
+  color: var(--color-on-accent);
+  font-weight: 500;
+  border-color: transparent;
+}
+.bg-pop-soft { background-color: var(--color-accent); }
+/* one keyword per headline sits on a lime block, like a marker stroke */
+.text-pop {
+  background-color: var(--color-accent);
+  color: var(--color-on-accent);
+  border-radius: 0.18em;
+  padding: 0 0.12em;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+/* a press that reads physically: a hair down on active */
+.btn-shine { position: relative; }
+.btn-shine:active { transform: translateY(1px); }
+/* interactive cards lift a little under the pointer; `spot` in ui.tsx still feeds --mx/--my (unused now) */
+.spotlight { position: relative; transition: transform 300ms var(--ease-premium), box-shadow 300ms var(--ease-premium); }
+.spotlight:hover { transform: translateY(-2px); box-shadow: 0 18px 40px -24px rgb(17 18 20 / 0.28); }
+
+/* Panel: solid white, a hairline edge and a soft tinted lift. (The name stays "glass" so every panel follows.) */
 @utility glass {
-  background: linear-gradient(180deg, rgb(255 246 236 / 0.075), rgb(255 246 236 / 0.035));
-  backdrop-filter: blur(28px) saturate(140%);
+  background: var(--color-panel);
   border-radius: var(--radius-panel);
-  box-shadow:
-    inset 0 0 0 1px rgb(255 244 232 / 0.07),
-    inset 0 1px 0 rgb(255 244 232 / 0.10),
-    0 24px 60px -24px rgb(20 10 4 / 0.55);
+  box-shadow: 0 0 0 1px var(--color-line), 0 18px 44px -30px rgb(17 18 20 / 0.22);
 }
-@media (prefers-reduced-transparency: reduce) {
-  .glass { background: var(--color-panel); backdrop-filter: none; }
-}
-/* backdrop-filter makes each panel its own stacking context, so a dropdown's z-index
-   cannot escape it. Raise whichever panel holds the open dropdown above its siblings. */
+/* a panel holding an open dropdown rises above its siblings so the list is never hidden */
 .glass:has([aria-expanded='true']) { position: relative; z-index: 40; }
 
 .drag { -webkit-app-region: drag; }
@@ -147,6 +167,28 @@
 @keyframes splash-out {
   to { opacity: 0; transform: translate3d(0, -16px, 0) scale(0.98); filter: blur(10px); }
 }
+/* the app background dome (DomeBackground.tsx): the camera sits inside a sphere (perspective well under the radius) and
+   every tile is turned to its column and row, then pushed out to the wall, facing the centre */
+.dome-stage { perspective: calc(var(--r, 1800px) * 0.55); }
+.dome-sphere { position: absolute; left: 50%; top: 50%; width: 0; height: 0; transform-style: preserve-3d; }
+.dome-tile {
+  position: absolute;
+  left: calc(var(--tile, 200px) / -2);
+  top: calc(var(--tile, 200px) / -2);
+  width: var(--tile, 200px);
+  height: var(--tile, 200px);
+  border-radius: 24%;
+  overflow: hidden;
+  background: var(--color-ground);
+  backface-visibility: hidden;
+  transform: rotateY(var(--lon)) rotateX(var(--lat)) translateZ(calc(var(--r, 1800px) * -1));
+}
+/* colour at 55% (owner, 2026-11-08: grayscale 0.45 keeps 55% of each clip's colour), shown at 30%: the motion and shape read, black page text stays readable on top of it */
+.dome-tile img { width: 100%; height: 100%; object-fit: cover; filter: grayscale(0.45); opacity: 0.3; }
+@keyframes dome-spin { to { transform: rotateY(360deg); } }
+@keyframes tile-up {
+  to { transform: translate3d(0, -50%, 0); }
+}
 @keyframes splash-bg-out {
   to { opacity: 0; transform: scale(1.08); }
 }
@@ -157,6 +199,8 @@
 .reveal-word > span { display: inline-block; }
 
 @media (prefers-reduced-motion: no-preference) {
+  .btn-shine::after { transition: transform 750ms var(--ease-premium); }
+  .btn-shine:hover::after { transform: translateX(120%); }
   .anim-slot { animation: slot-in var(--duration-base) var(--ease-out-expo) both; animation-delay: calc(var(--i, 0) * 35ms); }
   .anim-fade { animation: fade-in 1.6s var(--ease-out-expo) both; }
   /* Delayed so the shake starts once the icon has finished growing. */
@@ -182,6 +226,12 @@
   .anim-step-back { animation: step-in-back 480ms var(--ease-premium) both; }
 
   .anim-splash-out { animation: splash-out 420ms var(--ease-exit) both; pointer-events: none; }
+  /* the background dome turns once every three minutes: alive, never busy */
+  .dome-sphere { animation: dome-spin 180s linear infinite; }
+  /* the splash's tilted wall: half a column per loop (each column holds its images twice) */
+  .tile-col { animation: tile-up var(--dur, 60s) linear infinite; will-change: transform; }
+  .tile-col.tile-down { animation-direction: reverse; }
   .anim-splash-bg-out { animation: splash-bg-out 520ms var(--ease-exit) both; }
 }
+
 

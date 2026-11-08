@@ -2,7 +2,7 @@
 import { useState, type CSSProperties } from 'react'
 import { Check, Export, FolderOpen, Trash } from '@phosphor-icons/react'
 import { BackendError, call, formatDate, studio, useQuery, type ExportRun } from '../lib/studio'
-import { Button, ErrorNote, PageHeader } from '../components/ui'
+import { Button, ErrorNote, PageHeader, spot } from '../components/ui'
 import { Cover } from '../components/Cover'
 
 export function Exports({ onOpenProject }: { onOpenProject: (id: string) => void }) {
@@ -33,12 +33,12 @@ export function Exports({ onOpenProject }: { onOpenProject: (id: string) => void
 
       <ol className="grid gap-4">
         {data?.map((run, i) => (
-          <li key={run.id} className="glass anim-slot grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-8 px-7 py-6 max-[900px]:grid-cols-[auto_minmax(0,1fr)]"
+          <li key={run.id} onMouseMove={spot} className="glass spotlight anim-slot grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-8 px-7 py-6 max-[900px]:grid-cols-[auto_minmax(0,1fr)]"
             style={{ '--i': Math.min(i, 10) } as CSSProperties}>
             <Proofs covers={run.covers} />
             <div className="grid min-w-0 gap-1.5">
               <button onClick={() => onOpenProject(run.project_id)}
-                className="w-fit max-w-full truncate text-left font-display text-[18px] font-semibold tracking-[-0.015em] text-ink transition-colors duration-200 hover:text-accent">
+                className="w-fit max-w-full truncate text-left font-display text-[18px] font-semibold tracking-[-0.015em] text-ink transition-colors duration-200 hover:text-accent-ink">
                 {run.project}
               </button>
               <span className="text-[13px] text-ink-2">{run.pieces} {run.pieces === 1 ? 'piece' : 'pieces'} · {formatDate(run.created_at)}</span>
@@ -59,7 +59,7 @@ export function Exports({ onOpenProject }: { onOpenProject: (id: string) => void
 
 /** The export's real output as a small stack of proofs, fanned like prints on a desk. */
 function Proofs({ covers }: { covers: string[] }) {
-  if (!covers.length) return <span className="grid size-16 place-items-center rounded-2xl bg-accent/15 text-accent"><Export size={20} /></span>
+  if (!covers.length) return <span className="grid size-16 place-items-center rounded-2xl bg-accent/15 text-accent-ink"><Export size={20} /></span>
   return (
     <div aria-hidden className="relative h-[84px]" style={{ width: 56 + (covers.length - 1) * 22 }}>
       {covers.map((c, i) => (

@@ -21,12 +21,35 @@ def acquire(source: str, root: Path, progress=lambda percent: None, meta: dict |
         return Path(source), work
     if not source.startswith(("http://", "https://")):
         raise UserError("Enter a video URL or a file path that exists on this computer.", source)
+    last = -5
+
+    def reported(done, total):  # percent of the current file; video and audio streams each count 0-100
+        nonlocal last
+        if done and total and (percent := min(100, int(done * 100 / total))) >= last + 5:
+            last = percent
+            progress(percent)
+
+    opts = options(str(root / "%(extractor_key)s-%(id)s" / "source.%(ext)s"), cookies, reported)
+    try:
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            info = ydl.extract_info(source)
+            video = Path(info["requested_downloads"][0]["filepath"])
+            if meta is not None and info.get("title"):
+                meta["title"] = info["title"]
+    except yt_dlp.utils.DownloadError as e:
+        raise friendly(e, cookies) from e
+    return video, video.parent
+
+
+def options(outtmpl: str, cookies: str = "", reported=lambda done, total: None) -> dict:
+    """yt-dlp settings shared by clipping and the plain downloader. `reported(done_bytes, total_bytes)` follows the
+    download."""
     opts = {
         "format": "bv*+ba/b",
         # prefer H.264/AAC: YouTube's default pick is often AV1, which is several times slower to decode on CPU
         "format_sort": ["res:1080", "vcodec:h264", "acodec:aac"],
         "merge_output_format": "mp4",
-        "outtmpl": str(root / "%(extractor_key)s-%(id)s" / "source.%(ext)s"),
+        "outtmpl": outtmpl,
         "noplaylist": True,
         "js_runtimes": {"deno": {}, "node": {}},  # YouTube extraction needs a JS runtime now
         "retries": 10,  # the library defaults to no retries (only its CLI sets 10)
@@ -43,28 +66,59 @@ def acquire(source: str, root: Path, progress=lambda percent: None, meta: dict |
         opts["cookiesfrombrowser"] = (cookies.lower(),)
     if os.environ.get("YTDLP_PROXY"):  # ponytail: escape hatch for blocked networks; delete if never used
         opts["proxy"] = os.environ["YTDLP_PROXY"]
-    last = -5
+    return opts
 
-    def reported(done, total):  # percent of the current file; video and audio streams each count 0-100
-        nonlocal last
-        if done and total and (percent := min(100, int(done * 100 / total))) >= last + 5:
-            last = percent
-            progress(percent)
 
-    try:
-        with yt_dlp.YoutubeDL(opts) as ydl:
-            info = ydl.extract_info(source)
-            video = Path(info["requested_downloads"][0]["filepath"])
-            if meta is not None and info.get("title"):
-                meta["title"] = info["title"]
-    except yt_dlp.utils.DownloadError as e:
-        if "not a bot" in str(e) or "Sign in to confirm" in str(e):
-            hint = ("Your cookies did not get past it: sign in to the site in that browser, close it, and try again."
-                    if cookies else "Set YouTube cookies in Settings to a browser you're signed in with "
-                    "(Firefox works best), or use the video file instead.")
-            raise UserError(f"The video host refused this download (bot check). {hint}", str(e)[:300]) from e
-        if cookies and ("cookie" in str(e).lower() or "decrypt" in str(e).lower()):
-            raise UserError("Couldn't read cookies from that browser. Close it and try again, use Firefox, or "
-                            "export a cookies.txt file and give its path in Settings.", str(e)[:300]) from e
-        raise
-    return video, video.parent
+# (phrases yt-dlp or the site puts in the error, what to tell the person); first match wins, so the specific
+# cases sit above the general ones
+_REASONS = [
+    (("http error 429", "too many requests", "rate-limit", "rate limit", "ratelimit"),
+     "The video site is limiting downloads from your internet connection right now (too many requests). Wait "
+     "15 to 30 minutes and try again, or download the video in your browser and choose the file instead."),
+    (("confirm your age", "age-restricted", "age restricted", "inappropriate for some users"),
+     "This video is age-restricted. Set YouTube cookies in Settings to a browser where you're signed in, or "
+     "choose the video file instead."),
+    (("not a bot", "sign in to confirm"),
+     "The video site wants to check you're not a bot. Set YouTube cookies in Settings to a browser you're "
+     "signed in with (Firefox works best), or choose the video file instead."),
+    (("http error 403", "forbidden", "your ip"),
+     "The video site blocked this download from your internet connection. This often happens on VPNs, work or "
+     "shared networks. Try again later or on another network, or choose the video file instead."),
+    (("private video",),
+     "This video is private, so it can't be downloaded. Ask the owner for the file, or choose a different video."),
+    (("members-only", "members only", "join this channel"),
+     "This video is for channel members only, so it can't be downloaded."),
+    (("not available in your country", "geo restrict", "geo-restrict", "not made this video available in your"),
+     "This video isn't available in your country."),
+    (("is live", "live event will begin", "premieres in", "this live stream"),
+     "This is a live stream or a premiere that hasn't ended. Try again once it has finished."),
+    (("video unavailable", "has been removed", "no longer available", "does not exist", "http error 404",
+      "account associated with this video has been terminated"),
+     "This video isn't available. It may have been removed, or the link is wrong."),
+    (("unsupported url",),
+     "That link isn't a video page this app can download from. Paste the link of the video itself."),
+    (("requested format is not available", "no video formats found"),
+     "The video site didn't offer a downloadable copy of this video. Try another link, or choose the video "
+     "file instead."),
+    (("getaddrinfo failed", "name or service not known", "network is unreachable", "timed out",
+      "connection reset", "connection refused", "unable to download webpage", "urlopen error",
+      "remote end closed connection", "no address associated"),
+     "Couldn't reach the video site. Check your internet connection and try again."),
+]
+
+
+def friendly(e: Exception, cookies: str = "") -> UserError:
+    """A download failure in words a person can act on. Unrecognised failures get a calm general line; the raw
+    error always stays in the technical details."""
+    text = str(e).lower()
+    if cookies and ("cookie" in text or "decrypt" in text):
+        return UserError("Couldn't read cookies from that browser. Close it and try again, use Firefox, or "
+                         "export a cookies.txt file and give its path in Settings.", str(e)[:500])
+    for phrases, message in _REASONS:
+        if any(p in text for p in phrases):
+            if cookies and phrases[0] in ("confirm your age", "not a bot"):
+                message = ("The video site still refused with your cookies. Sign in to the site in that browser, "
+                           "close the browser, and try again, or choose the video file instead.")
+            return UserError(message, str(e)[:500])
+    return UserError("Couldn't download that video. Check the link and try again, or download it in your browser "
+                     "and choose the file instead.", str(e)[:500])

@@ -62,7 +62,7 @@ export function FootageReview({ pieces, onStarted, disabled }: {
           <div key={p.id} className="grid gap-3 border-t border-line pt-6">
             <div className="flex items-baseline justify-between gap-4">
               <p className="min-w-0 truncate text-[14px] font-medium text-ink">
-                <span className="tnum mr-3 font-display text-xs text-accent">{String(p.idx).padStart(3, '0')}</span>{p.content.quote.text}
+                <span className="tnum mr-3 font-display text-xs text-accent-ink">{String(p.idx).padStart(3, '0')}</span>{p.content.quote.text}
               </p>
               <span className="tnum shrink-0 text-xs text-ink-3">{mine.length} of {review.want} {review.want === 1 ? 'shot' : 'shots'}</span>
             </div>
@@ -75,12 +75,12 @@ export function FootageReview({ pieces, onStarted, disabled }: {
                     <button type="button" onClick={() => toggle(p, o.key)} aria-pressed={on}
                       title={`${o.candidate.creator || 'Unknown creator'} · ${o.queries.join(', ')}`}
                       className={cx('group relative block aspect-[9/16] w-full overflow-hidden rounded-[14px] bg-black/30 transition-[box-shadow,transform] duration-200',
-                        on ? 'shadow-[0_0_0_2px_var(--color-accent),0_12px_28px_-12px_rgb(240_135_58/0.5)]'
-                          : 'shadow-[inset_0_0_0_1px_rgb(255_244_232/0.1)] hover:-translate-y-0.5')}>
+                        on ? 'shadow-[0_0_0_2px_var(--color-accent),0_12px_28px_-12px_rgb(17_18_20/0.22)]'
+                          : 'shadow-[inset_0_0_0_1px_rgb(17_18_20/0.1)] hover:-translate-y-0.5')}>
                       <img src={mediaUrl(o.thumb)} alt={`Footage option by ${o.candidate.creator || 'unknown'}`} loading="lazy"
                         className={cx('absolute inset-0 size-full object-cover transition-opacity duration-200', !on && 'opacity-70 group-hover:opacity-100')} />
                       {on && (
-                        <span className="tnum absolute left-2 top-2 grid size-6 place-items-center rounded-full bg-accent text-2xs font-semibold text-ground">{order + 1}</span>
+                        <span className="tnum absolute left-2 top-2 grid size-6 place-items-center rounded-full bg-pop text-2xs font-semibold text-white">{order + 1}</span>
                       )}
                       <span className="absolute inset-x-1.5 bottom-1.5 flex flex-wrap items-center gap-1">
                         {o.candidate.asset_type === 'video' && (
@@ -89,7 +89,7 @@ export function FootageReview({ pieces, onStarted, disabled }: {
                           </span>
                         )}
                         {o.note && (
-                          <span className="rounded-full bg-black/60 px-1.5 py-0.5 text-[10px] text-ink-2">
+                          <span className="rounded-full bg-black/60 px-1.5 py-0.5 text-[10px] text-white/80">
                             {o.note === 'used' ? 'Used before' : 'Like recent footage'}
                           </span>
                         )}

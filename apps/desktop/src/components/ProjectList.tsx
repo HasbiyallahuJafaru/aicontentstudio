@@ -26,7 +26,7 @@ export function ProjectList({ projects, selected, onSelect, onDelete }: {
             aria-current={selected === p.id || undefined}
             className={cx(
               'group grid w-full grid-cols-[44px_minmax(0,1fr)_auto] items-center gap-4 rounded-[16px] px-3 py-2.5 text-left transition-colors duration-150',
-              selected === p.id ? 'bg-white/[0.08]' : 'hover:bg-white/[0.05]',
+              selected === p.id ? 'bg-black/[0.08]' : 'hover:bg-black/[0.05]',
             )}
           >
             <Cover src={p.cover} quote={p.quote} size="sm" className="!rounded-[10px]" />
@@ -39,7 +39,7 @@ export function ProjectList({ projects, selected, onSelect, onDelete }: {
               </span>
             </span>
             <span className="tnum grid justify-items-end text-xs">
-              <span className={p.status === 'failed' ? 'text-danger' : p.status === 'generating' ? 'text-accent' : 'text-ink-2'}>{projectState(p)}</span>
+              <span className={p.status === 'failed' ? 'text-danger' : p.status === 'generating' ? 'text-accent-ink' : 'text-ink-2'}>{projectState(p)}</span>
               <span className="text-ink-3">{formatDate(p.created_at)}</span>
             </span>
           </button>

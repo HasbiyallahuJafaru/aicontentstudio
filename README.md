@@ -114,7 +114,7 @@ Open Settings on first run. Nothing is required to launch the app, and each key 
 | OpenRouter | Every AI call: writing (batch plans, quotes, narration, per-platform copy), clip selection, Whisper transcription for clips and karaoke word timings, and the narration voice |
 | Pexels (Unsplash optional) | Stock footage and photos for written pieces |
 | Buffer | Scheduling and publishing, via OAuth. Optional |
-| Metricool | Publishing through the Metricool MCP. Optional |
+| Metricool | Publishing through the Metricool MCP. Optional, connect it with one button in Settings (no key) |
 
 Models are set in Settings → AI as OpenRouter ids: `deepseek/deepseek-v4-pro` writes, `deepseek/deepseek-v4.1-flash`
 scans transcripts. Transcription uses `openai/whisper-large-v3-turbo`, the cheapest Whisper on OpenRouter.

@@ -20,10 +20,12 @@ class PlanItem(BaseModel):
     visual_subject: Annotated[str, capped(80)] = Field(min_length=3)
     visual_type: Literal["video", "image"]
     intensity: Literal["low", "medium", "high"]
-    narration_style: Annotated[str, capped(60)] = Field(min_length=3)
+    narration_style: Annotated[str, capped(60)] = ""  # video plans only; quote plans have nothing to narrate
 
 
 class BatchPlan(BaseModel):
+    # the planner's one-line reading of the topic; every piece is written against it (prompts.py)
+    reading: Annotated[str, capped(300)] = ""
     batch_theme: Annotated[str, capped(80)] = Field(min_length=1)
     pieces: list[PlanItem] = Field(min_length=1, max_length=20)
 
@@ -39,6 +41,9 @@ class BatchPlan(BaseModel):
 class Quote(BaseModel):
     text: Text = Field(min_length=8, max_length=180)
     author: str | None = None  # null for original lines; the real public-domain source for attributed genres
+    # design copy for the still (app/design.py); optional and capped so a model that skips them never fails a piece
+    emphasis: Annotated[str, capped(40)] | None = None  # the words of the quote the design stresses
+    kicker: Annotated[str, capped(40)] | None = None    # a quiet tracked line under the quote
 
 
 class Narration(BaseModel):
@@ -89,8 +94,9 @@ class Callout(BaseModel):
 
 
 class PieceContent(BaseModel):
+    """A written piece. Quote images have no narration (nothing is spoken); VideoPieceContent requires it."""
     quote: Quote
-    narration: Narration
+    narration: Narration | None = None
     visual: Visual
     design: DesignHints
     metadata: Metadata
@@ -102,3 +108,8 @@ class PieceContent(BaseModel):
     @classmethod
     def _two_at_most(cls, v: list) -> list:
         return v[:2]  # more is clutter; trimmed, not rejected, like every other over-long model field
+
+
+class VideoPieceContent(PieceContent):
+    """Anything that may become a video must carry the script it is cut to."""
+    narration: Narration

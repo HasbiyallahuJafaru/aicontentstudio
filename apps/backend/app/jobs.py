@@ -9,7 +9,7 @@ import uuid
 
 from app import assets, clips, content, export, renders
 from app.database import connect
-from app.errors import UserError
+from app.errors import UserError, explain
 from app.events import emit
 
 log = logging.getLogger("jobs")
@@ -111,7 +111,7 @@ def _run(job_id: str, project_id: str, kind: str = "generate", piece_ids: list[s
         log.exception("job %s failed", job_id)
         _project_status(project_id, "failed")
         _set(job_id, "job.failed", status="failed",
-             error=json.dumps({"message": "Generation failed unexpectedly.", "detail": repr(e)}))
+             error=json.dumps(dict(zip(("message", "detail"), explain(e)))))
     else:
         _project_status(project_id, "ready")
         _set(job_id, "job.completed", status="completed", stage="Done", progress=1.0)

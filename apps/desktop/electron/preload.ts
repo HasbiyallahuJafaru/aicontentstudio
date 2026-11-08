@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
+import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from 'electron'
 
 function listen(channel: string, cb: (...args: any[]) => void) {
   const handler = (_e: IpcRendererEvent, ...args: any[]) => cb(...args)
@@ -22,6 +22,9 @@ const api = {
   openDataDir: () => ipcRenderer.invoke('app:openDataDir'),
   openExportPath: (p: string) => ipcRenderer.invoke('app:openExportPath', p),
   openExternal: (url: string) => ipcRenderer.invoke('app:openExternal', url),
+  pickVideo: (): Promise<string | null> => ipcRenderer.invoke('app:pickVideo'),
+  /** The on-disk path of a file dropped onto the window (Electron removed File.path). */
+  pathForFile: (file: File): string => webUtils.getPathForFile(file),
 }
 
 contextBridge.exposeInMainWorld('studio', api)

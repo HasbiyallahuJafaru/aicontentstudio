@@ -127,3 +127,23 @@ class Deletes(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class Showcase(unittest.TestCase):
+    """The Dashboard crowd: fresh pieces show at once as drafts; a piece whose render was deleted is a draft again."""
+
+    @classmethod
+    def setUpClass(cls):
+        database.migrate()
+
+    def test_new_pieces_show_as_drafts_and_failed_ones_never(self):
+        from app import content
+        p = projects.create({"topic": "showcase", "tone": "hope", "quantity": 1, "platforms": ["tiktok"]})
+        with database.connect() as conn:
+            for idx, status in ((1, "written"), (2, "failed")):
+                conn.execute("INSERT INTO content_pieces (id, project_id, idx, angle, quote, content, status) "
+                             "VALUES (?,?,?,?,?,?,?)", (f"sc{idx}", p["id"], idx, "a", f"line {idx}", "{}", status))
+        shown = {s["id"]: s for s in content.showcase(50)}
+        self.assertIn("sc1", shown)
+        self.assertIsNone(shown["sc1"]["image"], "not rendered yet: a draft, never a stand-in picture")
+        self.assertNotIn("sc2", shown)

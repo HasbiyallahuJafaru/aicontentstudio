@@ -1,6 +1,6 @@
 # Handover
 
-Last updated 2026-11-07. This is the single source of truth for progress and next steps; `.claude/handover.md` is
+Last updated 2026-11-08. This is the single source of truth for progress and next steps; `.claude/handover.md` is
 the older milestone log (M1-M8) and is superseded where they disagree. Read this, then `.claude/CLAUDE.md`.
 
 ## Start here
@@ -16,6 +16,223 @@ the older milestone log (M1-M8) and is superseded where they disagree. Read this
   failed on the now-fixed crash: re-render it as the first real check.
 - Next real work: step 12 (render a real piece end to end, clip a real video). It now also checks the footage
   review with real Pexels results and the editing-skills pass by eye and ear.
+
+## Landing site ytclipper.xyz (2026-11-08, uncommitted, not deployed yet)
+
+- `apps/site/`: Vite + plain TS + three.js, one page, for download. `npm run dev|build|preview` inside it. Hero is
+  `src/hero.ts` (real renders as a film strip, a lime playhead cuts it, pieces lift into a fan; auto-fits by
+  projecting the loop's poses; pauses off-screen; still under reduced motion). Images come from the app via
+  `scripts/prepare-assets.py` (renders, real UI screenshots, icon, og.png). Light + dark.
+- Vercel: project root `apps/site` (vercel.json there). Domain ytclipper.xyz still to attach.
+- **Download link** (`src/main.ts` DOWNLOAD_URL) expects a GitHub release asset named `YT-Clipper-Setup.exe` on
+  HasbiyallahuJafaru/aicontentstudio; no release exists yet, so the button 404s until one is published.
+
+## One-click Metricool + first-run setup screens (2026-11-08, uncommitted)
+
+- **Clip from your own file:** the Video field has **Choose a file** (native picker, `app:pickVideo` IPC) and takes a
+  dropped video (`studio.pathForFile`, Electron webUtils). The backend already clipped local paths as-is.
+- **Plain-language errors everywhere:** `errors.explain(e)` turns unplanned exceptions (no internet, full disk, locked
+  file, out of memory) into calm words for every RPC and job; `acquire.friendly()` now names rate limits (429), IP
+  blocks (403), bot checks, age/private/members-only/region/removed videos, live streams, bad links and no internet,
+  with a calm fallback. Raw errors stay under "View technical details". `tests/test_errors.py`.
+- **Create cards:** one bundled photo per kind (`src/assets/create/`, credits JSON), no runtime fetching.
+- **Dashboard crowd:** cards spaced by their real widths, no overlap.
+
+- **Metricool connects with a button** (`publish/metricool.py`): Metricool's auth server allows dynamic client
+  registration + public PKCE clients, so the app registers itself once (`metricool_client` in the credentials
+  table), opens the consent page, and the shared loopback catcher (`oauth.py`, now provider-agnostic via
+  `oauth.begin(provider)` + `EXCHANGES`) stores the bearer token. The `METRICOOL_API_KEY` secret is gone.
+  RPC: `publish.metricool_connection|connect_url|disconnect`. Verified against fakes only.
+- **Setup screens** (`pages/Setup.tsx`): after the splash, if the OpenRouter or Pexels key is missing, one screen
+  per key (OpenRouter, Pexels, Unsplash optional), Connect Metricool, then a summary; every step skippable.
+  Smoke walks it on its fresh first launch (`0c/0d/0e-setup-*.png`); smoke:packaged skips through it.
+- **Installer built 2026-11-08** (`apps/desktop/release/AI Social Content Studio Setup 0.1.0.exe`, 331 MB, unsigned).
+  Build gotcha: electron-builder's rename `win-unpacked.tmp -> win-unpacked` hit EPERM every time inside the
+  workspace (something, likely VS Code's watcher, holds the fresh folder). Building outside the repo works:
+  `npx electron-builder --win nsis --config.directories.output=<folder outside the repo>`, then
+  `ACS_UNPACKED=<that>/win-unpacked node scripts/smoke-packaged.mjs`. The first packaged launch can time out
+  (unsigned exe being scanned); the second run passed.
+
+## White redesign + Library carousel + rail label fix (2026-11-08, uncommitted)
+
+Owner: the inside of the app lacked imagery and the colours were off; wants a white background, a colourful
+contrast palette, no gradients, a more artistic font pairing (references: Lumin, Cloud Dock, Flix). Taste skill used.
+
+| Change | Where |
+|---|---|
+| Tokens: white flat room, black ink/rail/primary, lime accent as solid fills only, content tiles (lime/violet/coral/sky), `text-accent-ink` for lime words. `.glass` = solid white panel; `.ambient` flat; grain, glows, spotlight glow, button sheen removed. | `styles/index.css` |
+| Fonts: Bricolage Grotesque headings (self-hosted from `apps/backend/assets/fonts`; the npm install hung on this network) + Geist body; Sora no longer imported (package still installed). | `styles/index.css`, `src/assets/fonts/` |
+| Every gradient removed (Cover, Create, Dashboard, Library, Splash); dark-theme tints swept to light; Create kind cards on solid lime/violet/coral tiles. | sweep over `components/*`, `pages/*` |
+| Shell: black rail, lime active item, black tooltips, no canvases (Ember + SplashCursor unmounted, files kept). Splash: colourful tilted wall, content on a white panel. | `layouts/Shell.tsx`, `pages/Splash.tsx` |
+| **Rail labels drew under the page** (owner report): the rail's entrance animation keeps a transform, which gives it its own layer below the page's. Fix: `relative z-20` on the rail. Smoke checks it with motion on (proved: fails without the fix, passes with it). | `Shell.tsx`, `scripts/smoke.mjs` |
+| **Library = React Bits Masonry** with full-screen carousel (arrows, Escape, open/close animations); vendored with Phosphor icons (no @hugeicons), a `renderAction` slot (delete on hover + colour swatches), solid caption band, white lightbox; drag-to-reorder off (order isn't stored). Smoke opens it, steps, closes. | `components/Masonry.tsx/.css`, `pages/Library.tsx` |
+
+| **Dome in colour**: the clips keep 55% of their colour (`grayscale(0.45)`, owner request), still shown at 30% so text reads on top. Alternative reading if the owner meant overall strength: set the tile opacity instead. | `index.css` `.dome-tile img` |
+| **Dome plays clips** (owner: posters looked repetitive, wants the feel of video, lightweight; then: all tiles restarted at the same moment): 12 free Pexels clips as seamless animated WebP loops, each a different length (3.2-5.4 s, the last 0.6 s crossfades into the start, so no clip ever snaps back), ~2.4 MB total; frame counts and seam smoothness checked per clip, a near-black candle clip and a frozen rain clip were replaced. | `scripts/make-dome-clips.py`, `src/assets/dome/`, `Shell.tsx`, `DECISIONS.md` |
+| **Background dome** (owner: "a rotating image gallery as the background", reference image of a dome gallery): the camera inside a sphere lined with rounded greyscale tiles (28 columns x 9 rows of the bundled renders), turning every 3 min, ghosted to 22% behind the pages; the title bar is a solid strip over it. CSS 3D only. (A Library "Orb view" was built first and removed: the owner wanted the background, not a Library feature.) | `components/DomeBackground.tsx`, `index.css` `.dome-*`, `Shell.tsx` |
+
+Verified: typecheck, build, smoke (several runs), screenshots reviewed (splash, dashboard, create, quote images,
+exports, library, carousel, settings). Not run since: backend tests (no backend change in this pass). Not seen: the
+splash drift and Masonry entrance with motion on (smoke runs motion off).
+
+## Splash background: tilted wall of renders (2026-11-08, uncommitted)
+
+Owner asked for React Bits Pro "Tilted Tiles" behind the splash. Pro needs a paid license key (none on this machine,
+no shadcn setup), so `components/TiltedTiles.tsx` is our own CSS version: 11 tilted columns of the 8 bundled
+design renders (`assets/splash/`), each column doubled and sliding half its height (seamless), alternate columns
+reversed at 48/62/76 s; `tile-up` keyframes under no-preference in `index.css` (reduced motion: still wall). It
+replaces the Ember glow on the splash only (Ember no longer loads there); 35% opacity under a Galaxy Black radial so
+the fan, title and button read. Verified: typecheck, build, smoke, splash screenshot reviewed (a still frame:
+smoke runs motion off, so the drift itself was not seen).
+
+## ClipperAi port: what was missing around the engine (2026-11-08, uncommitted)
+
+Owner asked to review the ClipperAi repo (GitHub HasbiyallahuJafaru/ClipperAi, main) and bring over anything missing.
+Finding: the engine (`clipper.py`: acquire, Whisper chunks, two-pass selection, snap, face crop, captions, render)
+is fully in `app/clipper/` already, and ours is ahead (glides, tightening, cold open, styled captions, motion
+titles). Billing, accounts, cloud storage, mobile and website stay out (local and free). Owner picked all five extras:
+
+| Feature | Where |
+|---|---|
+| **Edit clip copy**: title, hook, description, hashtags, each platform's post; a post over its network limit is refused with the numbers, never trimmed (ClipperAi ClipEdit). "Edit copy" in the clip preview. | `clips.update` (`clips.py`), `Clips.tsx CopyEditor` |
+| **Export spreadsheet**: a clip export also writes `<project>_clips.csv` (BOM, one column per platform) and `<project>_clips.json`; deleting the export removes them. | `export._clip_sheets` |
+| **Name + thumbnail before download**: public oEmbed (YouTube, Dailymotion, TikTok, X, Vimeo, ...) names the project and stores its thumbnail (`brief.thumb`, `media/clipwork/thumbs/`) in a background thread right after create; never overrides a name set meanwhile; the thumbnail is the project cover until clips exist and shows in the clip header. | `app/clipper/preview.py`, `projects.py` |
+| **Plain downloader**: "Just download the video" under the link on the clip form; MP4 to ~/Downloads with progress and "Show in folder" (Explorer, only paths it wrote). Shares yt-dlp options and bot-check wording with clipping (`acquire.options` / `friendly`). | `app/downloader.py`, `Create.tsx DownloadOnly` |
+| **Posting calendar**: the backend already had `publish.buffer_calendar`; added `dry_run` (ClipperAi's plan step) and the UI: "Plan calendar" on a clip project with approved clips, channels, weekdays, times, start date, a preview of every slot, then "Schedule N". Channel picker shared with single-clip publish. | `publish/buffer.py`, `Clips.tsx CalendarDialog` |
+
+Verified: 12 new backend tests (`tests/test_clipper_extras.py`, no network) and the other backend tests except one,
+typecheck, build, smoke (screenshots: clip form, clip project, preview with "Edit copy"). One failure:
+`test_motion` real render, Edge exits on launch ("Target closed", 69 Edge processes running): machine state, the same
+test passed earlier today and motion.py is untouched. **Not verified by eye or test:** saving an edit in the UI,
+the calendar dialog against real Buffer, a real YouTube download through the button, a real oEmbed fetch.
+
+## 60-30-10 palette 2: Galaxy Black, Seal Grey, Sunrise Orange (2026-11-08, uncommitted)
+
+Owner asked to try a second palette, same rule, same layouts. Replaces the white/black/red pass below (its notes stay
+for the history). Galaxy Black #111216 ground, Seal Grey #4a4c50 glass/rail/inputs, Sunrise Orange #e67451 accent
+(only Sunrise Orange has a published hex; the other two are our picks, swap in `styles/index.css` if the owner has
+exact values). Text on orange is Galaxy Black (`--color-on-accent`) because white on #e67451 fails AA. `chip-on` is an
+orange tint with orange text. Silk/glows/embers repainted (`Ember.tsx`), cursor ink orange + grey (`Shell.tsx`),
+component tints swept back to the dark-theme versions. Verified: typecheck, build, smoke (first run failed, cause
+not captured; the rerun passed), screenshots reviewed (splash, dashboard, quote images, project).
+
+## 60-30-10 recolour: white, black, hot red (2026-11-08, uncommitted)
+
+Owner: "the colours do not match, I don't like the purple gradients"; wants white 60 / black 30 / hot red 10, same
+structure and layouts. Colour-only change; Ember Pop below is superseded.
+
+| Change | Where |
+|---|---|
+| Tokens flipped to light: ground #f5f5f3, panel white, ink #0c0c0e / #45454b / #6e6e75, black hairlines, accent and `--color-pop` hot red #e5102e (white text passes AA), danger #b4161b, ok #23803a; `--color-violet` removed. `bg-pop` solid red, `chip-on` solid black, `text-pop` solid red, white glass, faint red spotlight and ambient. | `styles/index.css` |
+| Silk + glows repainted (white cloth, graphite folds, red rim mixed not added, red embers with normal blending); `pop` prop deleted, splash and Shell share one palette. | `components/Ember.tsx` |
+| Background silk now flows all the time (owner request), not only during jobs; embers still mark a running job. | `layouts/Shell.tsx` |
+| Black nav rail with red active item; tooltips black with white text; cursor ink red + black; dark tints swept to light ones; inputs, dropdowns and the modal white; video/media frames and placeholder covers black; text on photos white. | `layouts/Shell.tsx`, `components/*`, `pages/*` |
+
+Verified: 204 backend tests, typecheck, build, smoke (first run failed on a stray click navigating to the Dashboard
+mid clip job, the rerun passed), screenshots reviewed (splash, dashboard, create, quote images, project, preview,
+queue, library, exports, settings, footage review). **Not checked by eye:** the clips page beyond the smoke run.
+
+## Ember Pop redesign, subtitles default, dashboard drafts (2026-11-08, uncommitted)
+
+Owner feedback: "monochromatic, doesn't appeal to the younger generation"; owner picked **Ember Pop** (keep the dark
+warm base and ember orange, add coral pink + electric violet). Redesign skill audit applied.
+
+| Change | Where |
+|---|---|
+| Tokens `--color-pop` / `--color-violet`; utilities `bg-pop` (contrast-safe gradient), `chip-on` (the one selected look), `text-pop` (gradient keyword, drifts with motion on), `btn-shine` (hover sheen), `spotlight` + `spot()` (cursor light on cards). `.ambient` gains coral + violet lights. | `styles/index.css`, `components/ui.tsx` |
+| Primary buttons gradient + sheen; every selected chip / Queue tab / Library filter / palette chip uses `chip-on`; swatch selection ring in coral; active rail item tinted; step bar + all progress bars gradient; FootageReview pick numbers gradient. | `ui.tsx`, `StylePicker.tsx`, `Queue.tsx`, `Shell.tsx`, `Create.tsx`, `Project.tsx`, `Clips.tsx`, `FootageReview.tsx` |
+| Silk wave `pop` mode: rim light violet (left) -> coral -> ember (right, under the lamp), plum deep folds; glow layer adds coral and violet lights; a screen-blend colour wash over it. Splash keeps the original (`pop` off). Pointer ink: orange, coral, violet. | `components/Ember.tsx`, `layouts/Shell.tsx` |
+| Dashboard: headline keyword "making" in gradient; hero and choice cards spotlight; crowd shows the newest PIECES (`pieces.showcase`): rendered image, or a labelled "Draft" frame of the quote, so generated content appears at once and a deleted render shows as a draft, never a finished post; reloads when a job finishes (`useBusy`). | `Dashboard.tsx`, `content.showcase`, `rpc.py` |
+| **Subtitles default ON** for narrated videos (backend default and Create), with the reason shown. Investigation: subtitles were proven to burn across every shot (multi-shot render with real motion layers, frame diffs at every 0.5 s, and real Whisper timings across a 17.8 s narration); the "only on the first clip" text was the hook title (first 2.6 s) on a render with subtitles off. Footage is already trimmed per shot (each shot takes ~1.5-3 s from its own seek point). | `projects.py`, `Create.tsx` |
+
+Verified: 204 backend tests, typecheck, build, smoke, screenshots reviewed (dashboard, create, quote images, settings,
+queue, library, exports). Smoke run once flaked (Export button detached during an owner message mid-run); the rerun
+passed with no console errors.
+
+## Generation engine overhaul + stock budget + palette (2026-11-08, uncommitted)
+
+Owner report: every request came back as an early-morning narration script ("At 5:47 a.m. you step outside...
+The breath you see is proof you stayed"), off the topic, and as a script even for quote images. Causes: the one
+system prompt modelled "The alarm reads 4:52" and asked twice for "an hour of the day"; the planner asked for "a
+4am-style moment"; one recipe served every kind of content; nothing pinned down what the topic meant.
+
+| Change | Where |
+|---|---|
+| **Two writers.** QUOTES_SYSTEM (quote images: quotes only, 4-22 words, facets of the topic, one photo search) and VIDEO_SYSTEM (narrated shorts, the craft kept, shots kept). Shared TOPIC_RULES: read the topic literally, never drift to a neighbouring theme, images from the topic's own world, timestamps/alarms/"you step outside"/gyms/mirrors banned unless asked. Genre voices split into `quote` and `voice`; "2am" and the 4:52 examples gone. | `creative/prompts.py` |
+| **Topic reading.** The plan returns `reading` (one sentence of what the user means); stored on every piece (`content.reading`) and fed to every piece prompt and to "redo one part". Each piece prompt ends with a drift self-check. | `schemas.BatchPlan.reading`, `content.py` |
+| Quote pieces carry no narration (`PieceContent.narration` optional; `VideoPieceContent` requires it for anything that may become video). UI hides narration and its "Redo" for them. | `schemas.py`, `model.py`, `Project.tsx`, `Preview.tsx` |
+| **Stock budget.** Providers in order (Pexels first; Unsplash only if fewer than 3 usable results), one request each; 6-hour search cache (re-rolls cost nothing); lazy queries (an image piece normally costs ONE search, a video piece one per shot, flat fallback queries only if needed); progress shows "N stock searches so far". Was: up to 6 queries x every provider per piece. | `assets/__init__.py _search_all, _propose_one` |
+| **Footage colour.** `brief.palette` (auto, warm, cool, earth, mono, dark, light): photos filtered at the source (Pexels `color`, Unsplash `color`), every candidate (videos too) ranked by thumbnail match; auto = no filter, soft lean to the genre's look. Picker on the quote-images Design step and the videos Look step. | `visual.PALETTES/palette_match`, `providers.py`, `StylePicker.tsx PalettePicker` |
+| Bugs: a quote piece without narration crashed the project page into a blank window (fixed, plus a `PageBoundary` so no page can blank again); the Dashboard crowd showed quote frames for pieces whose render was deleted (now real renders only). Dashboard crowd sized from the room under the buttons (cqh), smoke asserts no overlap at 1024/1440/1920. | `Project.tsx`, `components/PageBoundary.tsx`, `Dashboard.tsx` |
+
+Verified on the owner's real data: a fresh "beauty of autumn" generation came back on topic with a reading and no
+narration. **Not verified:** a video generation with the new writer through OpenRouter; real Pexels palette results.
+
+## Dashboard hero (2026-11-08, uncommitted)
+
+Owner reference: a centred landing hero (two-line headline, one sentence, dark + light pill buttons, a crowd of
+people rising from the card's bottom edge); our colours, no nav bar. Built as one glass card:
+
+| Change | Where |
+|---|---|
+| Headline "Good morning, / what are we making today?" (Reveal), the real activity sentence, "New project" pill and a "Pick up {latest}" pill with the project's real cover as its avatar. | `pages/Dashboard.tsx Hero` |
+| The crowd: seven tiles in an arch rising from the card's bottom edge (newest work biggest, front and centre; tilts lean inward; a soft floor fade). Real covers first (clickable, open the project), written-but-unrendered pieces on their lit frames next, then bundled design-engine samples (8 in `src/assets/splash/`, never repeated, not clickable). Splash keeps the first five. | `Dashboard.tsx SLOTS/PROMINENCE` |
+| Recent projects grid stays below; first run shows three steps under the hero. The old "Pick up where you left off" card (with progress bars) is gone; the grid shows each project's state. | `Dashboard.tsx` |
+
+Verified: typecheck, build, smoke (dashboard empty and with data, `6b-dashboard-data.png`), screenshots reviewed.
+
+## Bulk CSV quotes, pointer ink, splash card fan (2026-11-08, uncommitted)
+
+| Change | Where |
+|---|---|
+| **CSV import** for "I have my own" quotes: button or drop onto the box. Python parses it (`quotes.from_csv`): delimiter sniffed (comma, semicolon, tab, pipe), UTF-8 / UTF-16 / Excel cp1252, header names recognised (quote/text/line + author/by/source, any order), no header = quote + author only when the second column reads like names (else each row is one quote that contained a comma). Every skipped row comes back with its reason (too long, too short, repeat, past the limit). Lines land in the box as editable "quote — Author". | `app/quotes_csv.py`, `Create.tsx QuotesInput`, `tests/test_quotes_csv.py` |
+| **Bulk:** own quotes up to 100 per project (AI-written stays 20); planning runs 20 at a time. `split_author` no longer treats a plain hyphen as an author unless what follows reads like a name ("Work hard - play hard" stays whole). | `projects.py`, `content.py` |
+| **Pointer ink** (owner request): React Bits SplashCursor in the Shell's background layer, ember palette, medium quality, behind the glass, no intro, off under reduced motion (`useReducedMotion`, live). | `components/SplashCursor.tsx`, `layouts/Shell.tsx`, `lib/studio.ts` |
+| **Splash card fan** (owner request, unlocks the splash for this): React Bits BounceCards in place of the aperture icon, five bundled square renders from our design engine (noir, paper, statement, classic, stack). | `components/BounceCards.tsx`, `pages/Splash.tsx`, `src/assets/splash/` |
+
+Smoke covers: CSV import (2 added, 1 skipped with reason), the splash fan (5 decoded images), pointer ink absent
+under reduced motion and drawn with motion on (`0b-pointer-ink.png`).
+**Not verified:** the ink's look and cost on the owner's 1.5x display while a job animates the silk (two WebGL
+layers at once); regenerate `src/assets/splash/` with the design engine if the designs change.
+
+## Create split by what you're making (2026-11-08, uncommitted)
+
+Owner ask: Create merged every kind of content into one form; pick the kind up front, fill a couple of short forms,
+see a preview sample, then render and export.
+
+| Change | Where |
+|---|---|
+| Create opens on a chooser: **Quote images**, **Narrated videos**, **Clips from a video**. Each card's picture is real renderer output (three design samples fanned; caption swatches in a 9:16 frame). "All formats" goes back. | `pages/Create.tsx` (`Chooser`) |
+| **Quote images** flow, two steps: Quotes (the AI's, or "I have my own": one per line, "— Author" keeps an attribution, max 20, 180 chars) then Design (design swatches, headline font, text position, platforms; Instagram Feed default). Right panel = the batch's first three images in the chosen design with the user's own lines, Auto resolved per piece. | `ImagesForm`, `QuotePreview`, `previews.designs(samples)` |
+| **Narrated videos** keeps Brief / Delivery / Look; the Output switch became "Matching feed picture" (video only, or also a 4:5 picture, which shows the design picker). Clips form unchanged. | `VideoForm`, `ClipFormFields` |
+| Backend: `brief.quotes` (quantity follows it); the plan sees the list, each piece prompt fixes its quote word for word, and `generate` forces the user's text and author (no repeat check on the user's own lines). Image-only pieces no longer generate narration at render time (no TTS cost or key needed). | `projects.py`, `creative/prompts.py`, `content.py split_author`, `renders.py` |
+| `Textarea` primitive. Smoke walks the chooser, the quote-images flow with own quotes (waits for real previews), videos with the 4:5 picture on, and clips via the new card. | `components/ui.tsx`, `scripts/smoke.mjs` |
+
+Fixed on the way: Next on the step before last reused its DOM button as the submit button, so the click created the project early (React re-keyed buttons in `Stepped`). With own quotes the theme is optional (blank = the first quote's opening words). Verified 2026-11-08: `npm test` green (186 backend, typecheck, build, smoke incl. the chooser and quote-images flow), screenshots reviewed.
+**Not verified:** a real OpenRouter run with own quotes (the fake model path is tested); Auto in the preview uses
+no composition hint, so a real batch can swap designs on even pieces when the writer's hint fits the genre.
+
+## Designed stills and caption styles (2026-11-08, uncommitted)
+
+Owner brief: stills were bland (one Sora block over a scrim, long quotes ran off the bottom) and subtitles had one
+look. Reference images: a noir film still with condensed caps, a crumpled-paper note, a whisper line over a scene, a
+Swiss "MINDSET" poster. "Think like a high end graphic designer"; subtitles need choices for font, position, everything.
+
+| Change | Where |
+|---|---|
+| **Seven still designs**, each its own type pairing, grade and texture: noir (mono still, condensed caps, tracked sub-line), paper (crumpled sheet, heavy lowercase printed into it), whisper (one small line, the turn in bold), statement (Swiss poster: big word in reading order, photo rising out of the ground), classic (italic serif, accent quote mark, hairline, name), split (photo over a palette panel, editorial grotesk), stack (fitted condensed capitals). Rules: balanced rags, each sentence on its own line, no lone last word, text sized to fit inside margins, grain under the type, soft shadows only. | `app/design.py`, `render.render_image` |
+| Auto picks per piece from the genre (and the writer's composition hint), rotated so a project reads as a series; length limits keep short-copy designs off long quotes. Brief: `image_design`, `image_font` (headline override), `image_position`. | `design.pick`, `projects.CreativeBrief`, `renders.py` |
+| Writer returns optional `quote.emphasis` and `quote.kicker` (capped, never fail a piece); heuristics fill in when missing. | `creative/schemas.py`, `creative/prompts.py` |
+| **Six caption styles** (karaoke default, unchanged byte for byte; pop, clean, boxed, minimal, serif) with font, position (lower/middle/upper), size, highlight (incl. the project palette) and letter case. Same `CaptionStyle` on write briefs (`captions`) and clip briefs. Key words = quote emphasis + callout words. | `clipper/captions.py`, `renders._subtitles_ass`, `clipper/render_clip.py`, `clips.py` |
+| **Create page swatches** drawn by the real renderers over the newest Library picture: `design.previews`, `captions.previews` (libass via ffmpeg). Pickers on the Look step (image design when the output includes images, caption picker when subtitles are on) and on the clip form. | `app/previews.py`, `components/StylePicker.tsx`, `pages/Create.tsx` |
+| Fonts: nine OFL families bundled in `assets/fonts` (see DECISIONS.md); Montserrat moved there from the clipper. | `assets/fonts`, `motion.py`, `backend.spec` |
+
+Verified: backend suite (182 + 11 new in `tests/test_design.py`), typecheck, contact sheets of every design on a real
+Library photo, caption swatches through real libass, a real `render_video` frame with the pop style in Big Shoulders.
+**Not verified:** a real generation end to end (the writer's new `emphasis`/`kicker` fields with OpenRouter), the
+Create page pickers by eye in the app, a packaged build with the new fonts. Noticed in passing, not investigated: a
+one-off `render_video(still=True, src_duration=0)` with no shot plan produced a 0.92 s video track under 1.6 s audio;
+production passes a shot plan, so check a real still-only render.
 
 ## Render fix, footage review, project palette, deletes (2026-11-07, in `ce2ca5a`)
 
@@ -99,7 +316,7 @@ npm run smoke:packaged  # launches the built exe, checks every exe's signature, 
 
 | Area | Now | Where |
 |---|---|---|
-| Keys | One `OPENROUTER_API_KEY` for every AI call (writing, clip selection, transcription, narration) + `PEXELS_API_KEY`; Unsplash optional; Metricool optional. DeepSeek/Groq keys removed. | `creative/model.py` (`BASE`, `api_key`), `electron/secrets.ts` |
+| Keys | One `OPENROUTER_API_KEY` for every AI call (writing, clip selection, transcription, narration) + `PEXELS_API_KEY`; Unsplash optional. Metricool connects with a button (OAuth), no key. DeepSeek/Groq keys removed. | `creative/model.py` (`BASE`, `api_key`), `electron/secrets.ts` |
 | Writing | `deepseek/deepseek-v4-pro` writes plans, pieces (+metadata), clip picks, post copy; `deepseek/deepseek-v4.1-flash` scans transcripts (clip pass 1). Requests send `provider.require_parameters` (JSON-mode providers only). Bare legacy names map to OpenRouter ids. | `settings.py`, `clipper/select.py` |
 | Transcription | `openai/whisper-large-v3-turbo` via OpenRouter, 300 s chunks (60 s upstream limit). Segment-estimated words if a provider returns none. | `clipper/transcribe.py` |
 | Narration | Gemini TTS `google/gemini-3.8-flash-tts` via `/audio/speech`. Gemini only returns PCM (rate/channels in the content type), wrapped as WAV with stdlib `wave`. 18 voices, default Charon, picked per project; the piece's `delivery` becomes `instructions`. Kokoro/Windows voices and all `tts_*` settings removed. | `tts.py`, `renders.py` |
@@ -143,7 +360,8 @@ npm run smoke:packaged  # launches the built exe, checks every exe's signature, 
       and callouts). Judge it frame by frame and by ear; note time per video with motion on.
 - [ ] Clip a real video: dead-air cuts land between words with no clicks; the cold open is a real payoff line;
       caption pop and keyword colours; reframing glides vs cuts; the animated hook.
-- [ ] Buffer: connect, publish now, publish scheduled. Metricool: inspect `schedule_post`, then wire the UI.
+- [ ] Buffer: connect, publish now, publish scheduled.
+- [ ] Metricool (one-click OAuth built 2026-11-08, fakes only): press Connect Metricool in Settings, approve, confirm it says Connected. If Metricool rejects the `http://127.0.0.1:8787/callback` registration, that is the one thing to change in `publish/metricool.py`. Then `python -m app.cli metricool tools`, inspect `schedule_post`, wire the UI.
 
 ### 3. Code signing (ready, waiting on a certificate)
 - Azure Trusted Signing only takes individual developers in the US/Canada (organizations US/Canada/EU/UK);
