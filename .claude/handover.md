@@ -1,6 +1,12 @@
 # Handover
 
-> **Superseded: read `NEXT_STEPS.md` at the repo root first** (updated 2026-11-07, late). It has the current state,
+> **2026-11-08:** shipped. Code on `main` (fast-forwarded from `quality-motion-openrouter`), a 256 MiB installer
+> behind a Cloudflare Turnstile download gate, and the landing site live at https://ytclipper.xyz with privacy,
+> terms, license and open-source pages. Also new: one-click Metricool (OAuth) and Metricool publishing, first-run
+> setup screens, clip-from-your-own-file, plain-language errors, the clip preview redesign. Release steps are in
+> `.claude/CLAUDE.md` "Release and deploy"; open owner actions are at the top of `NEXT_STEPS.md`.
+>
+> **Superseded: read `NEXT_STEPS.md` at the repo root first** (updated 2026-11-08). It has the current state,
 > how to run, every change and what is left. This file is the older milestone log (M1-M8); where they disagree,
 > NEXT_STEPS wins. Binding owner decisions live in `.claude/CLAUDE.md` ("Owner decisions").
 >
@@ -32,6 +38,7 @@ there too). Update this file after every phase.
 | Milestone 5: TTS, audio mixing, FFmpeg renderers, render UI | Done. Pushed: b815a50 |
 | Milestone 6: preview, regeneration, queue, export | Done. Pushed: 8f78c3c |
 | **Milestone 7 (redefined)**: branding + ClipperAi engine + Buffer/Metricool publishing + genres + director-cut renders | **Done, verified with fakes, pushed** (`fae7ea0` M7, then feedback rounds: `509edd6`/`ed08bf3`/`d694d4d`, `0803393` genres, `c658b74` director-cut, `b8701f0` blank topic, `b38fb3b` fullscreen). Real-key rounds pending. |
+| Release 0.1.0: site, download gate, Metricool publishing | **Shipped 2026-11-08** (`2a8544e`, `6339730`, `69ad05d`, `cde8ffe` on `main`). Installer 256 MiB (essentials FFmpeg) in private R2 bucket `ytclipper-releases`, served by Worker `ytclipper-download` after a Turnstile check; site on Vercel project `ytclipper` at ytclipper.xyz. Details in NEXT_STEPS. |
 | M8: refinement, packaging | **Done 2026-09-20.** `npm run package` from the repo root: PyInstaller freezes the backend (the spec now bundles `app/migrations`, without which the frozen first run had no tables), `scripts/fetch-ffmpeg.mjs` puts ffmpeg+ffprobe in `resources/ffmpeg` (copies from PATH, or downloads release-essentials with `ACS_FFMPEG_DOWNLOAD=1`), electron-builder writes a per-user NSIS installer to `apps/desktop/release/` (~310 MB, 1.1 GB unpacked). `backend.ts` spawns `backend.exe` when present, venv python otherwise. ffmpeg is resolved through `config.FFMPEG`/`FFPROBE` from `ACS_FFMPEG`/`ACS_FFPROBE`. **Verified:** `npm run smoke:packaged` launches the built app, the frozen backend migrates and reports ready, app.info answers. electron-builder needs `NODE_OPTIONS=--use-system-ca` on this machine. |
 
 Git: `main` on https://github.com/HasbiyallahuJafaru/aicontentstudio. Commit/push only when the user asks.
