@@ -11,8 +11,8 @@ import plus from '@phosphor-icons/core/assets/regular/plus.svg?raw'
 import scissors from '@phosphor-icons/core/assets/regular/scissors.svg?raw'
 import windowsLogo from '@phosphor-icons/core/assets/regular/windows-logo.svg?raw'
 
-// One place for the installer link: the asset attached to the latest GitHub release.
-const DOWNLOAD_URL = 'https://github.com/HasbiyallahuJafaru/aicontentstudio/releases/latest/download/YT-Clipper-Setup.exe'
+// One place for the installer link: the installer in the public Cloudflare R2 bucket (clipperai-published).
+const DOWNLOAD_URL = 'https://pub-5acacfe7cd8e49899759f66d80609421.r2.dev/downloads/YT-Clipper-Setup.exe'
 const RENDERS = Object.values(import.meta.glob('./assets/renders/*.webp', { eager: true, import: 'default' })) as string[]
 const ICONS: Record<string, string> = {
   'arrow-down-right': arrowDownRight, 'calendar-check': calendarCheck, 'github-logo': githubLogo, globe,
