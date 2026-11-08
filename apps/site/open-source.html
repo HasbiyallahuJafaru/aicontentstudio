@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <script>document.documentElement.classList.add("js")</script>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Open-Source Licenses | YT Clipper</title>
+    <meta name="description" content="The open-source software inside YT Clipper and its licenses." />
+    <link rel="canonical" href="https://ytclipper.xyz/open-source" />
+    <meta name="color-scheme" content="light dark" />
+    <link rel="icon" type="image/png" href="/favicon.png" />
+  </head>
+  <body>
+    <a class="skip" href="#main">Skip to content</a>
+    <header class="nav scrolled">
+      <div class="nav-inner">
+        <a class="brand" href="/" aria-label="YT Clipper home"><img src="/favicon.png" alt="" width="28" height="28" /><span>YT Clipper</span></a>
+        <nav class="nav-links" aria-label="Main">
+          <a href="/#features">Features</a>
+          <a href="/#how">How it works</a>
+          <a href="/#faq">FAQ</a>
+        </nav>
+      </div>
+    </header>
+    <main id="main" class="legal">
+      <h1>Open-Source Licenses</h1>
+      <p class="updated">Last updated 8 November 2026</p>
+
+      <p class="summary">YT Clipper is built on open-source software. Thank you to everyone who makes it. Each component
+        below keeps its own license, and those licenses apply to it rather than the YT Clipper License Agreement.</p>
+
+      <h2>Components</h2>
+      <table>
+        <thead><tr><th>Component</th><th>License</th><th>Used for</th></tr></thead>
+        <tbody>
+          <tr><td>FFmpeg (essentials build by gyan.dev)</td><td>GPL-3.0</td><td>Video and audio rendering<br /><a href="https://www.gyan.dev/ffmpeg/builds/#sources" target="_blank" rel="noopener">Source code</a></td></tr>
+          <tr><td>Electron and Chromium</td><td>MIT, BSD and others</td><td>The app window<br /><a href="https://www.electronjs.org" target="_blank" rel="noopener">electronjs.org</a></td></tr>
+          <tr><td>Python</td><td>PSF License</td><td>The app's engine<br /><a href="https://www.python.org" target="_blank" rel="noopener">python.org</a></td></tr>
+          <tr><td>yt-dlp</td><td>Unlicense</td><td>Downloading videos you choose to clip<br /><a href="https://github.com/yt-dlp/yt-dlp" target="_blank" rel="noopener">GitHub</a></td></tr>
+          <tr><td>OpenCV and the YuNet face model</td><td>Apache-2.0 and MIT</td><td>Keeping the speaker in frame<br /><a href="https://opencv.org" target="_blank" rel="noopener">opencv.org</a></td></tr>
+          <tr><td>curl_cffi</td><td>MIT</td><td>Network requests for some video sites<br /><a href="https://github.com/lexiforest/curl_cffi" target="_blank" rel="noopener">GitHub</a></td></tr>
+          <tr><td>Pydantic, httpx, Pillow, NumPy</td><td>MIT, BSD-3-Clause, MIT-CMU, BSD-3-Clause</td><td>Data, networking and images</td></tr>
+          <tr><td>React, three.js, Phosphor Icons</td><td>MIT</td><td>The interface</td></tr>
+          <tr><td>HyperFrames</td><td>Apache-2.0</td><td>Animated titles<br /><a href="https://github.com/heygen-com/hyperframes" target="_blank" rel="noopener">GitHub</a></td></tr>
+          <tr><td>GSAP</td><td>GSAP Standard License</td><td>Title animation timing<br /><a href="https://gsap.com/standard-license" target="_blank" rel="noopener">License</a></td></tr>
+          <tr><td>sharp and libvips</td><td>Apache-2.0 and LGPL-3.0-or-later</td><td>Image processing<br /><a href="https://github.com/lovell/sharp" target="_blank" rel="noopener">GitHub</a></td></tr>
+          <tr><td>Fonts: Bricolage Grotesque, Geist, Sora, Big Shoulders, Boldonse, Gloock, Instrument Sans, Instrument Serif, Montserrat, Outfit, Work Sans</td><td>SIL Open Font License 1.1</td><td>Interface and design typography<br /><a href="https://openfontlicense.org" target="_blank" rel="noopener">OFL</a></td></tr>
+        </tbody>
+      </table>
+
+      <h2>FFmpeg</h2>
+      <p>The installer includes unmodified FFmpeg and FFprobe programs built by gyan.dev, licensed under the GNU General
+        Public License version 3. YT Clipper runs them as separate programs and does not link to them. Their license text
+        and a pointer to the corresponding source code are included in the app's <code>resources/ffmpeg</code> folder, and
+        the source is available from <a href="https://www.gyan.dev/ffmpeg/builds/#sources" target="_blank" rel="noopener">gyan.dev</a>.</p>
+
+      <h2>Full license texts</h2>
+      <p>Each component's license text ships inside the installed app alongside the component. To request a copy, use the
+        contact options at <a href="https://hasbiyallahu.xyz" target="_blank" rel="noopener">hasbiyallahu.xyz</a>.</p>
+    </main>
+    <footer class="footer">
+      <div class="footer-inner">
+        <a class="brand" href="/"><img src="/favicon.png" alt="" width="24" height="24" /><span>YT Clipper</span></a>
+        <nav class="legal-links" aria-label="Legal">
+          <a href="/privacy">Privacy</a>
+          <a href="/terms">Terms</a>
+          <a href="/license">License</a>
+          <a href="/open-source">Open source</a>
+        </nav>
+        <p>Created by Hasbiyallahu Jafaru</p>
+        <div class="socials">
+          <a href="https://hasbiyallahu.xyz" aria-label="Website" target="_blank" rel="noopener"><i data-icon="globe"></i></a>
+          <a href="https://github.com/HasbiyallahuJafaru" aria-label="GitHub" target="_blank" rel="noopener"><i data-icon="github-logo"></i></a>
+          <a href="https://www.linkedin.com/in/hasbiyallahu-jafaru/" aria-label="LinkedIn" target="_blank" rel="noopener"><i data-icon="linkedin-logo"></i></a>
+        </div>
+      </div>
+    </footer>
+    <script type="module" src="/src/legal.ts"></script>
+  </body>
+</html>

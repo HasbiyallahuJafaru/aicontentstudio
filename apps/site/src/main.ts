@@ -1,30 +1,16 @@
 import '@fontsource-variable/geist'
 import './style.css'
-import arrowDownRight from '@phosphor-icons/core/assets/regular/arrow-down-right.svg?raw'
-import calendarCheck from '@phosphor-icons/core/assets/regular/calendar-check.svg?raw'
-import githubLogo from '@phosphor-icons/core/assets/regular/github-logo.svg?raw'
-import globe from '@phosphor-icons/core/assets/regular/globe.svg?raw'
-import linkedinLogo from '@phosphor-icons/core/assets/regular/linkedin-logo.svg?raw'
-import lockSimple from '@phosphor-icons/core/assets/regular/lock-simple.svg?raw'
-import microphone from '@phosphor-icons/core/assets/regular/microphone.svg?raw'
-import plus from '@phosphor-icons/core/assets/regular/plus.svg?raw'
-import scissors from '@phosphor-icons/core/assets/regular/scissors.svg?raw'
-import windowsLogo from '@phosphor-icons/core/assets/regular/windows-logo.svg?raw'
+import { injectIcons } from './icons'
 
-// One place for the installer link: the installer in the public Cloudflare R2 bucket (clipperai-published).
-const DOWNLOAD_URL = 'https://pub-5acacfe7cd8e49899759f66d80609421.r2.dev/downloads/YT-Clipper-Setup.exe'
+// Downloads go through a Cloudflare Turnstile check: the widget's single-use token is handed to the download Worker
+// (apps/download-worker), which verifies it and streams the installer from a private bucket. There is no public file.
+const GATE = import.meta.env.VITE_DOWNLOAD_GATE || 'https://ytclipper-download.jafaruhasbiyallahu-cc1.workers.dev/download'
+// the widget's public site key; Cloudflare's always-pass test key in local dev only
+const SITEKEY = import.meta.env.VITE_TURNSTILE_SITEKEY || (import.meta.env.DEV ? '1x00000000000000000000AA' : '')
 const RENDERS = Object.values(import.meta.glob('./assets/renders/*.webp', { eager: true, import: 'default' })) as string[]
-const ICONS: Record<string, string> = {
-  'arrow-down-right': arrowDownRight, 'calendar-check': calendarCheck, 'github-logo': githubLogo, globe,
-  'linkedin-logo': linkedinLogo, 'lock-simple': lockSimple, microphone, plus, scissors, 'windows-logo': windowsLogo,
-}
 const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches
 
-document.querySelectorAll<HTMLElement>('i[data-icon]').forEach((el) => {
-  el.innerHTML = ICONS[el.dataset.icon!] ?? ''
-  el.setAttribute('aria-hidden', 'true')
-})
-document.querySelectorAll<HTMLAnchorElement>('[data-download]').forEach((a) => { a.href = DOWNLOAD_URL })
+injectIcons()
 
 // the hero scene loads after first paint, so the headline and button never wait on three.js
 const canvas = document.querySelector<HTMLCanvasElement>('.hero-canvas')!
@@ -58,3 +44,52 @@ const track = document.querySelector('.marquee-track')!
 const tile = (src: string, hidden: boolean) =>
   `<img src="${src}" alt="${hidden ? '' : 'A quote image made by the studio'}" loading="lazy" decoding="async" ${hidden ? 'aria-hidden="true"' : ''} />`
 track.innerHTML = RENDERS.map((s) => tile(s, false)).join('') + RENDERS.map((s) => tile(s, true)).join('')
+
+// the download check: a native dialog holding the Turnstile widget, loaded on first use so it costs nothing up front
+type Turnstile = { render(el: HTMLElement, o: object): string; reset(id?: string): void; remove(id: string): void }
+const gate = document.querySelector<HTMLDialogElement>('[data-gate]')!
+const gateMsg = gate.querySelector<HTMLElement>('[data-gate-msg]')!
+const slot = gate.querySelector<HTMLElement>('[data-turnstile]')!
+const HELLO = gateMsg.textContent
+let loading: Promise<void> | undefined
+let widget: string | undefined
+const loadTurnstile = () => (loading ??= new Promise<void>((resolve, reject) => {
+  const s = document.createElement('script')
+  s.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit'
+  s.async = true
+  s.onload = () => resolve()
+  s.onerror = () => { loading = undefined; reject(new Error('turnstile')) }
+  document.head.append(s)
+}))
+
+async function openGate() {
+  gateMsg.textContent = HELLO
+  gate.showModal()
+  if (!SITEKEY) { gateMsg.textContent = 'Downloads are being set up. Please try again shortly.'; return }
+  try { await loadTurnstile() } catch {
+    gateMsg.textContent = "The check couldn't load. Check your connection, or pause an ad blocker for this site, then try again."
+    return
+  }
+  const ts = (window as unknown as { turnstile: Turnstile }).turnstile
+  if (widget) ts.remove(widget)
+  widget = ts.render(slot, {
+    sitekey: SITEKEY, theme: 'auto', action: 'download',
+    callback: (token: string) => {
+      gateMsg.textContent = 'Thanks. Your download is starting.'
+      location.href = `${GATE}?t=${encodeURIComponent(token)}`
+      setTimeout(() => gate.close(), 2500)
+    },
+    'error-callback': () => { gateMsg.textContent = "The check didn't go through. Close this and press Download again." },
+    'expired-callback': () => ts.reset(widget),
+  })
+}
+// ponytail: until the Turnstile site key is set on Vercel, the button keeps the old public link so downloads never
+// break; once VITE_TURNSTILE_SITEKEY is set and the site redeployed, the check takes over and the public copy goes
+const UNGATED = 'https://pub-5acacfe7cd8e49899759f66d80609421.r2.dev/downloads/YT-Clipper-Setup.exe'
+document.querySelectorAll<HTMLAnchorElement>('[data-download]').forEach((a) => {
+  if (!SITEKEY) { a.href = UNGATED; return }
+  a.href = GATE
+  a.addEventListener('click', (e) => { e.preventDefault(); openGate() })
+})
+gate.querySelector('[data-gate-close]')!.addEventListener('click', () => gate.close())
+gate.addEventListener('click', (e) => { if (e.target === gate) gate.close() })  // a click on the backdrop

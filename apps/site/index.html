@@ -46,7 +46,7 @@
           <a href="#how">How it works</a>
           <a href="#faq">FAQ</a>
         </nav>
-        <a class="btn btn-primary btn-sm" data-download href="https://pub-5acacfe7cd8e49899759f66d80609421.r2.dev/downloads/YT-Clipper-Setup.exe">
+        <a class="btn btn-primary btn-sm" data-download href="https://ytclipper-download.jafaruhasbiyallahu-cc1.workers.dev/download">
           <i data-icon="windows-logo"></i>Download for Windows
         </a>
       </div>
@@ -61,7 +61,7 @@
           </h1>
           <p class="lede">Turn talks, podcasts and quick ideas into captioned shorts, quote images and narrated videos, right on your PC.</p>
           <div class="hero-ctas">
-            <a class="btn btn-primary" data-download href="https://pub-5acacfe7cd8e49899759f66d80609421.r2.dev/downloads/YT-Clipper-Setup.exe">
+            <a class="btn btn-primary" data-download href="https://ytclipper-download.jafaruhasbiyallahu-cc1.workers.dev/download">
               <i data-icon="windows-logo"></i>Download for Windows
             </a>
             <a class="btn btn-ghost" href="#how">See how it works<i data-icon="arrow-down-right"></i></a>
@@ -186,7 +186,7 @@
 
       <section class="final">
         <h2 class="display final-title" data-reveal>Make this week's shorts tonight.</h2>
-        <a class="btn btn-primary btn-lg" data-download href="https://pub-5acacfe7cd8e49899759f66d80609421.r2.dev/downloads/YT-Clipper-Setup.exe" data-reveal>
+        <a class="btn btn-primary btn-lg" data-download href="https://ytclipper-download.jafaruhasbiyallahu-cc1.workers.dev/download" data-reveal>
           <i data-icon="windows-logo"></i>Download for Windows
         </a>
         <p class="final-meta" data-reveal>Windows 10 and 11, 64-bit. Free download.</p>
@@ -196,6 +196,12 @@
     <footer class="footer">
       <div class="footer-inner">
         <a class="brand" href="#top"><img src="/favicon.png" alt="" width="24" height="24" /><span>YT Clipper</span></a>
+        <nav class="legal-links" aria-label="Legal">
+          <a href="/privacy">Privacy</a>
+          <a href="/terms">Terms</a>
+          <a href="/license">License</a>
+          <a href="/open-source">Open source</a>
+        </nav>
         <p>Created by Hasbiyallahu Jafaru</p>
         <div class="socials">
           <a href="https://hasbiyallahu.xyz" aria-label="Website" target="_blank" rel="noopener"><i data-icon="globe"></i></a>
@@ -204,6 +210,14 @@
         </div>
       </div>
     </footer>
+
+    <dialog class="gate" data-gate aria-labelledby="gate-title">
+      <h2 id="gate-title">One quick check</h2>
+      <p data-gate-msg>This keeps bots away from the download. It usually passes on its own in a second.</p>
+      <div class="gate-widget" data-turnstile></div>
+      <p class="gate-legal">By downloading you agree to the <a href="/license">License</a> and the <a href="/terms">Terms</a>.</p>
+      <button class="btn btn-ghost btn-sm" type="button" data-gate-close>Cancel</button>
+    </dialog>
 
     <script type="module" src="/src/main.ts"></script>
   </body>

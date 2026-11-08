@@ -232,3 +232,38 @@ mark { background: var(--accent); color: var(--on-accent); padding: 0 0.14em; bo
   .bento .cell:nth-child(3) { transition-delay: 0.12s; }
   .bento .cell:nth-child(5) { transition-delay: 0.06s; }
 }
+
+/* footer legal links */
+.legal-links { display: flex; flex-wrap: wrap; gap: 18px; }
+.legal-links a { font-size: 14px; color: var(--ink-3); text-decoration: none; transition: color 0.2s; }
+.legal-links a:hover { color: var(--ink); }
+
+/* the download check */
+.gate { border: 0; padding: 32px; width: min(420px, calc(100vw - 32px)); border-radius: var(--radius); background: var(--panel); color: var(--ink); box-shadow: var(--shadow); }
+.gate::backdrop { background: rgb(13 14 16 / 0.45); backdrop-filter: blur(4px); }
+.gate h2 { font: 700 1.5rem/1.15 "Bricolage Grotesque", sans-serif; letter-spacing: -0.03em; }
+.gate p { margin-top: 10px; color: var(--ink-2); font-size: 15px; }
+.gate-widget { margin: 22px 0 6px; min-height: 65px; }
+.gate .gate-legal { font-size: 13px; color: var(--ink-3); }
+.gate-legal a { color: var(--ink-2); }
+.gate .btn { margin-top: 18px; }
+@media (prefers-reduced-motion: no-preference) {
+  .gate[open] { animation: rise 0.5s var(--ease) both; }
+}
+
+/* legal pages */
+.legal { max-width: 760px; margin: 0 auto; padding: 128px var(--gutter) 96px; }
+.legal h1 { font: 700 clamp(2.2rem, 5vw, 3.4rem)/1.05 "Bricolage Grotesque", sans-serif; letter-spacing: -0.04em; }
+.legal .updated { margin-top: 14px; color: var(--ink-3); font-size: 14px; }
+.legal .summary { margin-top: 32px; padding: 22px 24px; border-radius: var(--radius-in); background: var(--panel); box-shadow: 0 0 0 1px var(--line); color: var(--ink-2); }
+.legal h2 { margin-top: 48px; font: 700 1.35rem/1.2 "Bricolage Grotesque", sans-serif; letter-spacing: -0.02em; }
+.legal h3 { margin-top: 24px; font-size: 1.05rem; font-weight: 700; }
+.legal p, .legal li { color: var(--ink-2); max-width: 68ch; }
+.legal p { margin-top: 14px; }
+.legal ul { margin: 14px 0 0; padding-left: 20px; display: grid; gap: 8px; }
+.legal a { color: var(--accent-ink); text-underline-offset: 3px; }
+.legal table { width: 100%; margin-top: 18px; border-collapse: collapse; font-size: 14px; }
+.legal th { text-align: left; color: var(--ink-3); font-weight: 500; padding: 0 12px 10px 0; }
+.legal td { padding: 12px 12px 12px 0; border-top: 1px solid var(--line); color: var(--ink-2); vertical-align: top; }
+.legal td:first-child { color: var(--ink); font-weight: 500; }
+@media (max-width: 639px) { .legal table, .legal thead, .legal tbody, .legal tr, .legal td { display: block; } .legal thead { display: none; } .legal td { border-top: 0; padding: 2px 0; } .legal tr { border-top: 1px solid var(--line); padding: 12px 0; } }

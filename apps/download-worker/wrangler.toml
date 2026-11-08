@@ -1,0 +1,14 @@
+# The installer download gate: verifies a Turnstile token, then streams the file from the private bucket.
+# Deploy: npx wrangler deploy   (from this folder)
+# Secret: npx wrangler secret put TURNSTILE_SECRET   (the Turnstile widget's secret key; never committed)
+name = "ytclipper-download"
+main = "src/index.js"
+compatibility_date = "2026-10-01"
+
+[vars]
+# hostnames a token may come from: the live site (localhost is never allowed in production)
+ALLOWED_HOSTS = "ytclipper.xyz,www.ytclipper.xyz"
+
+[[r2_buckets]]
+binding = "RELEASES"
+bucket_name = "ytclipper-releases"
