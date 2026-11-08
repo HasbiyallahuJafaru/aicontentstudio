@@ -167,3 +167,114 @@ def call_tool(name: str, arguments: dict | None = None) -> dict:
     result = _check(reply)
     text = "\n".join(block.get("text", "") for block in result.get("content", []) if block.get("type") == "text")
     return {"text": text, "is_error": bool(result.get("isError"))}
+
+
+# --- publishing a clip ------------------------------------------------------------------------------------------
+# Metricool's network name -> which of the clip's written posts it gets (the same copy Buffer uses)
+NETWORKS = {"tiktok": "tiktok", "instagram": "instagram", "youtube": "youtube", "linkedin": "linkedin",
+            "facebook": "facebook", "twitter": "x"}
+LABELS = {"tiktok": "TikTok", "instagram": "Instagram", "youtube": "YouTube", "linkedin": "LinkedIn",
+          "facebook": "Facebook", "twitter": "X"}
+POST_LEAD = timedelta(minutes=5)  # "post now" = a few minutes out; Metricool refuses dates in the past
+NO_NETWORKS = ("Your Metricool brand has no social networks connected yet. Connect one in Metricool "
+               "(Brands, then Connections) and try again.")
+
+
+def _tool_json(name: str, arguments: dict | None = None):
+    result = call_tool(name, arguments)
+    if result["is_error"]:
+        if "network connected" in result["text"]:
+            raise UserError(NO_NETWORKS, result["text"][:500])
+        raise UserError(f"Metricool: {result['text'][:300]}", result["text"][:500])
+    try:
+        return json.loads(result["text"])
+    except ValueError:
+        return result["text"]
+
+
+def brands() -> list[dict]:
+    """The account's brands: id, name, time zone, and which of our networks look connected. `networks` is None
+    when the reply doesn't say; the UI then offers every network and Metricool names any unconnected one.
+    # ponytail: the reply's shape was only seen in its no-networks error form, so field names are read
+    # defensively; check them against a brand with networks connected."""
+    data = _tool_json("getBrandSettings")
+    if isinstance(data, dict):
+        items = data.get("brands") or data.get("data") or [data]
+    else:
+        items = data if isinstance(data, list) else []
+    found = []
+    for b in items:
+        if not isinstance(b, dict) or not (bid := b.get("blogId") or b.get("id")):
+            continue
+        listed = b.get("networks") or b.get("connectedNetworks") or []
+        connected = [n for n in NETWORKS if b.get(n) or b.get(f"{n}Account") or n in listed]
+        found.append({"id": str(bid), "name": b.get("label") or b.get("name") or f"Brand {bid}",
+                      "timezone": b.get("timezone") or "UTC", "networks": connected or None})
+    if not found:
+        raise UserError("Metricool didn't list any brands for this account.", str(data)[:500])
+    return found
+
+
+def _info(clip: dict, network: str, video_url: str, local: datetime, tz: str) -> dict:
+    extra = {"youtubeData": {"title": clip["title"][:100], "type": "short", "privacy": "public",
+                             "madeForKids": False},
+             "instagramData": {"type": "REEL", "showReelOnFeed": True}, "facebookData": {"type": "REEL"}}
+    return {"autoPublish": True, "draft": False, "descendants": [], "firstCommentText": "",
+            "hasNotReadNotes": False, "media": [video_url], "mediaAltText": [],
+            "providers": [{"network": network}], "shortener": False, "smartLinkData": {"ids": []},
+            "text": clip["posts"][NETWORKS[network]],
+            "publicationDate": {"dateTime": local.strftime("%Y-%m-%dT%H:%M:%S"), "timezone": tz},
+            f"{network}Data": extra.get(f"{network}Data", {})}
+
+
+def publish(project_id: str, clip_idx: int, blog_id: str, networks: list[str], due_at: str | None = None) -> list[dict]:
+    """Schedules an approved clip on Metricool, one post per network so each gets its own written copy. The video
+    goes up once to the media host, because Metricool fetches media from a public link. Returns one publication
+    per network, including any Metricool refused (status "error" with its reason)."""
+    import re
+    import uuid
+    from zoneinfo import ZoneInfo
+
+    from app import config
+    from app.publish import buffer, host
+
+    if not networks or any(n not in NETWORKS for n in networks):
+        raise UserError("Choose at least one network to post to.")
+    now = datetime.now(timezone.utc)
+    try:
+        when = datetime.fromisoformat(due_at) if due_at else now + POST_LEAD
+    except ValueError:
+        when = None
+    if when is None or when.tzinfo is None:
+        raise UserError("That time couldn't be read. Pick it again.", due_at or "")
+    if when < now:
+        raise UserError("That time has already passed. Pick a time in the future.")
+    if not host.configured():
+        raise UserError("Metricool fetches the video from a public link, so it needs a media host. Add an "
+                        "S3-compatible bucket (Cloudflare R2 works) under Settings, Publishing.")
+    brand = next((b for b in brands() if b["id"] == str(blog_id)), None)
+    if brand is None:
+        raise UserError("That Metricool brand isn't available any more. Reload and choose again.")
+    clip = buffer._clip(project_id, clip_idx)
+    if taken := buffer._taken(project_id, clip_idx, [f"metricool:{n}" for n in networks]):
+        raise UserError(f"This clip is already scheduled on {', '.join(taken)}.")
+    local = when.astimezone(ZoneInfo(brand["timezone"]))
+    video_url = host.upload(config.MEDIA_DIR / clip["video_path"], f"{uuid.uuid4().hex[:12]}.mp4")
+    rows = []
+    for n in networks:
+        channel = {"id": f"metricool:{n}", "service": NETWORKS[n], "displayName": f"Metricool {LABELS[n]}"}
+        pub_id = uuid.uuid4().hex[:12]
+        args = {"blogId": brand["id"], "date": local.isoformat(),
+                "info": json.dumps(_info(clip, n, video_url, local, brand["timezone"]))}
+        try:
+            result = call_tool("createScheduledPost", args)
+        except UserError as e:  # connection trouble: the remaining networks would fail the same way
+            buffer._save(pub_id, project_id, clip_idx, channel, when, error=str(e), provider="metricool")
+            raise
+        link = re.search(r"https://[^\s\"']*metricool\.com[^\s\"',)]*", result["text"])
+        post = None if result["is_error"] else {
+            "id": f"{brand['id']}:{n}", "status": "scheduled", "dueAt": when.isoformat(), "sentAt": None,
+            "externalLink": link.group(0) if link else None, "error": None}
+        rows.append(buffer._save(pub_id, project_id, clip_idx, channel, when, post=post,
+                                 error=result["text"][:300] if result["is_error"] else None, provider="metricool"))
+    return rows

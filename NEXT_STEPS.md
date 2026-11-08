@@ -17,7 +17,21 @@ the older milestone log (M1-M8) and is superseded where they disagree. Read this
 - Next real work: step 12 (render a real piece end to end, clip a real video). It now also checks the footage
   review with real Pexels results and the editing-skills pass by eye and ear.
 
-## Landing site ytclipper.xyz (2026-11-08, uncommitted, not deployed yet)
+## Release + publishing (2026-11-08)
+
+- **Download:** installer in R2 bucket `clipperai-published` at `downloads/YT-Clipper-Setup.exe`, public via
+  `https://pub-5acacfe7cd8e49899759f66d80609421.r2.dev/...` (rate-limited dev URL). Upload with
+  `wrangler r2 object put clipperai-published/downloads/YT-Clipper-Setup.exe --remote --file <exe>` (300 MiB cap,
+  so package with `ACS_FFMPEG_DOWNLOAD=1`). Next: DNS to Cloudflare, then `download.ytclipper.xyz` on the bucket.
+- **Site:** live at https://ytclipper.xyz (Vercel project `ytclipper`, root `apps/site`, `vercel deploy --prod`).
+- **Metricool publishing:** `metricool.brands()` / `metricool.publish()` via the MCP tools getBrandSettings and
+  createScheduledPost (one post per network with its own copy, video via the media host, planner link stored).
+  Brand reply shape only seen in its no-networks error; verify with a connected network. No delete tool, so a
+  scheduled Metricool post is removed in Metricool's planner.
+- **Clip preview redesign:** video fits the panel (grid row + flex fix, also in the piece preview); post copy has
+  network tabs, character limits, Copy, hashtag chips; Publish dialog picks Buffer or Metricool.
+
+## Landing site ytclipper.xyz (2026-11-08)
 
 - `apps/site/`: Vite + plain TS + three.js, one page, for download. `npm run dev|build|preview` inside it. Hero is
   `src/hero.ts` (real renders as a film strip, a lime playhead cuts it, pieces lift into a fan; auto-fits by

@@ -1,12 +1,65 @@
 // Clip project workspace: the review list for a clipped video (scored moments, karaoke-captioned shorts)
 // with approve/reject, a preview modal and export — riding the same job system as the other kinds.
 import { useEffect, useRef, useState } from 'react'
-import { ArrowLeft, CalendarBlank, Check, Export, PaperPlaneTilt, PencilSimple, Play, Trash, X } from '@phosphor-icons/react'
+import { ArrowLeft, CalendarBlank, Check, Copy, Export, PaperPlaneTilt, PencilSimple, Play, Trash, X } from '@phosphor-icons/react'
 import { call, formatDate, hasKey, label, mediaUrl, useJob, useQuery, BackendError,
   type BufferChannel, type CalendarPlan, type Clip, type Project as P } from '../lib/studio'
-import { Button, Choices, Dialog, ErrorNote, Field, Input, Textarea, cx } from './ui'
+import { Button, Choices, Dialog, ErrorNote, Field, Input, Select, Textarea, cx } from './ui'
+import { useConnection } from '../pages/Settings'
 
 const POST_ORDER = ['tiktok', 'instagram', 'youtube', 'linkedin', 'facebook', 'x'] as const
+type Net = (typeof POST_ORDER)[number]
+const NET_NAME: Record<Net, string> = { tiktok: 'TikTok', instagram: 'Instagram', youtube: 'YouTube', linkedin: 'LinkedIn', facebook: 'Facebook', x: 'X' }
+// each network's caption limit (YouTube: the description), so an over-long post shows before it fails to publish
+const NET_LIMIT: Record<Net, number> = { tiktok: 4000, instagram: 2200, youtube: 5000, linkedin: 3000, facebook: 63206, x: 280 }
+
+/** The written post for one network at a time: tabs, the copy itself, its length against that network's limit,
+ *  a copy button, and the hashtags as chips. */
+function PostCopy({ clip: c }: { clip: Clip }) {
+  const nets = POST_ORDER.filter((n) => c.posts[n])
+  const [tab, setTab] = useState<Net | undefined>(nets[0])
+  const [copied, setCopied] = useState(false)
+  if (!tab) return null
+  const text = c.posts[tab] ?? ''
+  const over = text.length > NET_LIMIT[tab]
+  async function copy() {
+    await navigator.clipboard.writeText(text)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 1600)
+  }
+  return (
+    <section className="grid gap-3">
+      <h3 className="text-xs text-ink-3">Post copy</h3>
+      <div role="tablist" aria-label="Network" className="flex flex-wrap gap-1.5">
+        {nets.map((n) => (
+          <button key={n} type="button" role="tab" aria-selected={n === tab} onClick={() => { setTab(n); setCopied(false) }}
+            className={cx('rounded-full px-3 py-1.5 text-xs font-medium transition-colors duration-150 active:scale-[0.97]',
+              n === tab ? 'chip-on' : 'text-ink-2 shadow-[inset_0_0_0_1px_var(--color-line)] hover:bg-black/[0.04] hover:text-ink')}>
+            {NET_NAME[n]}
+          </button>
+        ))}
+      </div>
+      <div role="tabpanel" aria-label={`${NET_NAME[tab]} post`} className="grid gap-3 rounded-field bg-ground p-4">
+        <p data-selectable className="max-h-56 overflow-y-auto whitespace-pre-line leading-relaxed text-ink">{text}</p>
+        <div className="flex items-center justify-between gap-3 border-t border-line pt-3">
+          <span className={cx('tnum text-2xs', over ? 'text-danger' : 'text-ink-3')}>
+            {text.length.toLocaleString()} / {NET_LIMIT[tab].toLocaleString()} characters{over && `, too long for ${NET_NAME[tab]}`}
+          </span>
+          <Button variant="ghost" onClick={copy} className="-mr-2 h-8">
+            {copied ? <><Check size={13} weight="bold" />Copied</> : <><Copy size={13} />Copy</>}
+          </Button>
+        </div>
+      </div>
+      {c.hashtags.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {c.hashtags.map((h) => (
+            <span key={h} className="rounded-full bg-black/[0.05] px-2.5 py-1 text-2xs text-ink-2">{h.startsWith('#') ? h : `#${h}`}</span>
+          ))}
+        </div>
+      )}
+    </section>
+  )
+}
 
 export function ClipWorkspace({ project, onBack, onSettings }: { project: P; onBack: () => void; onSettings: () => void }) {
   const { job, reload: reloadJob } = useJob(project.id)
@@ -186,56 +239,46 @@ function ClipPreview({ clip: c, onClose, onPublish, onSaved }: {
   const [editing, setEditing] = useState(false)
   return (
     <Dialog label={`Preview clip ${c.idx}`} width={1180} onClose={onClose}
-      className="h-[min(780px,calc(100dvh-3rem))] grid-cols-[minmax(0,1fr)_368px] max-[1040px]:h-[calc(100dvh-3rem)] max-[1040px]:grid-cols-1 max-[1040px]:grid-rows-[minmax(0,1fr)_auto]">
-      <section className="grid min-h-0 place-items-center p-3">
-        <video src={mediaUrl(c.video_path)} controls className="max-h-full max-w-full rounded-field bg-black" />
+      className="h-[min(780px,calc(100dvh-3rem))] grid-cols-[minmax(0,1fr)_368px] grid-rows-[minmax(0,1fr)] max-[1040px]:h-[calc(100dvh-3rem)] max-[1040px]:grid-cols-1 max-[1040px]:grid-rows-[minmax(0,1fr)_auto]">
+      {/* the row is the dialog's height (not the video's), and a flex box gives max-h-full a definite height to
+          resolve against, so a tall 9:16 clip scales down inside the panel instead of running past it */}
+      <section className="flex min-h-0 items-center justify-center overflow-hidden p-3">
+        <video src={mediaUrl(c.video_path)} controls className="max-h-full max-w-full rounded-field bg-black object-contain" />
       </section>
 
       <aside className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)_auto] border-l border-line max-[1040px]:border-l-0 max-[1040px]:border-t">
-        <header className="grid gap-2 border-b border-line px-6 py-5">
-          <div className="flex items-start justify-between gap-3">
-            <p className="tnum text-xs text-ink-3">Clip {String(c.idx).padStart(2, '0')} · {(c.end_at - c.start_at).toFixed(0)}s · score {c.score}</p>
-            <div className="-mt-2 -mr-3 flex">
+        <header className="grid gap-3 border-b border-line px-6 py-5">
+          <div className="flex items-center justify-between gap-3">
+            <span className={cx('rounded-full px-2.5 py-1 text-2xs font-medium', c.status === 'approved' ? 'chip-on'
+              : c.status === 'rejected' ? 'bg-danger/15 text-danger' : 'bg-black/[0.06] text-ink-2')}>{label(c.status)}</span>
+            <div className="-mr-3 flex shrink-0">
               {!editing && <Button variant="ghost" onClick={() => setEditing(true)} className="h-8"><PencilSimple size={13} />Edit copy</Button>}
               <Button variant="ghost" onClick={onClose} aria-label="Close preview" className="h-8"><X size={15} /></Button>
             </div>
           </div>
-          <h2 className="line-clamp-3 font-display text-[17px] font-semibold leading-snug tracking-[-0.02em]">{c.title}</h2>
-          <span className={cx('w-fit rounded-full px-3 py-1 text-2xs font-medium',
-            c.status === 'rejected' ? 'bg-danger/15 text-danger' : 'bg-black/[0.07] text-ink-2')}>{label(c.status)}</span>
+          <div className="grid gap-1">
+            <h2 className="line-clamp-3 font-display text-[19px] font-semibold leading-snug tracking-[-0.02em] text-balance">{c.title}</h2>
+            <p className="tnum text-xs text-ink-3">Clip {String(c.idx).padStart(2, '0')}, {(c.end_at - c.start_at).toFixed(0)} seconds, score {c.score}</p>
+          </div>
         </header>
 
         {editing
           ? <CopyEditor clip={c} onCancel={() => setEditing(false)} onSaved={() => { setEditing(false); onSaved() }} />
           : <>
-            <div className="grid content-start gap-4 overflow-y-auto px-6 py-5 text-[13px]">
-              <div className="grid gap-1">
-                <p className="text-ink-3">Hook</p>
-                <p data-selectable className="text-ink">{c.hook}</p>
-              </div>
-              <div className="grid gap-1">
-                <p className="text-ink-3">Description</p>
-                <p data-selectable className="text-ink-2">{c.description}</p>
-              </div>
-              <div className="grid gap-1">
-                <p className="text-ink-3">Why this moment</p>
-                <p data-selectable className="text-ink-2">{c.reason}</p>
-              </div>
-              <details className="text-xs">
-                <summary className="w-fit cursor-pointer list-none text-ink-3 hover:text-ink">Post copy per platform</summary>
-                <dl data-selectable className="mt-3 grid grid-cols-[76px_minmax(0,1fr)] gap-x-4 gap-y-2 text-ink-2">
-                  {POST_ORDER.filter((n) => c.posts[n]).map((n) => (
-                    <div key={n} className="col-span-2 grid grid-cols-subgrid">
-                      <dt className="text-ink-3">{label(n)}</dt>
-                      <dd className="whitespace-pre-line">{c.posts[n]}</dd>
-                    </div>
-                  ))}
-                  <div className="col-span-2 grid grid-cols-subgrid">
-                    <dt className="text-ink-3">Hashtags</dt>
-                    <dd>{c.hashtags.join(' ')}</dd>
-                  </div>
-                </dl>
-              </details>
+            <div className="grid content-start gap-6 overflow-y-auto px-6 py-5 text-[13px]">
+              <section className="grid gap-1.5">
+                <h3 className="text-xs text-ink-3">Hook</h3>
+                <p data-selectable className="font-display text-[16px] font-semibold leading-snug tracking-[-0.01em] text-ink">{c.hook}</p>
+              </section>
+              <section className="grid gap-1.5">
+                <h3 className="text-xs text-ink-3">Description</h3>
+                <p data-selectable className="leading-relaxed text-pretty text-ink-2">{c.description}</p>
+              </section>
+              <section className="grid gap-1.5">
+                <h3 className="text-xs text-ink-3">Why this moment</h3>
+                <p data-selectable className="leading-relaxed text-pretty text-ink-2">{c.reason}</p>
+              </section>
+              <PostCopy clip={c} />
             </div>
             {c.status === 'approved' ? (
               <div className="flex justify-end border-t border-line px-6 py-4">
@@ -421,21 +464,62 @@ function CalendarDialog({ project, onClose, onDone }: { project: P; onClose: () 
   )
 }
 
+type Brand = { id: string; name: string; timezone: string; networks: string[] | null }
+// Metricool's network names, in the order we show them (its "twitter" is X)
+const MC_NETS = [['instagram', 'Instagram'], ['tiktok', 'TikTok'], ['youtube', 'YouTube'], ['linkedin', 'LinkedIn'],
+  ['facebook', 'Facebook'], ['twitter', 'X']] as const
+
+/** Brand and networks for a Metricool post. Mounted only once Metricool is connected. */
+function MetricoolPicker({ brand, setBrand, nets, setNets }: {
+  brand?: string; setBrand: (id: string) => void; nets: string[]; setNets: (n: string[]) => void
+}) {
+  const { data: brands, error } = useQuery<Brand[]>('publish.metricool_brands')
+  useEffect(() => { if (brands?.length && !brand) setBrand(brands[0].id) }, [brands])
+  const chosen = brands?.find((b) => b.id === brand)
+  if (error) return <ErrorNote error={error} />
+  if (!brands) return <div className="h-24 animate-pulse rounded-field bg-black/[0.04]" />
+  const offered = MC_NETS.filter(([n]) => !chosen?.networks || chosen.networks.includes(n))
+  return (
+    <>
+      {brands.length > 1 && (
+        <Field label="Brand">
+          {(id) => <Select id={id} value={brand ?? ''} onChange={(v) => { setBrand(v); setNets([]) }}
+            options={brands.map((b) => ({ value: b.id, label: b.name }))} />}
+        </Field>
+      )}
+      <Choices legend="Networks" multiple value={nets} onChange={setNets}
+        options={offered.map(([value, label]) => ({ value, label }))} />
+    </>
+  )
+}
+
 function PublishDialog({ clip: c, onClose, onChanged }: {
   clip: Clip; onClose: () => void; onChanged: () => void
 }) {
+  const [via, setVia] = useState<'buffer' | 'metricool'>('buffer')
   const [picked, setPicked] = useState<string[]>([])
+  const [brand, setBrand] = useState<string>()
+  const [nets, setNets] = useState<string[]>([])
   const [when, setWhen] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<Error>()
+  const metricool = useConnection('metricool', (e) => setError(e))
+  const ready = via === 'buffer' ? picked.length > 0 : !!(metricool.connected && brand && nets.length)
+  // open on whichever service is connected: Metricool when Buffer isn't and Metricool is
+  const buffer = useQuery<{ connected: boolean }>('publish.buffer_connection').data
+  useEffect(() => { if (buffer && !buffer.connected && metricool.connected) setVia('metricool') }, [buffer?.connected, metricool.connected])
 
   async function publish() {
     if (busy) return
     setBusy(true)
     setError(undefined)
+    const due_at = when ? new Date(when).toISOString() : undefined
     try {
-      await call('publish.buffer_publish', { project_id: c.project_id, clip_idx: c.idx, channel_ids: picked,
-        due_at: when ? new Date(when).toISOString() : undefined })
+      if (via === 'buffer') {
+        await call('publish.buffer_publish', { project_id: c.project_id, clip_idx: c.idx, channel_ids: picked, due_at })
+      } else {
+        await call('publish.metricool_publish', { project_id: c.project_id, clip_idx: c.idx, blog_id: brand, networks: nets, due_at })
+      }
       onChanged()
       onClose()
     } catch (e) {
@@ -448,16 +532,33 @@ function PublishDialog({ clip: c, onClose, onChanged }: {
     <Dialog label={`Publish clip ${c.idx}`} width={560} onClose={onClose} className="grid-rows-[auto_minmax(0,1fr)_auto]">
       <header className="flex items-start justify-between gap-3 border-b border-line px-6 py-5">
         <div>
-          <p className="text-xs text-ink-3">Publish to Buffer</p>
+          <p className="text-xs text-ink-3">Publish</p>
           <h2 className="mt-0.5 font-display text-[18px] font-semibold tracking-[-0.02em]">{c.title}</h2>
         </div>
         <Button variant="ghost" onClick={onClose} aria-label="Close" className="-mt-2 -mr-3 h-8"><X size={15} /></Button>
       </header>
 
       <div className="grid content-start gap-5 overflow-y-auto px-6 py-5">
-        <ChannelPicker picked={picked} onChange={setPicked} />
+        <Choices legend="Publish with" value={via} onChange={(v) => { setVia(v); setError(undefined) }}
+          options={[{ value: 'buffer', label: 'Buffer' }, { value: 'metricool', label: 'Metricool' }]} />
 
-        <Field label="Schedule" hint="Leave empty to post now. Buffer can also reschedule it later.">
+        {via === 'buffer' && <ChannelPicker picked={picked} onChange={setPicked} />}
+        {via === 'metricool' && (metricool.connected
+          ? <MetricoolPicker brand={brand} setBrand={setBrand} nets={nets} setNets={setNets} />
+          : metricool.connected === false && (
+            <div className="grid gap-3 rounded-field bg-ground p-4 text-[13px]">
+              <p className="text-ink-2">{metricool.waiting
+                ? 'Approve the app in the browser window that opened, then come back here.'
+                : 'Connect your Metricool account once. You sign in and approve in your browser, nothing to paste.'}</p>
+              <Button className="w-fit" disabled={metricool.waiting} onClick={metricool.connect}>
+                <PaperPlaneTilt size={14} />{metricool.waiting ? 'Waiting for Metricool…' : 'Connect Metricool'}
+              </Button>
+            </div>
+          ))}
+
+        <Field label="Schedule" hint={via === 'buffer'
+          ? 'Leave empty to post now. Buffer can also reschedule it later.'
+          : 'Leave empty to post in about five minutes. It appears in your Metricool planner.'}>
           {(id) => <Input id={id} type="datetime-local" value={when} onChange={(e) => setWhen(e.target.value)} />}
         </Field>
 
@@ -466,7 +567,7 @@ function PublishDialog({ clip: c, onClose, onChanged }: {
 
       <div className="flex justify-end gap-2 border-t border-line px-6 py-4">
         <Button variant="ghost" onClick={onClose}>Cancel</Button>
-        <Button variant="primary" disabled={!picked.length || busy} onClick={publish}>
+        <Button variant="primary" disabled={!ready || busy} onClick={publish}>
           <PaperPlaneTilt size={14} />{busy ? 'Publishing…' : when ? 'Schedule' : 'Post now'}
         </Button>
       </div>

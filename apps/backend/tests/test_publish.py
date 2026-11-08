@@ -122,7 +122,14 @@ def mcp_api(body):
              "inputSchema": {"type": "object"}}]}}, 200, {"Mcp-Session-Id": "sess-1"}
     if method == "tools/call":
         CAPTURED["mcp"].append(body)
-        return {"jsonrpc": "2.0", "id": 2, "result": {"content": [{"type": "text", "text": "posted ok"}]}}, 200, \
+        name = body["params"]["name"]
+        text = "posted ok"
+        if name == "getBrandSettings":  # one brand with Instagram connected
+            text = json.dumps([{"blogId": 6469712, "label": "Studio", "timezone": "Europe/London",
+                                "instagram": "studio_ig", "tiktok": None}])
+        elif name == "createScheduledPost":
+            text = json.dumps({"plannerUrl": "https://app.metricool.com/planner?blogId=6469712&post=99"})
+        return {"jsonrpc": "2.0", "id": 2, "result": {"content": [{"type": "text", "text": text}]}}, 200, \
             {"Mcp-Session-Id": "sess-1"}
     return {"jsonrpc": "2.0", "id": body.get("id"), "error": {"message": "unknown"}}, 200, None
 
@@ -153,7 +160,7 @@ def setUpModule():
     database.migrate()
 
 
-def make_clip_project(approved=True, video=b"videobytes"):
+def make_clip_project(approved=True, video=b"videobytes", clip_id="clip1"):
     src = config.MEDIA_DIR / "fixtures" / "pub-src.mp4"
     src.parent.mkdir(parents=True, exist_ok=True)
     src.write_bytes(b"sourcebytes")
@@ -165,8 +172,8 @@ def make_clip_project(approved=True, video=b"videobytes"):
     with connect() as conn:
         conn.execute("INSERT INTO clips (id, project_id, idx, start_at, end_at, score, reason, hook, title, "
                      "description, hashtags, posts, status, video_path, cover_path) "
-                     "VALUES ('clip1', ?, 1, 0, 10, 90, 'why', 'hook', 'My clip', 'desc', '[]', ?, ?, ?, ?)",
-                     (p["id"], json.dumps(posts), "approved" if approved else "ready",
+                     "VALUES (?, ?, 1, 0, 10, 90, 'why', 'hook', 'My clip', 'desc', '[]', ?, ?, ?, ?)",
+                     (clip_id, p["id"], json.dumps(posts), "approved" if approved else "ready",
                       "clips/" + p["id"] + "/clip01.mp4", "clips/" + p["id"] + "/clip01.jpg"))
     return p
 
@@ -362,6 +369,42 @@ class MetricoolMCP(unittest.TestCase):
                                  "expires_at": "2000-01-01T00:00:00+00:00"})
         self.assertTrue(metricool._bearer().startswith("mc-at-"))
         self.assertEqual(CAPTURED["mc_token"][-1]["grant_type"], "refresh_token")
+
+    def test_brands_read_connected_networks(self):
+        self.assertEqual(metricool.brands(), [{"id": "6469712", "name": "Studio", "timezone": "Europe/London",
+                                               "networks": ["instagram"]}])
+
+    def test_no_networks_is_human(self):
+        raw = "This brand doesn't have any social network connected yet. Ask the user to connect at least one"
+        with mock.patch.object(metricool, "call_tool", lambda *a, **k: {"text": raw, "is_error": True}):
+            with self.assertRaisesRegex(UserError, "no social networks connected"):
+                metricool.brands()
+
+    def test_publish_schedules_each_network_with_its_copy(self):
+        settings.update(publish_host_endpoint=HOST_URL, publish_host_bucket="bkt",
+                        publish_host_public_url="https://cdn.example/bkt", publish_host_region="auto")
+        store.save("publish_host", {"access_key_id": "AKIA-TEST", "secret_access_key": "secret"})
+        project = make_clip_project(clip_id="clip-mc")
+        rows = metricool.publish(project["id"], 1, "6469712", ["instagram"], "2099-01-01T09:00:00+00:00")
+        self.assertEqual((rows[0]["provider"], rows[0]["status"], rows[0]["service"]),
+                         ("metricool", "scheduled", "instagram"))
+        self.assertIn("app.metricool.com/planner", rows[0]["external_link"])
+        args = CAPTURED["mcp"][-1]["params"]["arguments"]
+        info = json.loads(args["info"])
+        self.assertEqual(args["blogId"], "6469712")
+        self.assertEqual(info["text"], "copy for instagram")
+        self.assertEqual(info["providers"], [{"network": "instagram"}])
+        self.assertEqual(info["instagramData"]["type"], "REEL")
+        self.assertTrue(info["media"][0].startswith("https://cdn.example/bkt/"))
+        self.assertEqual(info["publicationDate"], {"dateTime": "2099-01-01T09:00:00", "timezone": "Europe/London"})
+        with self.assertRaisesRegex(UserError, "already scheduled"):
+            metricool.publish(project["id"], 1, "6469712", ["instagram"], "2099-01-02T09:00:00+00:00")
+        with self.assertRaisesRegex(UserError, "Metricool's planner"):
+            buffer_pub.remove(rows[0]["id"])
+
+    def test_publish_refuses_the_past(self):
+        with self.assertRaisesRegex(UserError, "already passed"):
+            metricool.publish("p", 1, "6469712", ["instagram"], "2000-01-01T09:00:00+00:00")
 
     def test_revoked_token_disconnects(self):
         class Fake401:

@@ -76,6 +76,8 @@ METHODS = {
     "publish.metricool_connection": metricool.connection,
     "publish.metricool_connect_url": metricool.connect_url,
     "publish.metricool_disconnect": metricool.disconnect,
+    "publish.metricool_brands": metricool.brands,
+    "publish.metricool_publish": metricool.publish,
     "publish.metricool_call": metricool.call_tool,
 }
 

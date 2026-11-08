@@ -49,9 +49,10 @@ export function Preview({ piece, renders, assets, voice, onClose, onChanged }: {
 
   return (
     <Dialog label={`Preview ${piece.idx}`} width={1180} onClose={onClose}
-      className="h-[min(780px,calc(100dvh-3rem))] grid-cols-[minmax(0,1fr)_368px] max-[1040px]:h-[calc(100dvh-3rem)] max-[1040px]:grid-cols-1 max-[1040px]:grid-rows-[minmax(0,1fr)_auto]">
+      className="h-[min(780px,calc(100dvh-3rem))] grid-cols-[minmax(0,1fr)_368px] grid-rows-[minmax(0,1fr)] max-[1040px]:h-[calc(100dvh-3rem)] max-[1040px]:grid-cols-1 max-[1040px]:grid-rows-[minmax(0,1fr)_auto]">
       <section className="grid min-h-0 grid-rows-[minmax(0,1fr)_auto] gap-2 p-3">
-        <div className="grid min-h-0 place-items-center overflow-auto rounded-field bg-black">
+        {/* flex with safe centring: media scales inside the panel, and an actual-size image still scrolls from its edge */}
+        <div className="flex min-h-0 overflow-auto rounded-field bg-black [align-items:safe_center] [justify-content:safe_center]">
           {video ? (
             <video src={mediaUrl(video.local_path)} controls className="max-h-full max-w-full rounded-[10px]" />
           ) : image ? (

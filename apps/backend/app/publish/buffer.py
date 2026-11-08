@@ -148,8 +148,8 @@ def publish(project_id: str, clip_idx: int, channel_ids: list[str], due_at: str 
 
 
 def _save(pub_id: str, project_id: str, clip_idx: int, channel: dict, due_at: datetime | None,
-          post: dict | None = None, error: str | None = None) -> dict:
-    """Records Buffer's view of a post, or why it failed."""
+          post: dict | None = None, error: str | None = None, provider: str = "buffer") -> dict:
+    """Records the provider's view of a post (Buffer or Metricool), or why it failed."""
     if post is None:
         post = {"id": None, "status": "error", "dueAt": None, "sentAt": None, "externalLink": None,
                 "error": {"message": error}}
@@ -161,7 +161,7 @@ def _save(pub_id: str, project_id: str, clip_idx: int, channel: dict, due_at: da
                      "sent_at = excluded.sent_at, external_id = COALESCE(excluded.external_id, external_id), "
                      "external_link = excluded.external_link, error = excluded.error, "
                      "checked_at = strftime('%Y-%m-%dT%H:%M:%SZ','now')",
-                     (pub_id, project_id, clip_idx, "buffer", channel["id"], channel["service"],
+                     (pub_id, project_id, clip_idx, provider, channel["id"], channel["service"],
                       channel.get("displayName") or channel.get("name") or channel["service"],
                       post["status"], _iso(post["dueAt"]), _iso(post["sentAt"]), post["id"],
                       post["externalLink"], error or (post.get("error") or {}).get("message")))
@@ -276,6 +276,9 @@ def remove(publication_id: str) -> dict:
     row = _get(publication_id)
     if row["status"] == "sent":
         raise UserError("This post has already gone out. Delete it on the network itself.")
+    if row["provider"] == "metricool" and row["status"] != "error":
+        # ponytail: Metricool's MCP server has no delete tool, so a scheduled post is removed in its planner
+        raise UserError("This post is in Metricool's planner now. Move or delete it there.")
     if row["external_id"] and row["status"] != "error":
         result = call(DELETE, id=row["external_id"])["deletePost"]
         if "message" in result and "not found" not in result["message"].lower():  # not found: already gone
