@@ -32,7 +32,7 @@ the older milestone log (M1-M8) and is superseded where they disagree. Read this
 5. **Code signing:** the installer is unsigned, so SmartScreen warns on first run (the site FAQ explains it).
 
 ### Still unverified with real accounts
-- The live Metricool OAuth round trip (Wrangler-era safety check blocked a live client registration from here).
+- The live Metricool OAuth round trip (the safety check blocked a live client registration from this session).
 - A real clip of a real video end to end in the packaged app, and a real render by eye and ear (old step 12).
 
 ## Release + publishing (2026-11-08)
