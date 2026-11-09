@@ -337,15 +337,22 @@ class FFmpegRenderer:
                                     text=True, encoding="utf-8")
             watchdog = threading.Timer(STALL_SECS, lambda: (stalled.set(), proc.kill()))
             watchdog.start()
-            for line in proc.stdout:  # §32: ffmpeg's own progress, forwarded as report(0..1 within this piece)
+            try:
+                for line in proc.stdout:  # §32: ffmpeg's own progress, forwarded as report(0..1 within this piece)
+                    watchdog.cancel()
+                    watchdog = threading.Timer(STALL_SECS, lambda: (stalled.set(), proc.kill()))
+                    watchdog.start()
+                    if line.startswith("out_time_us=") and progress:
+                        try:
+                            secs = float(line.split("=")[1]) / 1e6
+                        except ValueError:  # "N/A" before the first frame
+                            continue
+                        progress(min(secs / duration, 1.0))
+            except BaseException:  # the progress callback raised (the job was cancelled): stop ffmpeg now
                 watchdog.cancel()
-                watchdog = threading.Timer(STALL_SECS, lambda: (stalled.set(), proc.kill()))
-                watchdog.start()
-                if line.startswith("out_time_us=") and progress:
-                    try:
-                        progress(min(float(line.split("=")[1]) / 1e6 / duration, 1.0))
-                    except ValueError:
-                        pass
+                proc.kill()
+                proc.wait()
+                raise
             watchdog.cancel()
             _, _ = proc.communicate()
             if stalled.is_set():

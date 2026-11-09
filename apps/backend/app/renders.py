@@ -4,13 +4,16 @@ Rides the shared job system (generation_jobs.kind = 'render'); piece status walk
 """
 import asyncio
 import json
+import logging
 import shutil
 import uuid
 from pathlib import Path
 
 from app import config, content, design, edit, motion, projects, render, settings, tts
 from app.database import connect
-from app.errors import UserError
+from app.errors import Cancelled, UserError, explain
+
+log = logging.getLogger("renders")
 
 
 def _assets_for(piece: dict) -> list[dict]:
@@ -90,20 +93,27 @@ def render_project(project_id: str, report, piece_ids: list[str] | None = None) 
     voice = voice if voice in tts.VOICES else tts.DEFAULT_VOICE
 
     n = len(pieces)
+    fail = getattr(report, "fail", None)  # jobs.py's report can mark one step failed and carry on
     for i, piece in enumerate(pieces, 1):
         content_data = piece["content"]
         kinds = _wanted_kinds(brief, piece)
+
+        def at(step: str, f: float, i=i, piece=piece) -> None:
+            # "Piece 3 (2 of 5): Encoding video": the piece number matches the list, the count shows the way left
+            report(f"Piece {piece['idx']} ({i} of {n}): {step}", (i - 1 + min(max(f, 0.0), 1.0)) / n)
+
+        # each piece's share of the bar: narration and word timings first, ffmpeg's encode is the long part
+        enc = (0.45, 0.95 if "image" in kinds else 1.0) if "video" in kinds else None
         try:
             narration = None
             if "video" in kinds:  # a quote image has no voice: never pay for (or wait on) narration it won't use
-                report(f"Narration {i} of {n}", (i - 0.5) / n)
+                at("Narrating", 0.0)
                 narration = asyncio.run(engine.generate(content_data["narration"]["text"], voice,
                                                         content_data["narration"].get("delivery", "")))
             pool = _assets_for(piece)
             if not pool:
                 raise UserError("This piece has no visual asset yet.", "Generate visuals, then render again.")
             asset = pool[0]  # the hero shot: it also feeds the 4:5 image render
-            report(f"Rendering {i} of {n}", i / n)
             with connect() as conn:
                 conn.execute("UPDATE content_pieces SET status = 'rendering' WHERE id = ?", (piece["id"],))
             for kind in kinds:
@@ -113,21 +123,24 @@ def render_project(project_id: str, report, piece_ids: list[str] | None = None) 
                     if kind == "video":
                         # clean video: no scrim, no quote text burned in (user decision 2026-09-20)
                         timeline = narration.duration + edit.TAIL
+                        at("Timing the words", 0.25)
                         words = _words(content_data["narration"]["text"], narration.path, narration.duration)
                         subs = _subtitles_ass(piece, words, timeline, renderer.w, renderer.h,
                                               brief.get("captions")) if brief["subtitles"] else None
                         cut = edit.cut_for(brief["tone"])
                         look = cut["look"] if brief["look_filter"] == "auto" else brief["look_filter"]
-                        report(f"Animating titles {i} of {n}", i / n)
+                        at("Animating titles", 0.35)
                         callouts = [(c["text"], t) for c in content_data.get("callouts") or []
                                     if (t := motion.anchor_time(words, c["word"])) is not None]
                         layers = motion.layers(brief["tone"], renderer.w, renderer.h,
                                                content_data.get("hook") or "", callouts)
+                        at("Encoding video", enc[0])
                         info = renderer.render_video(src=config.MEDIA_DIR / asset["local_path"],
                                                      narration=narration.path, out=full_out,
                                                      subject_position=asset["subject_position"] or "center",
                                                      src_fps=asset["fps"], src_duration=asset["duration"],
-                                                     still=asset["asset_type"] == "image", progress=None,
+                                                     still=asset["asset_type"] == "image",
+                                                     progress=lambda f: at("Encoding video", enc[0] + f * (enc[1] - enc[0])),
                                                      out_fps=brief["fps"], look=look, duck=cut["duck"],
                                                      blur_background=brief["blur_background"],
                                                      parallax=brief["parallax"], subtitles=subs,
@@ -135,6 +148,7 @@ def render_project(project_id: str, report, piece_ids: list[str] | None = None) 
                                                      layers=layers)
                         duration, fps, w, h = info["duration"], info["fps"], renderer.w, renderer.h
                     else:
+                        at("Designing the picture", enc[1] if enc else 0.1)
                         image_src = config.MEDIA_DIR / asset["local_path"]
                         if asset["asset_type"] == "video":
                             # a video asset can't feed PIL: grab a representative frame and render the 4:5 from it
@@ -159,11 +173,24 @@ def render_project(project_id: str, report, piece_ids: list[str] | None = None) 
                                  "fps, width, height) VALUES (?,?,?,?,?,?,?,?,?)",
                                  (uuid.uuid4().hex[:12], project_id, piece["id"], kind, out.as_posix(), duration,
                                   fps, w, h))
+            stale = content_data.pop("render_error", None) is not None
+            content_data.pop("render_error_detail", None)
             with connect() as conn:
+                if stale:  # an earlier failed render's note no longer applies
+                    conn.execute("UPDATE content_pieces SET content = ? WHERE id = ?",
+                                 (json.dumps(content_data, ensure_ascii=False), piece["id"]))
                 conn.execute("UPDATE content_pieces SET status = 'ready' WHERE id = ?", (piece["id"],))
             piece["status"] = "ready"
-        except UserError as e:
-            content_data["render_error"] = str(e)
+        except Cancelled:
+            raise
+        except Exception as e:  # one bad piece never sinks the batch: log it on the step and on the piece
+            if not isinstance(e, UserError):
+                log.exception("render of piece %s failed", piece["id"])
+            message, detail = (str(e), e.detail) if isinstance(e, UserError) else explain(e)
+            if fail:
+                fail(message, detail)
+            content_data["render_error"] = message
+            content_data["render_error_detail"] = detail
             with connect() as conn:
                 conn.execute("UPDATE content_pieces SET status = 'written', content = ? WHERE id = ?",
                              (json.dumps(content_data, ensure_ascii=False), piece["id"]))

@@ -23,7 +23,7 @@ def _secrets_load(keys: dict) -> dict:
 
 
 METHODS = {
-    "app.info": lambda: {"data_dir": str(config.DATA_DIR), "version": config.VERSION},
+    "app.info": lambda: {"data_dir": str(config.DATA_DIR), "version": config.VERSION, "min_clip": config.MIN_CLIP},
     "secrets.load": _secrets_load,
     "settings.get": settings.get,
     "settings.update": settings.update,
@@ -42,7 +42,6 @@ METHODS = {
     "pieces.recent": content.recent,
     "pieces.showcase": content.showcase,
     "pieces.regenerate": content.regenerate,
-    "pieces.approve": content.approve,
     "assets.list": assets.list_assets,
     "visuals.pick": assets.pick,
     "assets.delete": assets.delete_asset,
@@ -63,7 +62,7 @@ METHODS = {
     "jobs.start": jobs.start,
     "jobs.cancel": jobs.cancel,
     "jobs.latest": jobs.latest,
-    "publish.calendar": posts.calendar,
+    "publish.schedule": posts.schedule,
     "publish.publications": posts.publications,
     "publish.remove": posts.remove,
     "publish.zernio_connection": zernio.connection,

@@ -3,9 +3,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { ArrowLeft, CalendarBlank, Check, Copy, Export, PaperPlaneTilt, PencilSimple, Play, Trash, X } from '@phosphor-icons/react'
 import { call, formatDate, hasKey, label, mediaUrl, useJob, useQuery, BackendError,
-  type CalendarPlan, type Clip, type Project as P, type Publication } from '../lib/studio'
+  type Clip, type Project as P, type Publication, type ScheduleItem } from '../lib/studio'
 import { Button, Choices, Dialog, ErrorNote, Field, Input, Select, Textarea, cx } from './ui'
-import { PostDialog, PublicationChips, SetUpPosting, ZernioPicker, useZernio } from './Posting'
+import { PostDialog, PublicationChips, ScheduleAllDialog } from './Posting'
+import { JobLog, JobProgress } from './JobProgress'
 
 const POST_ORDER = ['tiktok', 'instagram', 'youtube', 'linkedin', 'facebook', 'x'] as const
 type Net = (typeof POST_ORDER)[number]
@@ -88,6 +89,10 @@ export function ClipWorkspace({ project, onBack, onSettings }: { project: P; onB
   if (!b) return null
 
   const ready = clips?.filter((c) => c.video_path && c.status !== 'rejected') ?? []
+  // "Schedule all": every postable clip with nothing scheduled or posted yet (failed and cancelled posts don't count)
+  const unscheduled: ScheduleItem[] = ready.filter((c) => !pubs?.some((p) => p.clip_idx === c.idx && !p.piece_id
+    && p.status !== 'error' && p.status !== 'canceled'))
+    .map((c) => ({ key: `clip:${c.idx}`, title: `${String(c.idx).padStart(2, '0')} ${c.title}`, cover: c.cover_path, video: true, clip_idx: c.idx }))
 
   async function start(kind: 'clip' | 'export') {
     if (running) return
@@ -133,9 +138,9 @@ export function ClipWorkspace({ project, onBack, onSettings }: { project: P; onB
           </div>
           <div className="flex shrink-0 items-center gap-2">
             <Button variant="ghost" onClick={remove} aria-label="Delete project"><Trash size={15} /></Button>
-            {clips?.some((c) => c.status === 'approved') && (
-              <Button variant="ghost" onClick={() => setPlanning(true)} disabled={running}
-                title="Spread every approved clip over posting days and times"><CalendarBlank size={14} />Plan calendar</Button>
+            {unscheduled.length > 0 && (
+              <Button onClick={() => setPlanning(true)} disabled={running}
+                title="Pick a date and time for every clip, then post them all in one go"><CalendarBlank size={14} />Schedule all</Button>
             )}
             {!!ready.length && (
               <Button onClick={() => start('export')} disabled={running}><Export size={14} />Export</Button>
@@ -154,21 +159,12 @@ export function ClipWorkspace({ project, onBack, onSettings }: { project: P; onB
       )}
       {error && <div className="mb-6"><ErrorNote error={error} /></div>}
 
-      {running && job && (
-        <section aria-live="polite" className="glass mb-5 grid gap-3 px-7 py-5">
-          <div className="flex items-center justify-between gap-4 text-[13px]">
-            <span className="text-ink">{job.stage || 'Starting'}</span>
-            <Button variant="ghost" onClick={() => call('jobs.cancel', { id: job.id })}>Cancel</Button>
-          </div>
-          <div className="h-0.5 overflow-hidden rounded-full bg-line" role="progressbar" aria-valuenow={Math.round(job.progress * 100)} aria-valuemin={0} aria-valuemax={100}>
-            <div className="h-full origin-left bg-pop transition-transform duration-500 ease-out-expo" style={{ transform: `scaleX(${Math.max(job.progress, 0.02)})` }} />
-          </div>
-        </section>
-      )}
+      {running && job && <JobProgress job={job} />}
       {job?.status === 'failed' && job.error && !running && (
         <div className="mb-8"><ErrorNote error={job.error} action={<Button onClick={() => start('clip')}>Try again</Button>} /></div>
       )}
       {job?.status === 'cancelled' && <p className="mb-8 text-[13px] text-ink-3">Clipping was cancelled.</p>}
+      {job && !running && <JobLog job={job} />}
 
       {!clips?.length && !running && (
         <section className="grid max-w-md gap-3 py-12">
@@ -194,15 +190,15 @@ export function ClipWorkspace({ project, onBack, onSettings }: { project: P; onB
         <PublishDialog key={c.id} clip={c} onClose={() => setPublishing(undefined)} onSettings={onSettings}
           onChanged={() => { setPublishing(undefined); setRev((r) => r + 1) }} />
       ))}
-      {planning && <CalendarDialog project={project} onClose={() => setPlanning(false)} onDone={() => setRev((r) => r + 1)}
-        onSettings={onSettings} />}
+      {planning && <ScheduleAllDialog projectId={project.id} items={unscheduled} onClose={() => setPlanning(false)}
+        onDone={() => setRev((r) => r + 1)} onSettings={onSettings} />}
     </>
   )
 }
 
 function ClipRow({ clip: c, pubs, onPubsChanged, onPreview, onPublish, onReview, onDelete, busy }: {
   clip: Clip; pubs: Publication[]; onPubsChanged: () => void; onPreview: () => void; onPublish: () => void
-  onReview: (status: 'approved' | 'ready' | 'rejected') => void; onDelete: () => void; busy: boolean
+  onReview: (status: 'ready' | 'rejected') => void; onDelete: () => void; busy: boolean
 }) {
   return (
     <li className="anim-slot grid grid-cols-[56px_72px_minmax(0,1fr)_auto] items-center gap-6 border-t border-line py-5 first:border-t-0 max-[900px]:grid-cols-[40px_56px_minmax(0,1fr)_auto]">
@@ -225,12 +221,9 @@ function ClipRow({ clip: c, pubs, onPubsChanged, onPreview, onPublish, onReview,
         <PublicationChips rows={pubs} onChanged={onPubsChanged} />
       </div>
       <div className="flex shrink-0 items-center gap-1.5">
-        {c.status === 'approved' && (
-          <Button variant="ghost" disabled={busy} onClick={onPublish}><PaperPlaneTilt size={13} />Publish</Button>
+        {c.status !== 'rejected' && c.video_path && (
+          <Button variant="ghost" disabled={busy} onClick={onPublish}><PaperPlaneTilt size={13} />Post</Button>
         )}
-        {c.status === 'approved'
-          ? <Button variant="ghost" disabled={busy} onClick={() => onReview('ready')}>Unapprove</Button>
-          : <Button variant="ghost" disabled={busy} onClick={() => onReview('approved')}><Check size={13} weight="bold" />Approve</Button>}
         {c.status === 'rejected'
           ? <Button variant="ghost" disabled={busy} onClick={() => onReview('ready')}>Restore</Button>
           : <Button variant="ghost" disabled={busy} onClick={() => onReview('rejected')}><X size={13} />Reject</Button>}
@@ -260,8 +253,7 @@ function ClipPreview({ clip: c, onClose, onPublish, onSaved }: {
       <aside className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)_auto] border-l border-line max-[1040px]:border-l-0 max-[1040px]:border-t">
         <header className="grid gap-3 border-b border-line px-6 py-5">
           <div className="flex items-center justify-between gap-3">
-            <span className={cx('rounded-full px-2.5 py-1 text-2xs font-medium', c.status === 'approved' ? 'chip-on'
-              : c.status === 'rejected' ? 'bg-danger/15 text-danger' : 'bg-black/[0.06] text-ink-2')}>{label(c.status)}</span>
+            <span className={cx('rounded-full px-2.5 py-1 text-2xs font-medium', c.status === 'rejected' ? 'bg-danger/15 text-danger' : 'bg-black/[0.06] text-ink-2')}>{label(c.status)}</span>
             <div className="-mr-3 flex shrink-0">
               {!editing && <Button variant="ghost" onClick={() => setEditing(true)} className="h-8"><PencilSimple size={13} />Edit copy</Button>}
               <Button variant="ghost" onClick={onClose} aria-label="Close preview" className="h-8"><X size={15} /></Button>
@@ -291,9 +283,9 @@ function ClipPreview({ clip: c, onClose, onPublish, onSaved }: {
               </section>
               <PostCopy clip={c} />
             </div>
-            {c.status === 'approved' ? (
+            {c.status !== 'rejected' && c.video_path ? (
               <div className="flex justify-end border-t border-line px-6 py-4">
-                <Button variant="primary" onClick={onPublish}><PaperPlaneTilt size={14} />Publish</Button>
+                <Button variant="primary" onClick={onPublish}><PaperPlaneTilt size={14} />Post</Button>
               </div>
             ) : <div />}
           </>}
@@ -349,106 +341,6 @@ function CopyEditor({ clip: c, onCancel, onSaved }: { clip: Clip; onCancel: () =
         <Button variant="primary" disabled={busy || !copy.title.trim()} onClick={save}>{busy ? 'Saving…' : 'Save copy'}</Button>
       </div>
     </>
-  )
-}
-
-const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((label, i) => ({ value: i + 1, label }))  // ISO weekdays
-const ZONE = Intl.DateTimeFormat().resolvedOptions().timeZone
-const day = (offset: number) => new Date(Date.now() + offset * 864e5).toLocaleDateString('sv')  // sv = YYYY-MM-DD
-const when = (iso: string) => new Date(iso).toLocaleString(undefined,
-  { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
-
-/** ClipperAi's content calendar: every approved, unscheduled clip gets the next free posting slot. A plan is shown
- * first; nothing reaches Zernio until "Schedule". */
-function CalendarDialog({ project, onClose, onDone, onSettings }: {
-  project: P; onClose: () => void; onDone: () => void; onSettings?: () => void
-}) {
-  const zernio = useZernio().connected
-  const [picked, setPicked] = useState<string[]>([])
-  const [days, setDays] = useState<number[]>([1, 3, 5])
-  const [times, setTimes] = useState('09:00, 18:00')
-  const [start, setStart] = useState(day(1))
-  const [plan, setPlan] = useState<CalendarPlan>()
-  const [done, setDone] = useState(false)
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<BackendError>()
-
-  const parsed = times.split(/[,\s]+/).filter(Boolean)
-  const badTime = parsed.find((t) => !/^([01]?\d|2[0-3]):[0-5]\d$/.test(t))
-  const ok = !!zernio && picked.length > 0 && days.length > 0 && parsed.length > 0 && !badTime && !!start
-
-  async function run(dry: boolean) {
-    setBusy(true)
-    setError(undefined)
-    try {
-      const result = await call<CalendarPlan>('publish.calendar', { project_id: project.id, account_ids: picked,
-        days, times: parsed.map((t) => t.padStart(5, '0')), start, tz: ZONE, dry_run: dry })
-      setPlan(result)
-      if (!dry) { setDone(true); onDone() }
-    } catch (e) {
-      setError(e as BackendError)
-    }
-    setBusy(false)
-  }
-
-  // a changed setting voids the plan shown, so "Schedule" always sends exactly what was previewed
-  const change = <T,>(set: (v: T) => void) => (v: T) => { set(v); setPlan(undefined) }
-  return (
-    <Dialog label="Plan a posting calendar" width={620} onClose={onClose} className="grid-rows-[auto_minmax(0,1fr)_auto]">
-      <header className="flex items-start justify-between gap-3 border-b border-line px-6 py-5">
-        <div>
-          <p className="text-xs text-ink-3">Posting calendar</p>
-          <h2 className="mt-0.5 font-display text-[18px] font-semibold tracking-[-0.02em]">{project.name}</h2>
-        </div>
-        <Button variant="ghost" onClick={onClose} aria-label="Close" className="-mt-2 -mr-3 h-8"><X size={15} /></Button>
-      </header>
-
-      <div className="grid content-start gap-5 overflow-y-auto px-6 py-5">
-        {done ? (
-          <p className="text-[13px] text-ink-2">Scheduled {plan?.scheduled.length} {plan?.scheduled.length === 1 ? 'clip' : 'clips'}.
-            Each clip shows where and when it goes out.</p>
-        ) : zernio === false ? <SetUpPosting onSettings={onSettings} onClose={onClose} /> : <>
-          <ZernioPicker picked={picked} onChange={change(setPicked)} onSettings={() => { onClose(); onSettings?.() }} />
-          <Choices legend="Posting days" multiple options={WEEKDAYS} value={days} onChange={change(setDays)} />
-          <div className="grid grid-cols-2 gap-4">
-            <Field label="Times" hint={`24-hour, separated by commas. Your time zone: ${ZONE}.`}
-              error={badTime ? `"${badTime}" isn't a time like 09:00.` : undefined}>
-              {(id) => <Input id={id} className="tnum" value={times} onChange={(e) => change(setTimes)(e.target.value)} />}
-            </Field>
-            <Field label="Starting">
-              {(id) => <Input id={id} type="date" min={day(0)} value={start} onChange={(e) => change(setStart)(e.target.value)} />}
-            </Field>
-          </div>
-        </>}
-
-        {plan && (
-          <ol className="grid gap-1.5 border-t border-line pt-4 text-[13px]">
-            {plan.scheduled.map((s) => (
-              <li key={s.clip_idx} className="grid grid-cols-[32px_minmax(0,1fr)_auto] items-baseline gap-3">
-                <span className="tnum text-xs text-accent-ink">{String(s.clip_idx).padStart(2, '0')}</span>
-                <span className="truncate text-ink">{s.title}</span>
-                <span className="tnum text-ink-2">{when(s.due_at)}</span>
-              </li>
-            ))}
-            {plan.left.length > 0 && (
-              <li className="pt-2 text-xs text-ink-3">{plan.left.length} more {plan.left.length === 1 ? "clip doesn't" : "clips don't"} fit
-                in the next 30 days. Add days or times to place them.</li>
-            )}
-          </ol>
-        )}
-        {error && <ErrorNote error={error} />}
-      </div>
-
-      <div className="flex justify-end gap-2 border-t border-line px-6 py-4">
-        {done ? <Button variant="primary" onClick={onClose}>Done</Button> : <>
-          <Button variant="ghost" onClick={onClose}>Cancel</Button>
-          {plan
-            ? <Button variant="primary" disabled={busy} onClick={() => run(false)}>
-              <CalendarBlank size={14} />{busy ? 'Scheduling…' : `Schedule ${plan.scheduled.length}`}</Button>
-            : <Button variant="primary" disabled={!ok || busy} onClick={() => run(true)}>{busy ? 'Planning…' : 'Show the plan'}</Button>}
-        </>}
-      </div>
-    </Dialog>
   )
 }
 

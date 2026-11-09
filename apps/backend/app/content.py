@@ -39,7 +39,12 @@ def _history(limit: int) -> tuple[list[str], list[str]]:
 
 
 def split_author(line: str) -> tuple[str, str | None]:
-    """ "Waste no more time arguing. — Marcus Aurelius" -> (line, author). A plain line has no author."""
+    """ "Waste no more time arguing. — Marcus Aurelius" -> (line, author). A plain line has no author.
+    A CSV row pasted straight into the box ("He who is brave is free.","Seneca") splits the same way."""
+    row = re.fullmatch(r'\s*["“](.+?)["”]\s*[,;\t]\s*["“]?([^"“”]*?)["”]?\s*', line)
+    if row:
+        who = row[2].strip()
+        return row[1].strip(), who if 0 < len(who) <= 60 else None
     for sep in (" — ", " – ", " ~ ", " - "):
         if sep in line:
             text, _, who = line.rpartition(sep)
@@ -50,6 +55,12 @@ def split_author(line: str) -> tuple[str, str | None]:
             if text.strip() and 0 < len(who) <= 60 and (sep != " - " or name_like):
                 return text.strip(), who
     return line.strip(), None
+
+
+def _signed(piece) -> bool:
+    """Every AI-chosen quote names its real author (owner 2026-11-08); placeholders don't count."""
+    who = (piece.quote.author or "").strip().lower()
+    return bool(who) and who not in {"unknown", "anonymous", "anon", "n/a", "none", "null", "author"}
 
 
 def _insert(project_id: str, idx: int, angle: str, quote: str, content: dict, status: str = "written") -> str:
@@ -119,21 +130,24 @@ def generate(project_id: str, report: Callable[[str, float], None]) -> None:
             batch.append(text)
             written.append({"id": _insert(project_id, i, item.angle, text, content), "content": content})
             continue
-        piece, repeat = drafts[i], None
+        piece, repeat, unsigned = drafts[i], None, False
         if piece is not None:
             repeat = too_similar(piece.quote.text, batch + history)
-        tries = 0 if piece is not None and not repeat else PIECE_ATTEMPTS - (piece is not None)  # the draft counts
-        for _ in range(tries):  # unusable or a repeat: write it alone
+            unsigned = not _signed(piece)
+        tries = 0 if piece is not None and not repeat and not unsigned else PIECE_ATTEMPTS - (piece is not None)
+        for _ in range(tries):  # unusable, a repeat or a quote with no author: write it alone
             if repeat:
                 avoid = [repeat] + avoid
             piece = model.write_piece(brief, plan, item, avoid)
             repeat = too_similar(piece.quote.text, batch + history)
-            if not repeat:
+            unsigned = not _signed(piece)
+            if not repeat and not unsigned:
                 break
         content = {"plan": item.model_dump(), "reading": plan.reading, **piece.model_dump()}
-        if repeat:
-            _insert(project_id, i, item.angle, piece.quote.text,
-                    {**content, "error": f'Every attempt repeated an earlier line: "{repeat}"'}, status="failed")
+        if repeat or unsigned:
+            why = (f'Every attempt repeated an earlier line: "{repeat}"' if repeat
+                   else "Every attempt came back without a real author for the quote.")
+            _insert(project_id, i, item.angle, piece.quote.text, {**content, "error": why}, status="failed")
         else:
             batch.append(piece.quote.text)
             written.append({"id": _insert(project_id, i, item.angle, piece.quote.text, content), "content": content})
@@ -214,16 +228,6 @@ def regenerate(piece_id: str, scope: str) -> dict:
         raise UserError("Unknown regeneration scope.", scope)
 
     _rewrite(piece, "written")
-    return _piece(piece_id)
-
-
-def approve(piece_id: str) -> dict:
-    """§41: approve a rendered piece; approval is what the export step is allowed to rely on."""
-    piece = _piece(piece_id)
-    if piece["status"] not in ("ready", "approved"):
-        raise UserError("Only rendered pieces can be approved.", f"this piece is '{piece['status']}'")
-    with connect() as conn:
-        conn.execute("UPDATE content_pieces SET status = 'approved' WHERE id = ?", (piece_id,))
     return _piece(piece_id)
 
 

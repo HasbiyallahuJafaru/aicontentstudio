@@ -19,7 +19,7 @@ def main(argv=None) -> int:
     export = sub.add_parser("export", help="export a project's rendered pieces/clips to a folder")
     export.add_argument("project_id")
     sub.add_parser("accounts", help="list the social accounts connected in Zernio")
-    publish = sub.add_parser("publish", help="post or schedule an approved clip through Zernio")
+    publish = sub.add_parser("publish", help="post or schedule a clip through Zernio")
     publish.add_argument("project_id")
     publish.add_argument("clip_idx", type=int)
     publish.add_argument("--accounts", required=True, help="comma-separated Zernio account ids (see: accounts)")

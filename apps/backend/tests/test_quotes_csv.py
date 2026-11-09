@@ -55,6 +55,12 @@ class QuotesCsv(unittest.TestCase):
         self.assertEqual(split_author("Be kind - Seneca"), ("Be kind", "Seneca"))
         self.assertEqual(split_author("Begin. — marcus aurelius"), ("Begin.", "marcus aurelius"))
 
+    def test_a_pasted_csv_row_splits_into_quote_and_author(self):
+        self.assertEqual(split_author('"He who is brave is free.","Seneca"'), ("He who is brave is free.", "Seneca"))
+        self.assertEqual(split_author('"Small steps, taken daily, still count.",'), ("Small steps, taken daily, still count.", None))
+        self.assertEqual(split_author('"Begin.";Marcus Aurelius'), ("Begin.", "Marcus Aurelius"))
+        self.assertEqual(split_author('"Quoted, but alone."'), ('"Quoted, but alone."', None))
+
 
 if __name__ == "__main__":
     unittest.main()

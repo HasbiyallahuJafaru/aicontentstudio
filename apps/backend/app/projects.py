@@ -58,8 +58,10 @@ class ClipBrief(BaseModel):
     kind: Literal["clip"] = "clip"
     source: str = Field(min_length=1, max_length=500)  # http(s) URL or a local file path
     n: int | None = Field(None, ge=1, le=30)  # None = about one clip per minute of source
-    min_len: float = Field(30, ge=5, le=600)
-    max_len: float = Field(60, ge=10, le=900)
+    # owner 2026-11-08: every clip runs at least a minute. The Create form enforces it and clips.run floors any
+    # saved brief at clips.MIN_CLIP, so older projects and the CLI get it too (tests lower the floor to stay fast).
+    min_len: float = Field(60, ge=1, le=600)
+    max_len: float = Field(90, ge=1, le=900)
     orientation: Literal["9:16", "16:9", "1:1"] = "9:16"
     burn_captions: bool = True
     captions: CaptionStyle = Field(default_factory=CaptionStyle)

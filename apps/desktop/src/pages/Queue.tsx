@@ -9,7 +9,6 @@ const STAGES: { id: PieceStatus; text: string }[] = [
   { id: 'rendering', text: 'Rendering' },
   { id: 'written', text: 'Needs render' },
   { id: 'ready', text: 'Ready' },
-  { id: 'approved', text: 'Approved' },
   { id: 'exported', text: 'Exported' },
   { id: 'failed', text: 'Failed' },
 ]
@@ -17,8 +16,7 @@ const STAGES: { id: PieceStatus; text: string }[] = [
 const EMPTY: Record<PieceStatus, string> = {
   rendering: 'Nothing is rendering. Renders you start appear here live.',
   written: 'Every written piece has a render. New pieces wait here until you render them.',
-  ready: 'No pieces waiting for review.',
-  approved: 'Approved pieces collect here, ready to export.',
+  ready: 'No rendered pieces waiting to be posted or exported.',
   exported: 'Nothing exported yet.',
   failed: 'Nothing has failed.',
 }

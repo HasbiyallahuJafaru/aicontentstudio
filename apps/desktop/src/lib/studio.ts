@@ -39,23 +39,27 @@ export type Project = { id: string; name: string; status: string; brief: Brief |
 export type Clip = {
   id: string; project_id: string; idx: number; start_at: number; end_at: number; score: number
   reason: string; hook: string; title: string; description: string; hashtags: string[]
-  posts: Record<string, string>; status: 'ready' | 'approved' | 'rejected' | 'exported'
+  posts: Record<string, string>; status: 'ready' | 'rejected' | 'exported'
   video_path: string; cover_path: string; created_at: string
 }
 export type DownloadStatus = {
   status: 'fetching' | 'ready' | 'error'; progress: number; title: string | null; path: string | null
   error: { message: string; detail?: string } | null
 }
-export type CalendarPlan = { scheduled: { clip_idx: number; title: string; due_at: string }[]; left: number[] }
+/** One line of "Schedule all": a clip or a piece, and how its posting went. */
+export type ScheduleItem = { key: string; title: string; cover?: string | null; video: boolean; clip_idx?: number; piece_id?: string }
+export type ScheduleResult = { key: string; ok: boolean; error?: string }
 export type Publication = {
   id: string; project_id: string; clip_idx: number; provider: string; channel_id: string; service: string
   channel_name: string; status: string; due_at: string | null; sent_at: string | null
   external_link: string | null; error: string | null; created_at: string; piece_id: string | null
 }
 export type Job = {
-  id: string; project_id: string; status: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled'
+  id: string; project_id: string; kind?: string; status: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled'
   stage: string; progress: number; error: { message: string; detail?: string } | null; updated_at: string
+  log: JobStep[]  // every step so far: "Piece 3 (2 of 5): Encoding video", with its time and any error
 }
+export type JobStep = { step: string; status: 'running' | 'done' | 'failed' | 'cancelled'; secs: number; error?: string; detail?: string }
 export type PieceContent = {
   plan: { angle: string; visual_subject: string; visual_type: 'video' | 'image'; intensity: string; narration_style: string }
   quote: { text: string }
@@ -65,6 +69,8 @@ export type PieceContent = {
   metadata: { title: string; description: string; caption: string; hashtags: string[]; keywords: string[]; alt_text: string }
   asset?: { id: string; provider: string; asset_type: string }
   visual_error?: string
+  render_error?: string  // the last render of this piece failed; cleared by the next good render
+  render_error_detail?: string
   review?: FootageReview  // footage options waiting for the user's pick; nothing full-size downloaded yet
   error?: string
 }
@@ -73,7 +79,7 @@ export type FootageOption = {
   candidate: { provider: string; asset_type: 'video' | 'image'; creator: string; duration: number; width: number; height: number }
 }
 export type FootageReview = { want: number; type: 'video' | 'image'; picked: string[]; options: FootageOption[] }
-export type PieceStatus = 'written' | 'rendering' | 'ready' | 'approved' | 'exported' | 'failed'
+export type PieceStatus = 'written' | 'rendering' | 'ready' | 'exported' | 'failed'
 export type Piece = { id: string; idx: number; status: PieceStatus; angle: string; quote: string; project_id: string; content: PieceContent }
 export type Asset = {
   id: string; provider: 'pexels' | 'unsplash'; asset_type: 'image' | 'video'; creator: string; license: string

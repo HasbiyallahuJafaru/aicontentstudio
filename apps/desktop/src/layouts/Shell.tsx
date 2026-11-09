@@ -4,6 +4,7 @@ import { studio, useBackendStatus, useFullScreen } from '../lib/studio'
 import { CreatedBy } from '../components/Branding'
 import { Button, ErrorNote, cx } from '../components/ui'
 import { DomeBackground } from '../components/DomeBackground'
+import { CreatorCard } from '../components/CreatorCard'
 
 // the background dome plays short looping clips (2.5 s animated WebP, built by scripts/make-dome-clips.py from free
 // Pexels footage, credits in assets/dome/CREDITS.json) so the room feels like video, not repeated posters
@@ -85,6 +86,7 @@ export function Shell({ page, onNavigate, children }: { page: Page; onNavigate: 
     <div className="ambient relative isolate grid h-full grid-cols-[76px_minmax(0,1fr)] grid-rows-[44px_minmax(0,1fr)] overflow-hidden">
       {/* the room's background: a dome of short looping clips turning slowly behind the pages (owner request 2026-11-08) */}
       <div className="absolute inset-0 -z-10"><DomeBackground images={CLIPS} /></div>
+      <CreatorCard />
       {/* windowed: room for the native caption buttons; fullscreen: ours sit flush in the top-right corner */}
       <header className={cx('anim-shell-head drag col-span-2 flex items-center gap-3 bg-ground pl-5', full ? 'pr-0' : 'titlebar-inset')}>
         <span className="grid size-7 place-items-center rounded-[9px] bg-ink"><Aperture size={16} weight="fill" className="text-accent" /></span>

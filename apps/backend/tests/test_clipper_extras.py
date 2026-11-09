@@ -27,7 +27,7 @@ def setUpModule():
     database.migrate()
 
 
-def clip_project(name="Extras talk", status="approved") -> tuple[dict, str]:
+def clip_project(name="Extras talk", status="ready") -> tuple[dict, str]:
     src = config.MEDIA_DIR / "fixtures" / "extras-src.mp4"
     src.parent.mkdir(parents=True, exist_ok=True)
     src.write_bytes(b"source")
@@ -206,20 +206,6 @@ class PlainDownloader(unittest.TestCase):
         s = downloader.status(token)
         self.assertEqual(s["status"], "error")
         self.assertIn("not a bot", s["error"]["message"])
-
-
-class CalendarPlan(unittest.TestCase):
-    def test_dry_run_plans_without_touching_zernio(self):
-        p, _ = clip_project(name="Calendar talk")
-        start = (datetime.now(timezone.utc) + timedelta(days=2)).strftime("%Y-%m-%d")
-        with mock.patch.object(zernio, "check") as ready, mock.patch.object(zernio, "publish") as publish:
-            plan = posts.calendar(p["id"], ["ch-1"], list(range(1, 8)), ["09:00"], start, "UTC", dry_run=True)
-        ready.assert_not_called()
-        publish.assert_not_called()
-        self.assertEqual([s["clip_idx"] for s in plan["scheduled"]], [1])
-        self.assertTrue(plan["scheduled"][0]["due_at"].startswith(start))
-        with self.assertRaisesRegex(UserError, "posting day"):
-            posts.calendar(p["id"], ["ch-1"], [], ["09:00"], start, "UTC", dry_run=True)
 
 
 if __name__ == "__main__":

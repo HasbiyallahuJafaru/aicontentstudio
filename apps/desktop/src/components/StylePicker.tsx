@@ -1,4 +1,5 @@
 import { useEffect, useId, useState } from 'react'
+import { Check } from '@phosphor-icons/react'
 import { call, type CaptionStyle, type TextPosition } from '../lib/studio'
 import { Choices, Field, Select, cx } from './ui'
 
@@ -26,9 +27,14 @@ function SwatchGrid({ legend, swatches, value, onChange, auto, ratio }: {
     <label key={id} className="no-drag group grid cursor-pointer gap-2">
       <input type="radio" name={name} className="peer sr-only" checked={value === id} onChange={() => onChange(id)} />
       <span className={cx('relative block overflow-hidden rounded-field border transition-[border-color,transform] duration-200',
-        'peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-accent',
-        value === id ? 'border-pop shadow-[0_10px_26px_-12px_rgb(17_18_20/0.22)]' : 'border-line group-hover:border-line-strong')} style={{ aspectRatio: ratio }}>
+        'peer-focus-visible:outline-2 peer-focus-visible:outline-offset-4 peer-focus-visible:outline-accent',
+        value === id ? 'halo border-transparent' : 'border-line group-hover:border-line-strong')} style={{ aspectRatio: ratio }}>
         {body}
+        {value === id && (
+          <span aria-hidden className="absolute right-1.5 top-1.5 grid size-6 place-items-center rounded-full bg-accent text-on-accent shadow-[0_0_0_2px_#fff]">
+            <Check size={13} weight="bold" />
+          </span>
+        )}
       </span>
       <span className={cx('text-[12px]', value === id ? 'font-medium text-ink' : 'text-ink-2')}>{labelText}</span>
     </label>
@@ -36,7 +42,7 @@ function SwatchGrid({ legend, swatches, value, onChange, auto, ratio }: {
   return (
     <fieldset className="grid gap-2">
       <legend className="mb-2 text-[13px] font-medium text-ink">{legend}</legend>
-      <div className="grid grid-cols-4 gap-3">
+      <div className="grid grid-cols-4 gap-4 p-2">
         {auto && tile('auto', auto.label,
           <span className="grid h-full place-items-center bg-black/[0.03] px-3 text-center text-[12px] leading-snug text-ink-2">{auto.hint}</span>)}
         {swatches
@@ -123,12 +129,12 @@ export function PalettePicker({ value, onChange }: { value: string; onChange: (v
   return (
     <fieldset className="grid gap-2">
       <legend className="mb-2 text-[13px] font-medium text-ink">Footage colour</legend>
-      <div className="flex flex-wrap gap-1.5">
+      <div className="flex flex-wrap gap-2.5 p-1">
         {PALETTES.map((p) => (
           <label key={p.value} className={cx(
             'no-drag relative flex h-9 cursor-pointer items-center gap-2 rounded-control border px-3.5 text-[13px] transition-colors duration-150',
             'has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-accent',
-            value === p.value ? 'chip-on' : 'border-line bg-black/[0.03] text-ink-2 hover:border-line-strong hover:text-ink')}>
+            value === p.value ? 'chip-on halo-sm' : 'border-line bg-black/[0.03] text-ink-2 hover:border-line-strong hover:text-ink')}>
             <input type="radio" name={name} className="sr-only" checked={value === p.value} onChange={() => onChange(p.value)} />
             {!!p.dots.length && (
               <span aria-hidden className="flex -space-x-1">

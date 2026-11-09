@@ -76,6 +76,9 @@ await win.getByRole('button', { name: 'Start creating' }).click()
 
 // "Engine ready" only appears once the frozen backend has migrated its database and answered over stdio.
 await win.getByRole('status').filter({ hasText: 'Engine ready' }).waitFor({ timeout: 60_000 })
+// The Dashboard's main button proves the page itself rendered (motion is on here, so wait out its entrance).
+await win.getByRole('button', { name: /Start your first project|New project/ }).waitFor({ timeout: 30_000 })
+await win.waitForTimeout(1500)
 await win.screenshot({ path: join(out, 'packaged-dashboard.png') })
 
 // The backend must be using the ffmpeg we shipped, not whatever happens to be on the machine.

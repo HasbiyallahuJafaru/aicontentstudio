@@ -220,7 +220,7 @@ def _send(project_id: str, idx: int, chosen: list[dict], path, texts: dict[str, 
 
 
 def publish(project_id: str, clip_idx: int, account_ids: list[str], due_at: str | None = None) -> list[dict]:
-    """Schedules an approved clip on each chosen account with that network's own copy, now (in a couple of
+    """Schedules a clip on each chosen account with that network's own copy, now (in a couple of
     minutes) or at `due_at`."""
     from app.publish import posts
 

@@ -376,6 +376,23 @@ class ClipProject(unittest.TestCase):
         if subprocess.run(["ffmpeg", "-version"], capture_output=True).returncode != 0:
             raise unittest.SkipTest("ffmpeg not on PATH")
 
+    def setUp(self):  # real clips run at least a minute; these renders stay ~2 s (fast tests, owner rule)
+        floor = mock.patch.object(clips_app, "MIN_CLIP", 1.0)
+        floor.start()
+        self.addCleanup(floor.stop)
+
+    def test_a_short_pick_grows_to_the_full_minute(self):
+        """Dead air cut from a picked moment must never leave a finished clip under the floor: it grows along
+        the talk, and backwards once it reaches the end of the speech."""
+        words = [{"word": f"w{i}.", "start": i * 0.5, "end": i * 0.5 + 0.4} for i in range(240)]  # 120 s of talk
+        with mock.patch.object(clips_app, "silences", lambda v, a, b: []):
+            start, end, ranges, _ = clips_app._at_least(None, words, 10.0, 30.0, None, 60.0, words[-1]["end"])
+            self.assertGreaterEqual(sum(b - a for a, b in ranges), 60.0)
+            self.assertEqual(start, 9.9)
+            start, end, ranges, _ = clips_app._at_least(None, words, 100.0, 119.9, None, 60.0, words[-1]["end"])
+            self.assertGreaterEqual(sum(b - a for a, b in ranges), 60.0)
+            self.assertLess(start, 100.0)
+
     def test_create_validates_the_source(self):
         with self.assertRaises(UserError):
             projects.create({"kind": "clip", "source": "not a url"})
@@ -387,7 +404,7 @@ class ClipProject(unittest.TestCase):
         src = config.MEDIA_DIR / "fixtures" / "clip-src.mp4"
         src.parent.mkdir(parents=True, exist_ok=True)
         make_talking_head(str(src))
-        p = projects.create({"kind": "clip", "source": str(src), "n": 1, "min_len": 5, "max_len": 10})
+        p = projects.create({"kind": "clip", "source": str(src), "n": 1, "min_len": 1, "max_len": 10})
         with mock.patch.object(clips_app.transcribe, "transcribe", lambda v, w: fake_transcript(2.5)), \
              mock.patch.object(clips_app.select, "find_clips", lambda t, n, a, b: [one_clip()]), \
              mock.patch.object(jobs, "emit"):

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
-import { ArrowLeft, CaretRight, Check, DownloadSimple, FolderOpen, Scissors, UploadSimple } from '@phosphor-icons/react'
+import { ArrowLeft, CaretRight, Check, Copy, DownloadSimple, FolderOpen, Scissors, UploadSimple } from '@phosphor-icons/react'
 import { call, studio, DEFAULT_CAPTIONS, GENRES, hasKey, label, PLATFORMS, TOPICS, useQuery, voiceOptions, BackendError,
   type Brief, type CaptionStyle, type DownloadStatus, type Project, type Settings, type VoiceList } from '../lib/studio'
 import { Button, Autocomplete, Choices, ErrorNote, Field, Input, PageHeader, Select, Textarea, cx, spot } from '../components/ui'
@@ -16,6 +16,7 @@ const artFor = (k: Kind) => ART[`../assets/create/${k}.webp`]
 const TITLES: Record<Kind, string> = { images: 'Quote images', videos: 'Narrated videos', clips: 'Clips from a video' }
 const MAX_QUOTE = 180
 const MAX_QUOTES = 100  // pasted or imported; the AI writes up to 20
+const MIN_CLIP = 60  // seconds: every finished clip runs at least a minute (owner 2026-11-08; clips.MIN_CLIP)
 const ORIENTATIONS = [
   { value: '9:16', label: '9:16 — Shorts, Reels, TikTok' },
   { value: '16:9', label: '16:9 — landscape' },
@@ -31,7 +32,7 @@ export function Create({ onCreated }: { onCreated: (id: string) => void }) {
   const { data: settings } = useQuery<Settings>('settings.get')
   const [kind, setKind] = useState<Kind | null>(null)
   const [brief, setBrief] = useState<Brief>()
-  const [clip, setClip] = useState<ClipForm>({ source: '', n: null, orientation: '9:16', min_len: 30, max_len: 60, burn_captions: true, fps: 30, captions: DEFAULT_CAPTIONS })
+  const [clip, setClip] = useState<ClipForm>({ source: '', n: null, orientation: '9:16', min_len: MIN_CLIP, max_len: 90, burn_captions: true, fps: 30, captions: DEFAULT_CAPTIONS })
   const [own, setOwn] = useState(false)  // quote images: the user's own lines instead of the AI's
   const [quotesText, setQuotesText] = useState('')
   const [custom, setCustom] = useState(false)
@@ -294,11 +295,47 @@ function ImagesForm({ brief, setBrief, own, setOwn, quotesText, setQuotesText, c
 
 type CsvResult = { quotes: string[]; skipped: { row: number; reason: string }[]; authors: number; header: boolean }
 
+/** The CSV the importer reads, as a file to copy: a header, real attributed quotes, original lines with no author,
+ *  and a comma inside a quoted field. quotes_csv.py parses it as is (checked 2026-11-08). */
+const SAMPLE_ROWS = [
+  'quote,author',
+  'Waste no more time arguing about what a good man should be. Be one.,Marcus Aurelius',
+  'We suffer more often in imagination than in reality.,Seneca',
+  'Well done is better than well said.,Benjamin Franklin',
+  'Your comfort zone will kill you.,',
+  '"Small steps, taken daily, still count.",',
+]
+
+/** A prompt to paste into any AI chat so it writes a quote list this importer reads first time. */
+const SAMPLE_PROMPT = [
+  'Write 20 short quotes about [YOUR TOPIC] for social media quote images.',
+  '',
+  'Reply with CSV only, no other text, in exactly this format:',
+  '',
+  ...SAMPLE_ROWS,
+  '',
+  'Rules:',
+  '- The first row is the header: quote,author',
+  `- One quote per row, at most ${MAX_QUOTE} characters. 6 to 22 words reads best on an image.`,
+  '- Wrap a quote in double quotes if it contains a comma.',
+  '- author is the real person who said or wrote it. Only attribute a quote you are sure is real and correctly attributed; never invent an attribution. Leave author empty for original lines.',
+  '- No numbering, emojis, hashtags or repeats.',
+  `- At most ${MAX_QUOTES} rows.`,
+].join('\n')
+
+function download(name: string, text: string, type: string) {
+  const url = URL.createObjectURL(new Blob([text], { type }))
+  const a = Object.assign(document.createElement('a'), { href: url, download: name })
+  a.click()
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
+}
+
 /** The user's own quotes: typed, pasted, or imported from a CSV (button or drop). The CSV is parsed by the
  *  backend (quotes_csv.py) and lands here as editable lines, so the box stays the single source of truth. */
 function QuotesInput({ value, onChange, long, count }: { value: string; onChange: (v: string) => void; long: number; count: number }) {
   const file = useRef<HTMLInputElement>(null)
   const [note, setNote] = useState<{ name: string } & CsvResult>()
+  const [copied, setCopied] = useState(false)
   const [failed, setFailed] = useState<BackendError>()
   const [over, setOver] = useState(false)
 
@@ -340,6 +377,20 @@ function QuotesInput({ value, onChange, long, count }: { value: string; onChange
         <span className="tnum text-xs text-ink-3">{count} {count === 1 ? 'quote' : 'quotes'}</span>
       </div>
       <p className="text-xs text-ink-3">A quote column and an optional author column, with or without a header row. Excel, Sheets and Numbers exports all work.</p>
+      <div className="grid gap-2 rounded-field bg-black/[0.04] px-4 py-3 text-xs text-ink-2 shadow-[inset_0_0_0_1px_rgb(17_18_20/0.08)]">
+        <p>Not sure of the format? Download the sample, or copy a prompt for ChatGPT, Claude or Gemini. Swap in your topic, save its reply as a .csv file and import it.</p>
+        <div className="flex flex-wrap gap-2">
+          <Button type="button" onClick={() => download('quotes-sample.csv', '﻿' + SAMPLE_ROWS.join('\r\n') + '\r\n', 'text/csv;charset=utf-8')}>
+            <DownloadSimple size={14} />Download sample CSV
+          </Button>
+          <Button type="button" onClick={async () => { await navigator.clipboard.writeText(SAMPLE_PROMPT); setCopied(true); setTimeout(() => setCopied(false), 1800) }}>
+            {copied ? <Check size={14} weight="bold" /> : <Copy size={14} />}{copied ? 'Prompt copied' : 'Copy AI prompt'}
+          </Button>
+          <Button type="button" variant="ghost" onClick={() => download('quotes-prompt.txt', SAMPLE_PROMPT, 'text/plain;charset=utf-8')}>
+            Download prompt
+          </Button>
+        </div>
+      </div>
       {note && (
         <div role="status" className="grid gap-1 rounded-field bg-black/[0.04] px-4 py-3 text-xs text-ink-2 shadow-[inset_0_0_0_1px_rgb(17_18_20/0.08)]">
           <p><span className="font-medium text-ink">Added {note.quotes.length} {note.quotes.length === 1 ? 'quote' : 'quotes'}</span> from {note.name}
@@ -518,6 +569,7 @@ function ClipFormFields({ clip, setClip, keySet, error, saving }: {
   clip: ClipForm; setClip: (c: ClipForm) => void; keySet?: boolean; error?: BackendError; saving: boolean
 }) {
   const [over, setOver] = useState(false)
+  const floor = useQuery<{ min_clip: number }>('app.info').data?.min_clip ?? MIN_CLIP  // the backend's floor wins
   const choose = async () => { const path = await studio.pickVideo(); if (path) setClip({ ...clip, source: path }) }
   return (
     <>
@@ -567,13 +619,16 @@ function ClipFormFields({ clip, setClip, keySet, error, saving }: {
           Advanced
         </summary>
         <div className="grid grid-cols-2 gap-4 pt-5">
-          <Field label="Shortest (s)" hint="Aim for clips at least this long.">
-            {(id) => <Input id={id} type="number" min={5} max={600} className="tnum" value={clip.min_len}
-              onChange={(e) => setClip({ ...clip, min_len: Math.max(5, Math.min(600, Number(e.target.value) || 30)) })} />}
+          <Field label="Shortest (s)" hint={`Every clip runs at least ${floor} seconds.`}>
+            {(id) => <Input id={id} type="number" min={floor} max={600} className="tnum" value={clip.min_len}
+              onChange={(e) => setClip({ ...clip, min_len: Number(e.target.value) })}
+              onBlur={() => setClip({ ...clip, min_len: Math.max(floor, Math.min(600, clip.min_len || floor)),
+                max_len: Math.max(clip.max_len, Math.max(floor, clip.min_len || floor) + 15) })} />}
           </Field>
           <Field label="Longest (s)" hint="Aim for clips at most this long.">
-            {(id) => <Input id={id} type="number" min={10} max={900} className="tnum" value={clip.max_len}
-              onChange={(e) => setClip({ ...clip, max_len: Math.max(10, Math.min(900, Number(e.target.value) || 60)) })} />}
+            {(id) => <Input id={id} type="number" min={floor + 15} max={900} className="tnum" value={clip.max_len}
+              onChange={(e) => setClip({ ...clip, max_len: Number(e.target.value) })}
+              onBlur={() => setClip({ ...clip, max_len: Math.max(clip.min_len + 15, Math.min(900, clip.max_len || 90)) })} />}
           </Field>
         </div>
       </details>

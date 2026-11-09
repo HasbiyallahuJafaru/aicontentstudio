@@ -485,6 +485,11 @@ def statement(photo, c, pal, w, h, o):
     gap = small.size * 0.55
     parts = [(mark, [[("”", False)]], bst.size * 0.05)] + [(small, plines, gap)] * bool(plines) + \
             [(bst, blines, gap)] + [(small, qlines, 0)] * bool(qlines)
+    if sub := sub_line(c):  # the name closes the poster, small and tracked under the type
+        lab = Style("label", max(24 * u, small.size * 0.8), "#1C1B1A", tracking=0.30, leading=1.6, case="upper")
+        s, ls, _ = parts[-1]
+        parts[-1] = (s, ls, gap * 1.6)
+        parts.append((lab, [tokens(sub)], 0))
     bh = sum(block_h(s, len(ls)) + g for s, ls, g in parts)
     top = max(h * 0.09, min(h * 0.44 - bh, h * 0.14)) if o["position"] == "auto" else _place(o["position"], "top", h, bh, 0.1, 0.9)
     x = (w - bw) / 2
@@ -579,7 +584,10 @@ def stack(photo, c, pal, w, h, o):
         if height <= h * 0.74 and (best is None or abs(height - h * 0.58) < abs(best[1] - h * 0.58)):
             best = (out, height)
     out, height = best or lay(min(len(toks), 7))
-    top = _place(o["position"], "center", h, height, 0.14, 0.88)
+    sub = sub_line(c)
+    lab = Style("label", 28 * u, BONE, tracking=0.40, leading=1.6, case="upper", alpha=225)
+    lab_gap = 44 * u
+    top = _place(o["position"], "center", h, height + (lab_gap + block_h(lab, 1) if sub else 0), 0.14, 0.88)
     layer = Image.new("RGBA", (w, h))
     d = ImageDraw.Draw(layer)
     y = top
@@ -591,6 +599,8 @@ def stack(photo, c, pal, w, h, o):
         y += -box[1]
         d.text((x, y), text, font=f, fill=rgba(acc if any(e for _, e in ln) else BONE), anchor="ls")
         y += gap
+    if sub:  # the name sits under the wall, small and tracked so the wall stays the picture
+        draw_lines(layer, lab, [tokens(sub)], w / 2, y - gap + lab_gap)
     return shadowed(grain(img, 0.08), layer, 0.45, 20 * u)
 
 

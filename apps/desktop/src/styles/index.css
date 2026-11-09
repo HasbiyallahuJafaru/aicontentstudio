@@ -93,6 +93,16 @@
   border-color: transparent;
 }
 .bg-pop-soft { background-color: var(--color-accent); }
+/* The chosen option, unmistakable (owner 2026-11-08): a white gap, a thick lime ring, a fine ink edge so the ring
+   reads on white panels, and a soft lime glow. .halo for picture cards, .halo-sm for chips that sit close together. */
+.halo {
+  --halo: 0 0 0 3px #fff, 0 0 0 7px var(--color-accent), 0 0 0 8px rgb(17 18 20 / 0.9), 0 0 28px 6px rgb(198 244 50 / 0.55);
+  box-shadow: var(--halo);
+}
+.halo-sm {
+  --halo: 0 0 0 2px #fff, 0 0 0 4px var(--color-accent), 0 0 0 5px rgb(17 18 20 / 0.9), 0 0 16px 3px rgb(198 244 50 / 0.55);
+  box-shadow: var(--halo);
+}
 /* one keyword per headline sits on a lime block, like a marker stroke */
 .text-pop {
   background-color: var(--color-accent);
@@ -197,6 +207,15 @@
    so descenders aren't clipped. */
 .reveal-word { display: inline-block; overflow: clip; overflow-clip-margin: 0.2em; padding-bottom: 0.08em; margin-bottom: -0.08em; vertical-align: top; }
 .reveal-word > span { display: inline-block; }
+
+@media (prefers-reduced-motion: no-preference) {
+  .card-drop { animation: fade-in 260ms var(--ease-premium) both; }  /* the card itself swings in (Lanyard intro) */
+  .halo, .halo-sm { animation: halo-in 420ms var(--ease-premium) both; }
+}
+@keyframes halo-in {
+  from { box-shadow: 0 0 0 0 #fff, 0 0 0 0 var(--color-accent), 0 0 0 0 rgb(17 18 20 / 0), 0 0 0 0 rgb(198 244 50 / 0); }
+  to { box-shadow: var(--halo); }
+}
 
 @media (prefers-reduced-motion: no-preference) {
   .btn-shine::after { transition: transform 750ms var(--ease-premium); }

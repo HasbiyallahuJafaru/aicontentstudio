@@ -125,7 +125,7 @@ const root = process.env.SMOKE_DATA || mkdtempSync(join(tmpdir(), 'acs-'))
 const out = process.env.SMOKE_OUT || join(tmpdir(), 'acs-smoke')
 mkdirSync(out, { recursive: true })
 const env = { ...process.env, ACS_DATA_DIR: join(root, 'data'), ACS_OPENROUTER_URL: `http://127.0.0.1:${fake.address().port}`,
-  ACS_PEXELS_URL: pexelsBase }
+  ACS_PEXELS_URL: pexelsBase, ACS_MIN_CLIP: '1' }  // real clips run at least a minute; the fixture is 12 s
 delete env.ELECTRON_RENDERER_URL
 delete env.ELECTRON_RUN_AS_NODE
 
@@ -136,6 +136,8 @@ async function launch() {
   win.on('console', (m) => { if (m.type() === 'error') console.error('CONSOLE ERROR:', m.text()) })
   await win.setViewportSize({ width: 1440, height: 900 })
   await win.emulateMedia({ reducedMotion: 'reduce' })
+  // the creator card pops up after finished jobs (twice a day); a pop-up mid-run would swallow the next click
+  await win.evaluate(() => localStorage.setItem('acs.creatorCard', JSON.stringify({ day: new Date().toLocaleDateString('sv'), count: 99 })))
   await win.getByRole('button', { name: "Let's create content" }).waitFor({ timeout: 30_000 })
   return { app, win }
 }
@@ -364,10 +366,14 @@ try {
 await shot(win, '5d-preview')
 await win.keyboard.press('Escape')
 
-// Approve piece 1, then regenerate its narration (PRD 41/43): its render is stale, chips drop to 2
-await win.getByRole('button', { name: 'Preview' }).first().click()
-await win.getByRole('button', { name: 'Approve', exact: true }).click()
-await win.getByText('Approved', { exact: true }).first().waitFor()
+// No approve step (owner 2026-11-08); "Schedule all" is offered once pieces are rendered
+assert.equal(await win.getByRole('button', { name: 'Approve', exact: true }).count(), 0, 'no approve button')
+await win.getByRole('button', { name: 'Schedule all' }).click()
+await win.getByText('Set up posting once', { exact: true }).waitFor()
+await shot(win, '5e-schedule-all-setup')
+await win.keyboard.press('Escape')
+await win.locator('[role="dialog"]').first().waitFor({ state: 'detached' }).catch(() => win.keyboard.press('Escape'))
+// Regenerate piece 1's narration (PRD 41/43): its render is stale, chips drop to 2
 await win.getByRole('button', { name: 'Preview' }).first().click()
 await win.getByRole('button', { name: 'Narration' }).click()
 await win.waitForFunction(() => document.querySelectorAll('button[title^="renders/"]').length === 4,
@@ -500,11 +506,11 @@ assert.equal(await win.getByRole('button', { name: 'Copy', exact: true }).count(
 await win.waitForTimeout(300) // let the chip colour settle
 await shot(win, '8c-clip-preview')
 await win.keyboard.press('Escape')
-await win.getByRole('button', { name: 'Approve' }).click()
-await win.getByText('Approved', { exact: true }).waitFor()
+assert.equal(await win.getByRole('button', { name: 'Approve' }).count(), 0, 'clips post without an approve step')
+assert.equal(await win.getByRole('button', { name: 'Schedule all' }).count(), 1, 'every clip can be scheduled at once')
 // publishing goes through Zernio; before it is set up the dialog points to Settings
 await win.getByRole('button', { name: 'Preview', exact: true }).click()
-await win.locator('[role="dialog"]').getByRole('button', { name: 'Publish', exact: true }).click()
+await win.locator('[role="dialog"]').getByRole('button', { name: 'Post', exact: true }).click()
 await win.getByText('Set up posting once', { exact: true }).waitFor()
 assert.equal(await win.getByRole('button', { name: 'Open Settings' }).count(), 1, 'publish dialog links to Settings')
 await win.waitForTimeout(300)
@@ -514,6 +520,14 @@ await win.locator('[role="dialog"]').first().waitFor({ state: 'detached' }).catc
 await win.getByRole('button', { name: 'Export', exact: true }).click()
 await win.getByText('Exported', { exact: true }).waitFor({ timeout: 120_000 })
 await shot(win, '8d-clip-exported')
+
+// The creator card (React Bits Lanyard) renders its 3D canvas and closes on Escape
+await win.evaluate(() => window.dispatchEvent(new Event('creator-card:open')))
+await win.locator('canvas.lanyard-canvas').waitFor({ timeout: 30_000 })
+await win.waitForTimeout(800)
+await shot(win, '9-creator-card')
+await win.keyboard.press('Escape')
+await win.locator('canvas.lanyard-canvas').waitFor({ state: 'detached' })
 
 // Settings survive the restart; then Clear all content wipes every project and file, keys and settings stay
 await win.keyboard.press('Control+,')

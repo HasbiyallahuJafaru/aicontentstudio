@@ -117,7 +117,7 @@ def clip_project():
     with connect() as conn:
         conn.execute("INSERT INTO clips (id, project_id, idx, start_at, end_at, score, reason, hook, title, "
                      "description, hashtags, posts, status, video_path, cover_path) "
-                     "VALUES (?, ?, 1, 0, 10, 90, 'why', 'hook', 'My clip title', 'desc', '[]', ?, 'approved', ?, ?)",
+                     "VALUES (?, ?, 1, 0, 10, 90, 'why', 'hook', 'My clip title', 'desc', '[]', ?, 'ready', ?, ?)",
                      (f"zc-{p['id']}", p["id"], json.dumps(posts), f"clips/{p['id']}/clip01.mp4",
                       f"clips/{p['id']}/clip01.jpg"))
     return p
@@ -218,12 +218,33 @@ class Publish(unittest.TestCase):
         with self.assertRaisesRegex(UserError, "Choose at least one"):
             zernio.publish(self.project["id"], 1, [])
 
-    def test_calendar_spreads_clips_through_zernio(self):
-        plan = posts.calendar(self.project["id"], ["acc-yt"], [1, 2, 3, 4, 5, 6, 7], ["09:00"],
-                              datetime.now(timezone.utc).date().isoformat(), "UTC")
-        self.assertEqual([s["clip_idx"] for s in plan["scheduled"]], [1])
+    def test_schedule_all_posts_each_item_at_its_own_time(self):
+        later = (datetime.now(timezone.utc) + timedelta(days=1)).isoformat()
+        p, pid = piece_project()
+        result = posts.schedule(self.project["id"], ["acc-tt"], [{"clip_idx": 1, "due_at": later},
+                                                                 {"piece_id": pid, "due_at": later}])
+        self.assertEqual([(r["key"], r["ok"]) for r in result], [("clip:1", True), (f"piece:{pid}", True)])
         rows = posts.publications(self.project["id"])
         self.assertEqual([(r["provider"], r["status"]) for r in rows], [("zernio", "scheduled")])
+        self.assertEqual(rows[0]["due_at"][:16], later[:16])
+
+    def test_schedule_all_checks_every_time_first_and_survives_one_refusal(self):
+        later = (datetime.now(timezone.utc) + timedelta(days=1)).isoformat()
+        before = len(SEEN["requests"])
+        with self.assertRaisesRegex(UserError, "clip 1 won't work: That time has already passed"):
+            posts.schedule(self.project["id"], ["acc-tt"], [{"clip_idx": 1, "due_at": "2020-01-01T09:00:00+00:00"}])
+        self.assertFalse([r for r in SEEN["requests"][before:] if r["method"] == "POST"], "nothing was sent")
+        p, pid = piece_project()  # an image: YouTube refuses it, the clip still goes
+        result = posts.schedule(self.project["id"], ["acc-yt"], [{"piece_id": pid, "due_at": later},
+                                                                 {"clip_idx": 1, "due_at": later}])
+        self.assertEqual([r["ok"] for r in result], [False, True])
+        self.assertIn("only takes videos", result[0]["error"])
+
+    def test_a_rejected_clip_is_not_posted(self):
+        with connect() as conn:
+            conn.execute("UPDATE clips SET status = 'rejected' WHERE project_id = ?", (self.project["id"],))
+        with self.assertRaisesRegex(UserError, "rejected"):
+            zernio.publish(self.project["id"], 1, ["acc-tt"])
 
 
 def piece_project(kinds=("image",)):
@@ -285,13 +306,6 @@ class PublishPiece(unittest.TestCase):
         p, pid = piece_project(kinds=())
         with self.assertRaisesRegex(UserError, "Render this piece"):
             zernio.publish_piece(pid, ["acc-tt"])
-
-
-class Slots(unittest.TestCase):
-    def test_slots_follow_days_times_and_zone(self):
-        start = datetime(2026, 3, 27, tzinfo=timezone.utc)  # a Friday; London moves to summer time on the 29th
-        found = posts.slots([5, 1], ["09:00"], start.date(), start, start + timedelta(days=4), "Europe/London")
-        self.assertEqual([f.isoformat() for f in found], ["2026-03-27T09:00:00+00:00", "2026-03-30T08:00:00+00:00"])
 
 
 if __name__ == "__main__":

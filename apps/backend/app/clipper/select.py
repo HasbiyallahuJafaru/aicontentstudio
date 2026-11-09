@@ -22,8 +22,8 @@ answer, a specific number, a named person or tool, "I tried / I spent"), stands 
 no pronoun whose person was named earlier, no ending mid-thought), emotional intensity 20% (conviction, surprise,
 humor, honest failure beat calm recitation), value density 15% (an exact method or a counter-intuitive insight
 beats a platitude), payoff 10% (ends on a punchline, reveal or complete thought). Leave out moments under 60.
-The best clips usually run 25-45 seconds.
-Each moment is {min:g}-{max:g} seconds, starts at a segment start, ends at a segment end, and does not overlap others.
+Each moment must hold a complete arc for its whole length: setup, development and payoff, never padded.
+Each moment is {min:g}-{max:g} seconds (never shorter), starts at a segment start, ends at a segment end, and does not overlap others.
 Return json only, up to {n} moments:
 {{"moments": [{{"start": 734.2, "end": 781.6, "score": 80, "reason": "why it works"}}]}}"""
 

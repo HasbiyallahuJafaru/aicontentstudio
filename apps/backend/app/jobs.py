@@ -5,23 +5,54 @@ kind = 'generate' writes content (M2), kind = 'render' produces videos/images (M
 import json
 import logging
 import threading
+import time
 import uuid
 
 from app import assets, clips, content, export, renders
 from app.database import connect
-from app.errors import UserError, explain
+from app.errors import Cancelled, UserError, explain
 from app.events import emit
 
 log = logging.getLogger("jobs")
 _cancelled: set[str] = set()
 
 
-class Cancelled(Exception):
-    pass
-
-
 def _row(r) -> dict:
-    return {**dict(r), "error": json.loads(r["error"]) if r["error"] else None}
+    return {**dict(r), "error": json.loads(r["error"]) if r["error"] else None,
+            "log": json.loads(r["log"]) if r["log"] else []}
+
+
+LOG_CAP = 400  # ponytail: a 100-piece render logs ~500 steps; keep the newest 400
+
+
+class StepLog:
+    """Each new stage text starts a step; the previous one closes as done with its duration. A pipeline marks the
+    current step failed (and keeps going) with fail(); the runner closes the last step when the job ends."""
+
+    def __init__(self):
+        self.steps: list[dict] = []
+        self._t = 0.0
+
+    def stage(self, text: str) -> None:
+        if self.steps and self.steps[-1]["step"] == text:
+            return
+        self.close("done")
+        self._t = time.monotonic()
+        self.steps.append({"step": text, "status": "running", "secs": 0})
+        del self.steps[:-LOG_CAP]
+
+    def close(self, status: str, error: str | None = None, detail: str | None = None) -> None:
+        if not self.steps or self.steps[-1]["status"] != "running":
+            return
+        last = self.steps[-1]
+        last.update(status=status, secs=round(time.monotonic() - self._t, 1))
+        if error:
+            last["error"] = error
+        if detail:
+            last["detail"] = detail[-1500:]
+
+    def json(self) -> str:
+        return json.dumps(self.steps, ensure_ascii=False)
 
 
 def get(id: str) -> dict:
@@ -82,14 +113,25 @@ def cancel(id: str) -> dict:
 
 
 def _run(job_id: str, project_id: str, kind: str = "generate", piece_ids: list[str] | None = None) -> None:
+    steps = StepLog()
+
     def report(stage: str, progress: float) -> None:
         if job_id in _cancelled:
             raise Cancelled
-        _set(job_id, "job.progress", stage=stage, progress=round(progress, 3))
+        steps.stage(stage)
+        _set(job_id, "job.progress", stage=stage, progress=round(progress, 3), log=steps.json())
+
+    def fail(error: str, detail: str | None = None) -> None:
+        """A pipeline hit a failure it survives (one piece of many): mark the step, keep the job going."""
+        steps.close("failed", error, detail)
+        _set(job_id, "job.progress", log=steps.json())
+
+    report.fail = fail  # ponytail: an attribute, so the dozen report(stage, p) call sites stay as they are
 
     stage = {"generate": "Generating", "render": "Rendering", "export": "Exporting", "clip": "Clipping",
              "visuals": "Downloading footage", "visuals_render": "Downloading footage"}[kind]
-    _set(job_id, "job.started", status="running", stage=stage)
+    steps.stage(stage)
+    _set(job_id, "job.started", status="running", stage=stage, log=steps.json())
     try:
         if kind == "export":
             export.export_project(project_id, report, piece_ids)
@@ -98,28 +140,44 @@ def _run(job_id: str, project_id: str, kind: str = "generate", piece_ids: list[s
         elif kind == "visuals":
             assets.download_picks(project_id, report)
         elif kind == "visuals_render":  # "Download and render": the picked footage, then every piece, one progress bar
-            assets.download_picks(project_id, lambda s, p: report(s, p * 0.3))
-            renders.render_project(project_id, lambda s, p: report(s, 0.3 + p * 0.7), piece_ids)
+            assets.download_picks(project_id, _scaled(report, 0, 0.3))
+            renders.render_project(project_id, _scaled(report, 0.3, 0.7), piece_ids)
         elif kind == "render":
             renders.render_project(project_id, report, piece_ids)
         else:
             content.generate(project_id, report)
     except Cancelled:
+        steps.close("cancelled")
         _project_status(project_id, _settled_status(project_id))
-        _set(job_id, "job.cancelled", status="cancelled", stage="Cancelled")
+        _set(job_id, "job.cancelled", status="cancelled", stage="Cancelled", log=steps.json())
     except UserError as e:
+        steps.close("failed", str(e), e.detail)
         _project_status(project_id, "failed")
-        _set(job_id, "job.failed", status="failed", error=json.dumps({"message": str(e), "detail": e.detail}))
+        _set(job_id, "job.failed", status="failed", error=json.dumps({"message": str(e), "detail": e.detail}),
+             log=steps.json())
     except Exception as e:
         log.exception("job %s failed", job_id)
+        message, detail = explain(e)
+        steps.close("failed", message, detail)
         _project_status(project_id, "failed")
-        _set(job_id, "job.failed", status="failed",
-             error=json.dumps(dict(zip(("message", "detail"), explain(e)))))
+        _set(job_id, "job.failed", status="failed", error=json.dumps({"message": message, "detail": detail}),
+             log=steps.json())
     else:
+        steps.close("done")
+        failed = sum(s["status"] == "failed" for s in steps.steps)
         _project_status(project_id, "ready")
-        _set(job_id, "job.completed", status="completed", stage="Done", progress=1.0)
+        _set(job_id, "job.completed", status="completed", progress=1.0, log=steps.json(),
+             stage=f"Done, {failed} failed" if failed else "Done")
     finally:
         _cancelled.discard(job_id)
+
+
+def _scaled(report, start: float, span: float):
+    """A report for one leg of a multi-leg job: its 0..1 maps onto start..start+span of the job's bar."""
+    def leg(stage: str, progress: float) -> None:
+        report(stage, start + progress * span)
+    leg.fail = report.fail
+    return leg
 
 
 def _settled_status(project_id: str) -> str:

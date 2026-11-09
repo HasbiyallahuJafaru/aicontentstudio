@@ -16,6 +16,25 @@ from app.database import connect
 from app.errors import UserError
 
 WORK = "clipwork"  # under media/: downloaded sources + cached transcripts
+MIN_CLIP = config.MIN_CLIP  # seconds, of the FINISHED clip (owner 2026-11-08: every clip runs at least a minute)
+
+
+def _at_least(video, words, start, end, cold, min_len, spoken):
+    """Plan the cut, then make sure what's left after dead air and fillers come out still runs min_len: grow the
+    clip along the talk (later first, earlier once it reaches the end of the speech), snapped to sentences."""
+    for attempt in range(8):
+        ranges, zooms = tighten.plan(words, start, end, cold, silences(video, start, end))
+        short = min_len - sum(b - a for a, b in ranges)
+        if short <= 0:
+            break
+        grow = short + 2.0 + 2.0 * attempt  # reach further each time: snapping may give back up to 1.5 s
+        new_end = min(spoken + 0.2, end + grow)
+        new_start = max(0.0, start - (grow - (new_end - end)))
+        if (new_start, new_end) == (start, end):
+            break  # the whole speech is in already
+        start, end = snap(new_start, new_end, words)
+        start, end = max(0.0, start - 0.1), min(spoken + 0.2, end + 0.2)
+    return start, end, ranges, zooms
 
 
 def load_transcript(key: str) -> dict | None:
@@ -56,7 +75,14 @@ def run(project_id: str, report) -> None:
 
     report("Finding the best moments", 0.5)
     n = b["n"] or max(3, min(30, round(transcript["segments"][-1]["end"] / 60)))  # about one clip per minute
-    found = select.find_clips(transcript, n, b["min_len"], b["max_len"])
+    # projects saved before the one-minute floor may hold shorter lengths: the floor wins
+    min_len = max(float(b["min_len"]), MIN_CLIP)
+    max_len = max(float(b["max_len"]), min_len + 15)
+    spoken = transcript["words"][-1]["end"] if transcript["words"] else transcript["segments"][-1]["end"]
+    if spoken < min_len:
+        raise UserError(f"This video has about {round(spoken)} seconds of speech, and every clip runs at least "
+                        f"{round(min_len)} seconds. Try a longer video.")
+    found = select.find_clips(transcript, n, min_len, max_len)
 
     out.mkdir(parents=True, exist_ok=True)
     total = len(found)
@@ -68,7 +94,8 @@ def run(project_id: str, report) -> None:
         cold = tighten.to_words(words, *clip.cold_open) if clip.cold_open else None
         path = out / f"clip{i:02}.mp4"
         layers = motion.layers("clip", *ORIENTATIONS[b["orientation"]][1], hook=clip.hook)  # animated title
-        ranges, zooms = tighten.plan(words, start, end, cold, silences(video, start, end))
+        start, end, ranges, zooms = _at_least(video, words, start, end, cold, min_len, spoken)
+        clip.start, clip.end = start, end
         render_clip(video, start, end, path, words, b["burn_captions"], b["orientation"], fps=b["fps"],
                     ranges=ranges, zooms=zooms, emphasis=clip.emphasis, layers=layers,
                     caption_style=b.get("captions"))
@@ -151,7 +178,7 @@ def label(network: str) -> str:
 
 
 def review(id: str, status: str) -> dict:
-    if status not in ("ready", "approved", "rejected"):
+    if status not in ("ready", "rejected"):  # no approve step (owner 2026-11-08)
         raise UserError("Unknown clip status.", status)
     with connect() as conn:
         if conn.execute("UPDATE clips SET status = ? WHERE id = ?", (status, id)).rowcount == 0:

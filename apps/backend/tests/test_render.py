@@ -273,6 +273,31 @@ class RenderJob(unittest.TestCase):
         self.assertEqual([r["kind"] for r in rows], ["video"])
         self.assertTrue((config.MEDIA_DIR / rows[0]["local_path"]).exists())
         self.assertNotIn("render_error", pieces[0]["content"])
+        # the step log names each step of the piece, in order, all finished
+        steps = [s["step"] for s in job["log"]]
+        for name in ("Narrating", "Timing the words", "Animating titles", "Encoding video"):
+            self.assertIn(f"Piece 1 (1 of 1): {name}", steps)
+        self.assertTrue(all(s["status"] == "done" for s in job["log"]), job["log"])
+
+        # a piece that fails is logged on its step and on the piece; the job still finishes and says so
+        boom = UserError("FFmpeg failed while rendering the video.", "exit 1: bad filter")
+        with mock.patch.object(renders.tts, "get_tts", lambda: FakeTTS()), mock.patch.object(jobs, "emit"), \
+                mock.patch.object(render.FFmpegRenderer, "render_video", side_effect=boom):
+            job = jobs.start(p["id"], kind="render")
+            for _ in range(400):
+                job = jobs.get(job["id"])
+                if job["status"] not in ("queued", "running"):
+                    break
+                time.sleep(0.05)
+        self.assertEqual((job["status"], job["stage"]), ("completed", "Done, 1 failed"))
+        failed = [s for s in job["log"] if s["status"] == "failed"]
+        self.assertEqual(len(failed), 1)
+        self.assertEqual(failed[0]["step"], "Piece 1 (1 of 1): Encoding video")
+        self.assertIn("FFmpeg failed", failed[0]["error"])
+        self.assertIn("bad filter", failed[0]["detail"])
+        piece = content.pieces(p["id"])[0]
+        self.assertIn("FFmpeg failed", piece["content"]["render_error"])
+        self.assertIn("bad filter", piece["content"]["render_error_detail"])
 
 
     def test_video_asset_renders_image_for_instagram_feed(self):

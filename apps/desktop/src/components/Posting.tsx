@@ -2,9 +2,9 @@
 // status chips that show, on every clip, where it is scheduled or posted. Zernio itself lives in
 // apps/backend/app/publish/zernio.py; this file only asks it things.
 import { useEffect, useRef, useState } from 'react'
-import { ArrowSquareOut, Check, CheckCircle, PaperPlaneTilt, Plus, WarningCircle, X } from '@phosphor-icons/react'
-import { call, studio, useQuery, BackendError, type Publication } from '../lib/studio'
-import { Button, Dialog, ErrorNote, Field, Input, cx } from './ui'
+import { ArrowSquareOut, CalendarBlank, Check, CheckCircle, PaperPlaneTilt, Plus, WarningCircle, X } from '@phosphor-icons/react'
+import { call, mediaUrl, studio, useQuery, BackendError, type Publication, type ScheduleItem, type ScheduleResult } from '../lib/studio'
+import { Button, Dialog, ErrorNote, Field, Input, Select, cx } from './ui'
 
 export type ZernioAccount = { id: string; platform: string; label: string; name: string; username: string; needs_reconnect: boolean }
 type ZernioConnection = { connected: boolean; signup_url: string; keys_url: string }
@@ -336,5 +336,135 @@ function SentList({ rows }: { rows: Publication[] }) {
       {ok.length > 0 && <p className="text-2xs text-ink-3">Zernio posts it at that time, even if this computer is off. The label on this
         item changes from Scheduled to Posted once it is live.</p>}
     </div>
+  )
+}
+
+const local = (d: Date) => new Date(d.getTime() - d.getTimezoneOffset() * 6e4).toISOString().slice(0, 16)  // datetime-local value
+/** How far apart "Schedule all" spaces the posts (owner 2026-11-08), in minutes. */
+const EVERY = [{ value: 10, label: 'Every 10 minutes' }, { value: 15, label: 'Every 15 minutes' }, { value: 60, label: 'Every hour' },
+  { value: 1440, label: 'Every day' }, { value: 2880, label: 'Every other day' }]
+/** The first slot: 15 minutes from now, on the next 5-minute mark (time for the uploads to finish). */
+const soon = () => { const d = new Date(Date.now() + 15 * 6e4); d.setMinutes(Math.ceil(d.getMinutes() / 5) * 5, 0, 0); return local(d) }
+/** Each included post's time: the first one at `first`, the rest `every` minutes apart, in list order. */
+const spaced = (keys: string[], first: string, every: number) =>
+  Object.fromEntries(keys.map((k, i) => [k, first ? local(new Date(new Date(first).getTime() + i * every * 6e4)) : '']))
+
+/** "Schedule all" (owner 2026-11-08): every post not yet scheduled, each with its own date and time, sent to the
+ *  chosen accounts in one go. Times start one a day at 18:00 and are edited per post; untick any to leave it out. */
+export function ScheduleAllDialog({ projectId, items, onClose, onDone, onSettings }: {
+  projectId: string; items: ScheduleItem[]; onClose: () => void; onDone: () => void; onSettings?: () => void
+}) {
+  const zernio = useZernio().connected
+  const [picked, setPicked] = useState<string[]>([])
+  const [first, setFirst] = useState(soon)
+  const [every, setEvery] = useState(15)
+  const [skip, setSkip] = useState<string[]>([])
+  const [times, setTimes] = useState<Record<string, string>>(() => spaced(items.map((it) => it.key), first, every))
+  // the first time, the spacing or the set of posts changed: lay every included post out again (edits per post stay
+  // until then); a skipped post keeps no slot, so the rest close up
+  const relay = (f: string, e: number, sk: string[]) =>
+    setTimes(spaced(items.filter((it) => !sk.includes(it.key)).map((it) => it.key), f, e))
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<BackendError>()
+  const [results, setResults] = useState<Record<string, ScheduleResult>>()
+  const chosen = items.filter((it) => !skip.includes(it.key))
+  const missing = chosen.find((it) => !times[it.key])
+  const images = chosen.some((it) => !it.video)
+
+  async function send() {
+    if (busy) return
+    setBusy(true)
+    setError(undefined)
+    try {
+      const out = await call<ScheduleResult[]>('publish.schedule', { project_id: projectId, account_ids: picked,
+        items: chosen.map((it) => ({ clip_idx: it.clip_idx, piece_id: it.piece_id, due_at: new Date(times[it.key]).toISOString() })) })
+      setResults(Object.fromEntries(out.map((r) => [r.key, r])))
+      onDone()
+    } catch (e) {
+      setError(e as BackendError)
+    }
+    setBusy(false)
+  }
+
+  const sent = results ? Object.values(results) : []
+  const okCount = sent.filter((r) => r.ok).length
+  return (
+    <Dialog label="Schedule all" width={680} onClose={onClose} className="grid-rows-[auto_minmax(0,1fr)_auto]">
+      <header className="flex items-start justify-between gap-3 border-b border-line px-6 py-5">
+        <div>
+          <p className="text-xs text-ink-3">Schedule all</p>
+          <h2 className="mt-0.5 font-display text-[18px] font-semibold tracking-[-0.02em]">
+            {items.length} {items.length === 1 ? 'post' : 'posts'}, each at its own time</h2>
+        </div>
+        <Button variant="ghost" onClick={onClose} aria-label="Close" className="-mt-2 -mr-3 h-8"><X size={15} /></Button>
+      </header>
+
+      <div className="grid content-start gap-5 overflow-y-auto px-6 py-5">
+        {zernio === undefined && <div className="h-24 animate-pulse rounded-field bg-black/[0.04]" />}
+        {zernio === false && <SetUpPosting onSettings={onSettings} onClose={onClose} />}
+        {results && (
+          <p className="inline-flex items-center gap-1.5 text-[14px] font-medium text-ok"><CheckCircle size={18} weight="fill" />
+            {okCount === sent.length ? `All ${okCount} sent to Zernio` : `${okCount} of ${sent.length} sent to Zernio`}</p>
+        )}
+        {zernio && !results && (
+          <ZernioPicker picked={picked} onChange={setPicked} onSettings={() => { onClose(); onSettings?.() }}
+            unsupported={images && chosen.every((it) => !it.video) ? (a) => (a.platform === 'youtube' ? 'Videos only' : undefined) : undefined} />
+        )}
+        {zernio && (
+          <fieldset className="grid gap-1">
+            <legend className="mb-1.5 text-[13px] font-medium text-ink">When each one goes out</legend>
+            {!results && (
+              <div className="mb-3 grid grid-cols-2 gap-4">
+                <Field label="First post">
+                  {(id) => <Input id={id} type="datetime-local" className="tnum" value={first} min={local(new Date())}
+                    onChange={(e) => { setFirst(e.target.value); relay(e.target.value, every, skip) }} />}
+                </Field>
+                <Field label="Then">
+                  {(id) => <Select id={id} value={String(every)} options={EVERY.map((o) => ({ value: String(o.value), label: o.label }))}
+                    onChange={(v) => { setEvery(Number(v)); relay(first, Number(v), skip) }} />}
+                </Field>
+              </div>
+            )}
+            <p className="mb-2 text-xs text-ink-3">Change any single time below if you like. Your time zone:
+              {' '}{Intl.DateTimeFormat().resolvedOptions().timeZone}. Zernio posts at these times even if this computer is off.{images && chosen.some((it) => it.video) ? ' YouTube takes the videos only.' : ''}</p>
+            <ol className="grid gap-1.5">
+              {items.map((it) => {
+                const off = skip.includes(it.key), r = results?.[it.key]
+                return (
+                  <li key={it.key} className={cx('grid grid-cols-[auto_44px_minmax(0,1fr)_200px] items-center gap-3 rounded-[10px] px-2 py-1.5',
+                    r && !r.ok && 'bg-danger/10', off && 'opacity-50')}>
+                    <input type="checkbox" checked={!off} disabled={!!results} aria-label={`Include ${it.title}`}
+                      onChange={() => { const sk = off ? skip.filter((k) => k !== it.key) : [...skip, it.key]; setSkip(sk); relay(first, every, sk) }}
+                      className="size-4 accent-[var(--color-ink)]" />
+                    {it.cover ? <img src={mediaUrl(it.cover)} alt="" className="aspect-square w-11 rounded-[8px] object-cover" />
+                      : <span className="aspect-square w-11 rounded-[8px] bg-black/[0.06]" />}
+                    <span className="min-w-0">
+                      <span className="block truncate text-[13px] text-ink">{it.title}</span>
+                      {r ? <span className={cx('block text-2xs', r.ok ? 'text-ok' : 'text-danger')}>{r.ok ? 'Scheduled' : r.error}</span>
+                        : <span className="block text-2xs text-ink-3">{it.video ? 'Video' : 'Image'}</span>}
+                    </span>
+                    <Input type="datetime-local" aria-label={`When ${it.title} goes out`} value={times[it.key] ?? ''} min={local(new Date())}
+                      disabled={off || !!results} onChange={(e) => setTimes({ ...times, [it.key]: e.target.value })} className="tnum !h-9 !text-xs" />
+                  </li>
+                )
+              })}
+            </ol>
+          </fieldset>
+        )}
+        {error && <ErrorNote error={error} />}
+      </div>
+
+      <div className="flex items-center justify-end gap-2 border-t border-line px-6 py-4">
+        {results ? <Button variant="primary" onClick={onClose}>Done</Button> : <>
+          {missing && <span className="mr-auto text-xs text-danger">Pick a time for every post, or untick it.</span>}
+          <Button variant="ghost" onClick={onClose}>Cancel</Button>
+          {zernio && (
+            <Button variant="primary" disabled={!picked.length || !chosen.length || !!missing || busy} onClick={send}>
+              <CalendarBlank size={14} />{busy ? 'Uploading to Zernio…' : `Schedule ${chosen.length}`}
+            </Button>
+          )}
+        </>}
+      </div>
+    </Dialog>
   )
 }

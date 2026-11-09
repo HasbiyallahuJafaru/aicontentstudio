@@ -8,7 +8,7 @@ from unittest import mock
 
 os.environ.setdefault("ACS_DATA_DIR", tempfile.mkdtemp())
 
-from app import config, content, database, export, jobs, platforms, projects, queue, renders, settings  # noqa: E402
+from app import clips, config, content, database, export, jobs, platforms, projects, queue, renders, settings  # noqa: E402
 from app.errors import UserError  # noqa: E402
 
 from tests.test_assets import FakeProvider2, cand, make_thumbs, run_job_with  # noqa: E402
@@ -96,15 +96,10 @@ class Regenerate(unittest.TestCase):
         with self.assertRaisesRegex(UserError, "failed"):
             content.regenerate(self.piece()["id"], "quote")
 
-    def test_4_approve_needs_a_render_first(self):
-        with database.connect() as conn:  # undo the failed status test_3 left behind
-            conn.execute("UPDATE content_pieces SET status = 'written' WHERE project_id = ?", (self.p["id"],))
-        piece = self.piece()
-        with self.assertRaisesRegex(UserError, "rendered"):
-            content.approve(piece["id"])
-        with database.connect() as conn:
-            conn.execute("UPDATE content_pieces SET status = 'ready' WHERE id = ?", (piece["id"],))
-        self.assertEqual(content.approve(piece["id"])["status"], "approved")
+    def test_4_there_is_no_approve_step(self):
+        self.assertFalse(hasattr(content, "approve"))
+        with self.assertRaisesRegex(UserError, "Unknown clip status"):
+            clips.review("any", "approved")
 
 
 class Export(unittest.TestCase):

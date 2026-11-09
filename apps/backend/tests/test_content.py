@@ -22,7 +22,7 @@ SUBJECTS = ["mountain runner at dawn", "empty city street at night", "ocean wave
 
 def piece_json(quote: str) -> dict:
     return {
-        "quote": {"text": quote, "author": None},
+        "quote": {"text": quote, "author": "Seneca"},
         "narration": {"text": f"Nobody sees the early hours. {quote}", "delivery": "calm_reflective"},
         "visual": {"preferred_type": "video", "search_query": "runner mountain sunrise", "secondary_query": "trail dawn", "mood": "quiet"},
         "design": {"text_density": "low", "animation": "slow", "composition": "editorial"},
@@ -78,6 +78,14 @@ class Generation(unittest.TestCase):
         self.assertEqual(projects.get(p["id"])["status"], "ready")
         self.assertEqual(content.recent(1)[0]["quote"], "The work is quiet. Do it anyway.")
         self.assertGreaterEqual(content.stats()["today"], 3)
+
+    def test_every_ai_quote_must_name_a_real_author(self):
+        def piece(author):
+            return PieceContent.model_validate({**piece_json("The work is quiet. Do it anyway."),
+                                                "quote": {"text": "The work is quiet. Do it anyway.", "author": author}})
+        self.assertTrue(content._signed(piece("Seneca")))
+        for bad in (None, "", "  ", "Unknown", "anonymous"):
+            self.assertFalse(content._signed(piece(bad)), bad)
 
     def test_repeated_quote_is_regenerated_then_failed(self):
         first = projects.create(BRIEF)

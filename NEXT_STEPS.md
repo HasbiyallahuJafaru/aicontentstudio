@@ -5,6 +5,30 @@ the older milestone log (M1-M8) and is superseded where they disagree. Read this
 
 ## Start here
 
+- **Session 2026-11-08 evening (uncommitted, installer uploaded 2026-11-09):** author line on the statement and stack
+  designs; detailed job progress (step log per job, migration 013, ffmpeg progress, per-piece failures logged and
+  shown on the piece, `components/JobProgress.tsx`); a lime halo on every selected option (`.halo`, `.halo-sm`);
+  CSV sample + AI prompt buttons on "I have my own"; **every quote is a real documented public-domain line with its
+  author, in every genre** (owner pick; `prompts.ATTRIBUTION`, `content._signed` retries unsigned quotes); pasted CSV
+  rows split into quote + author; **clips run at least 60 s finished** (`clips.MIN_CLIP` / `ACS_MIN_CLIP`, grown
+  after tightening by `clips._at_least`); **no approve step** (migration 014 turns approved into ready;
+  `pieces.approve` removed) and **Schedule all** for clips and pieces (`posts.schedule`, `ScheduleAllDialog`: first
+  post + every 10 min / 15 min / hour / day / other day, each time editable). The posting calendar is gone.
+  Checked: 224 backend tests, typecheck, build, packaged smoke. **Not run: `npm test`'s smoke** (updated for all of
+  the above). Not tried for real: a generation with the real-quote prompts, Schedule all against Zernio.
+- **Creator card (2026-11-09, uncommitted, not in the uploaded installer):** React Bits Lanyard
+  (`components/Lanyard.tsx`, vendored, `@ts-nocheck`) in `components/CreatorCard.tsx`, mounted in the Shell. Drops in
+  1.2 s after a `render`, `visuals_render` or `clip` job completes, at most twice a day (localStorage
+  `acs.creatorCard`); Escape, backdrop or Close dismiss it; a bar under it links website, LinkedIn, GitHub. Card art
+  (front with the owner's portrait `scripts/creator-photo.png`, back, strap) drawn by
+  `scripts/make-creator-card.py` into `src/assets/lanyard/`. three.js loads lazily (1.2 MB chunk) only when it opens.
+  Verified in the built app by screenshot (drop-in, flip, Escape). The smoke run disables the daily pop-up and opens
+  it once via the `creator-card:open` window event.
+- **Installer 2026-11-09** (all of the above, still 0.1.0, unsigned, 256 MiB) replaced BOTH R2 copies:
+  `ytclipper-releases/YT-Clipper-Setup.exe` (gated) and the public `clipperai-published/downloads/YT-Clipper-Setup.exe`
+  (what the site button serves until Turnstile is live). Verified: public link 200 with the new size; gate 400
+  without a token. Local copy in `apps/desktop/release/` (older builds in `previous-*`).
+
 - **Shipped 2026-11-08.** `main` = `quality-motion-openrouter` = `cde8ffe` on GitHub (release 0.1.0).
 - **Committed 2026-11-08 on `quality-motion-openrouter` (not yet on `main`):** Zernio-only posting (Buffer and
   Metricool removed) for clips, quote images and narrated videos; "Download and render"; six new image designs (13

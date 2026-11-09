@@ -24,8 +24,17 @@ step outside", "for the first time this year", cold floors, mirrors, gyms, "when
 "winner", "it's not about X, it's about Y", "let that sink in", stacked rhetorical questions, exclamation marks, \
 anything a gym poster or a LinkedIn guru would say."""
 
-INTEGRITY = """- Write original lines only. Never imitate a living person. "author" stays null unless the genre \
-quotes real public-domain sources, in which case follow its attribution rules exactly.
+# Owner 2026-11-08: every quote carries a real reference. Quotes are never invented: each is a real, documented line
+# from a public-domain source, and "author" always names who said or wrote it.
+ATTRIBUTION = """- Every quote is REAL: a documented line said or written by a real person whose work is in the public \
+domain (died before 1955, the words published before 1929). quote.text is the documented wording, never invented, \
+never paraphrased, never "in the style of". quote.author is always that person's name ("Seneca", "Marcus Aurelius", \
+"Ralph Waldo Emerson"); never null, never "Unknown", "Anonymous" or a made-up name. A translation is fine; a line \
+you are not sure is genuine and correctly attributed is not: pick another.
+- Pick the line for the topic: it must genuinely speak to the reading of the topic, not merely sound wise."""
+
+INTEGRITY = f"""{ATTRIBUTION}
+- Never imitate a living person.
 - Never produce variations of the same sentence across pieces: vary structure, opening word, rhythm and length.
 - You never decide colors, font sizes, pixel positions, bitrates or crops.
 Reply with a single JSON object and nothing else."""
@@ -36,14 +45,14 @@ and no shot list in this job.
 
 {TOPIC_RULES}
 
-What makes a quote worth saving:
-- One complete thought that stands alone on an image with nothing around it: 4 to 22 words.
-- A shape you can hear: balance, contrast, or a turn in the second half ("The mountain does not care. That is why \
-you climb it.").
-- Specific nouns from the topic's world over abstractions; at most one abstract noun per quote.
-- Fresh and exact, never a cliché or a slogan. It sounds like a person with something true to say.
-- A batch covers different facets of the topic and varies its form: a plain statement, a contrast, an image, a \
-two-line turn, a quiet observation.
+You CHOOSE real quotes; you never write them. What makes a choice worth saving:
+- One complete thought that stands alone on an image with nothing around it: 4 to 25 words. Quote a self-contained \
+sentence or two from a longer passage rather than a fragment.
+- A shape you can hear: balance, contrast, or a turn in the second half.
+- Exact and alive, never a worn-out line everyone has seen a thousand times; prefer the less obvious line from a \
+famous voice, or a strong line from a less famous one.
+- A batch covers different facets of the topic and draws on different voices: no author twice in a batch unless \
+the topic is that author.
 
 The photo: one still photograph that shows the quote's world (subject + setting + light), portrait, with calm space \
 for text. Searches are 3 to 8 words, no brand names, no text-in-image requests.
@@ -66,9 +75,10 @@ decode, a slow build where the real hook is line three. The piece delivers exact
 way in so attention climbs. Where it fits, the last line makes the first line hit differently.
 - Concrete beats abstract: specific images from the topic's own world, never "X is important".
 - Short lines. Fragments are fine. One idea per line. Let silence do work.
-- It ends on ONE line worth screenshotting. That line is the quote: 4 to 18 words, standing alone on screen.
-- The narration is the spoken script, natural rhythm with room to breathe, not the quote copied verbatim (it may \
-end on the quote or a variation). It must OPEN on the hook.
+- It ends on ONE line worth screenshotting. That line is the quote: a REAL documented line (4 to 25 words) with \
+its real author, chosen to fit the topic. You never write the quote yourself.
+- The narration is your own spoken script, natural rhythm with room to breathe. It must OPEN on the hook and land \
+on the quote: it may end by saying the line and who said it.
 - Visual searches are cinematic, filmable stock-footage searches from the topic's world: subject + setting + light \
 or motion, 3 to 8 words, no brand names, no text-in-image requests.
 - The piece is CUT, not illustrated: "shots" is the shot list the edit cuts between, 4 beats in narration order. \
@@ -79,30 +89,37 @@ list, already in motion. Across the four use at least one "literal" (shows what 
 {INTEGRITY}"""
 
 # Each genre is a top-performing format (researched 2026-09-20). "quote" is how its quote images read; "voice" is how
-# its narration sounds; "attributed" genres use REAL documented public-domain lines and name the author.
+# its narration sounds. Every genre quotes REAL documented public-domain lines and names the author (owner
+# 2026-11-08); "quote" says which voices suit it.
 GENRES = {
-    "hope": {"label": "Hope — spoken word", "attributed": False,
-             "quote": "Tender and hopeful: soft certainty, warmth earned through honesty, never toxic positivity.",
+    "hope": {"label": "Hope — spoken word",
+             "quote": "Tender and hopeful lines: soft certainty, warmth earned through honesty, never toxic "
+                      "positivity. Voices like Helen Keller, Emily Dickinson, Walt Whitman, Victor Hugo, Ralph Waldo "
+                      "Emerson, Henry David Thoreau, Rabindranath Tagore, Kahlil Gibran.",
              "voice": "Hopecore spoken word: gentle, vulnerable, unhurried. Name the quiet battles nobody sees and "
                       "answer them with earned hope, never toxic positivity. It reads like a letter to the listener."},
-    "speech": {"label": "Hard Truth — speech edit", "attributed": False,
-               "quote": "Blunt and hard-edged: short sentences, a truth or a challenge that does not soften itself.",
+    "speech": {"label": "Hard Truth — speech edit",
+               "quote": "Blunt, hard-edged lines: a truth or a challenge that does not soften itself. Voices like "
+                        "Theodore Roosevelt, Frederick Douglass, Seneca, Epictetus, Friedrich Nietzsche, Booker T. "
+                        "Washington, Benjamin Franklin, Napoleon.",
                "voice": "Hard-truth speech edit: second person, present tense, high stakes. Short hard sentences "
                         "that escalate; name the excuse, name the cost; end by calling them to hold the line."},
-    "stoic": {"label": "Stoic Wisdom", "attributed": False,
-              "quote": "Calm, timeless aphorism: plain declaratives, unimpressed by noise, nothing trendy.",
+    "stoic": {"label": "Stoic Wisdom",
+              "quote": "Calm, timeless Stoic lines: plain declaratives, unimpressed by noise. Marcus Aurelius, Seneca, "
+                       "Epictetus, Musonius Rufus, Zeno of Citium, Cato, Cicero.",
               "voice": "Stoic journal voice: calm, eternal, unimpressed by noise. Control versus not-control, "
                        "mortality as a tool, duty over feeling. Plain declaratives, no self-help vocabulary."},
-    "history": {"label": "Historical Voices", "attributed": True,
+    "history": {"label": "Historical Voices",
                 "quote": "Real documented words from public-domain figures that genuinely speak to the topic.",
                 "voice": "Historical voices: documented words from public-domain figures. The narration sets the "
                          "moment the line came from and brings it to the topic at hand."},
-    "books": {"label": "Book Wisdom", "attributed": True,
+    "books": {"label": "Book Wisdom",
               "quote": "Real documented lines from public-domain classics that genuinely speak to the topic.",
               "voice": "Book wisdom: documented lines from public-domain classics. The narration bridges the classic "
                        "idea to the topic and lands on why it still holds."},
-    "cinema": {"label": "Cinematic Minimal", "attributed": False,
-               "quote": "Spare and imagistic: very few words, each one an image, no advice.",
+    "cinema": {"label": "Cinematic Minimal",
+               "quote": "Spare, imagistic lines: few words, each one an image, no advice. Voices like Lao Tzu, Basho, "
+                        "Rumi, Emily Dickinson, Henry David Thoreau, John Muir, Rainer Maria Rilke, Virginia Woolf.",
                "voice": "Cinematic minimal: the visuals carry it. Very few words, spaced out, each one an image. No "
                         "advice at all: atmosphere and one turning line, then silence."},
 }
@@ -125,7 +142,7 @@ VIDEO_PLAN_SHAPE = {
                 "narration_style": "e.g. calm reflective, quiet urgent, warm conversational"}],
 }
 
-QUOTE_FIELD = {"text": "string", "author": None}
+QUOTE_FIELD = {"text": "the real documented line", "author": "the real person who said or wrote it"}
 DESIGN_FIELD = {"text_density": "low|medium|high", "animation": "still|slow|medium",
                 "composition": "editorial|centered|minimal|bold"}
 METADATA_FIELD = {"title": "short title, no hashtags", "description": "2-3 sentences",
@@ -164,13 +181,8 @@ def _brief(b: dict) -> str:
     quotes = quotes_only(b)
     parts = [f'Topic: "{b["topic"]}"',
              f"Genre: {genre['label']}. {genre['quote'] if quotes else genre['voice']}"]
-    if genre["attributed"]:
-        parts.append(
-            "Attribution: this genre uses REAL, documented, public-domain lines that genuinely speak to the topic. "
-            "quote.text must be the actual documented line (never invented, never paraphrased) and author = the "
-            "source's name (for example 'Marcus Aurelius', 'Seneca', 'John Muir'). Nothing published after 1929."
-            + ("" if quotes else " The narration is your own words: set the moment, deliver the line, land why it "
-               "still holds."))
+    parts.append("Quote: a REAL documented public-domain line that genuinely speaks to the topic, with its real "
+                 "author's name in quote.author (never null).")
     if b.get("mood"):
         parts.append(f"Mood: {b['mood']}")
     if b.get("audience"):

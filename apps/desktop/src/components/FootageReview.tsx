@@ -58,7 +58,7 @@ export function FootageReview({ pieces, onStarted, disabled }: {
               </p>
               <span className="tnum shrink-0 text-xs text-ink-3">{mine.length} of {review.want} {review.want === 1 ? 'shot' : 'shots'}</span>
             </div>
-            <ul className="grid grid-cols-[repeat(auto-fill,minmax(104px,1fr))] gap-3">
+            <ul className="grid grid-cols-[repeat(auto-fill,minmax(104px,1fr))] gap-4 p-2">
               {review.options.map((o, i) => {
                 const order = mine.indexOf(o.key)
                 const on = order >= 0
@@ -67,7 +67,7 @@ export function FootageReview({ pieces, onStarted, disabled }: {
                     <button type="button" onClick={() => toggle(p, o.key)} aria-pressed={on}
                       title={`${o.candidate.creator || 'Unknown creator'} · ${o.queries.join(', ')}`}
                       className={cx('group relative block aspect-[9/16] w-full overflow-hidden rounded-[14px] bg-black/30 transition-[box-shadow,transform] duration-200',
-                        on ? 'shadow-[0_0_0_2px_var(--color-accent),0_12px_28px_-12px_rgb(17_18_20/0.22)]'
+                        on ? 'halo'
                           : 'shadow-[inset_0_0_0_1px_rgb(17_18_20/0.1)] hover:-translate-y-0.5')}>
                       <img src={mediaUrl(o.thumb)} alt={`Footage option by ${o.candidate.creator || 'unknown'}`} loading="lazy"
                         className={cx('absolute inset-0 size-full object-cover transition-opacity duration-200', !on && 'opacity-70 group-hover:opacity-100')} />

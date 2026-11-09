@@ -43,7 +43,6 @@ export function Preview({ piece, renders, assets, voice, onClose, onChanged }: {
 
   const regenerate = (scope: Scope) =>
     run(scope, () => call('pieces.regenerate', { piece_id: piece.id, scope }))
-  const approve = () => run('approve', () => call('pieces.approve', { piece_id: piece.id }))
   const exportPiece = () =>
     run('export', () => call('jobs.start', { project_id: piece.project_id, kind: 'export', piece_ids: [piece.id] }))
 
@@ -124,11 +123,6 @@ export function Preview({ piece, renders, assets, voice, onClose, onChanged }: {
           <Button disabled={busy !== null} onClick={exportPiece}>
             <Export size={14} />{busy === 'export' ? 'Exporting…' : 'Export'}
           </Button>
-          {piece.status === 'ready' && (
-            <Button variant="primary" disabled={busy !== null} onClick={approve}>
-              <Check size={14} weight="bold" />{busy === 'approve' ? 'Approving…' : 'Approve'}
-            </Button>
-          )}
         </div>
       </aside>
     </Dialog>

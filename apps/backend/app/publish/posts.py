@@ -1,28 +1,28 @@
 """Our record of where each clip is going: one publications row per clip per social account, with the state the
-posting service last reported (scheduled | sending | sent | error | canceled). Also the posting calendar, which
-spreads a project's approved clips over chosen days and times. The service itself is Zernio (zernio.py)."""
+posting service last reported (scheduled | sending | sent | error | canceled). Also "Schedule all": many clips or
+pieces at once, each at its own time (owner 2026-11-08: no approve step, no one-by-one posting). The service itself
+is Zernio (zernio.py)."""
 import json
-from datetime import datetime, time, timedelta, timezone
-from itertools import islice
-from zoneinfo import ZoneInfo
+from datetime import datetime, timedelta, timezone
 
 from app.database import connect
 from app.errors import UserError
 from app.publish import zernio
 
-AHEAD = timedelta(days=30)  # how far ahead the calendar plans
 LIVE = ('error', 'canceled')  # rows in these states don't hold a clip's slot on an account
 
 
 def clip(project_id: str, idx: int) -> dict:
-    """An approved clip with its per-network post copy."""
+    """A postable clip with its per-network post copy: rendered and not rejected (there is no approve step)."""
     with connect() as conn:
         row = conn.execute("SELECT * FROM clips WHERE project_id = ? AND idx = ?", (project_id, idx)).fetchone()
     if row is None:
         raise UserError("That clip doesn't exist any more. Re-clip the project.", f"clip {idx}")
     found = {**dict(row), "posts": json.loads(row["posts"])}
-    if found["status"] != "approved":
-        raise UserError("Approve this clip before publishing it.")
+    if found["status"] == "rejected":
+        raise UserError("This clip was rejected. Restore it before posting it.")
+    if not found["video_path"]:
+        raise UserError("This clip has no video yet. Clip the project again.")
     return found
 
 
@@ -75,58 +75,34 @@ def _parse(value: str | None) -> datetime | None:
         return None
 
 
-def slots(days: list[int], times: list[str], start, earliest: datetime, until: datetime, tz: str) -> list[datetime]:
-    """The calendar's posting times in order: each chosen time on each chosen weekday from `start`, in the
-    calendar's time zone (so daylight saving is followed), that falls between `earliest` and `until`."""
-    zone = ZoneInfo(tz)
-    parsed = [datetime.strptime(t, "%H:%M").time() for t in times]
-    day = max(start, earliest.astimezone(zone).date())
-    found = []
-    while datetime.combine(day, time.min, zone) <= until:
-        if day.isoweekday() in days:
-            for at in sorted(datetime.combine(day, t, zone) for t in set(parsed)):
-                if earliest <= at <= until:
-                    found.append(at.astimezone(timezone.utc))
-        day += timedelta(days=1)
-    return found
-
-
-def calendar(project_id: str, account_ids: list[str], days: list[int], times: list[str],
-             start: str, tz: str, dry_run: bool = False) -> dict:
-    """Spreads the project's approved, unscheduled clips over the calendar's posting times, up to 30 days ahead,
-    scheduling each on the chosen Zernio accounts. `left`: clips that didn't fit. `dry_run`: only plan, so the
-    person sees every slot before anything is sent."""
-    now = datetime.now(timezone.utc)
-    try:
-        ZoneInfo(tz)
-    except (KeyError, ValueError):
-        raise UserError("That time zone isn't known. Use one like Europe/London or America/New_York.")
-    if not days or not times:
-        raise UserError("Pick at least one posting day and one time.")
-    if not dry_run:
-        zernio.check(account_ids)
-    with connect() as conn:
-        rows = conn.execute("SELECT * FROM clips WHERE project_id = ? AND status = 'approved' ORDER BY idx",
-                            (project_id,)).fetchall()
-        used = {r["clip_idx"] for r in conn.execute(
-            "SELECT clip_idx FROM publications WHERE project_id = ? AND piece_id IS NULL AND status NOT IN (?, ?)",
-            (project_id, *LIVE))}
-        others = conn.execute("SELECT due_at FROM publications WHERE status NOT IN (?, ?)", LIVE).fetchall()
-    busy = {r["due_at"] for r in others if _parse(r["due_at"]) and _parse(r["due_at"]) > now}
-    clips = [dict(r) for r in rows if r["idx"] not in used]
-    if not clips:
-        raise UserError("Every approved clip is already scheduled or posted. Approve more clips first.")
-    first_day = datetime.strptime(start, "%Y-%m-%d").date()
-    free = (at for at in slots(days, times, first_day, now + timedelta(minutes=30), now + AHEAD, tz)
-            if at.isoformat() not in busy)
-    due = list(islice(free, len(clips)))
-    if not due:
-        raise UserError(f"None of those days and times fall within the next {AHEAD.days} days. Pick an earlier start.")
-    if not dry_run:
-        for c, at in zip(clips, due):
-            zernio.publish(project_id, c["idx"], account_ids, at.isoformat())
-    return {"scheduled": [{"clip_idx": c["idx"], "title": c["title"], "due_at": a.isoformat()} for c, a in zip(clips, due)],
-            "left": [c["idx"] for c in clips[len(due):]]}
+def schedule(project_id: str, account_ids: list[str], items: list[dict]) -> list[dict]:
+    """Schedules many posts at once on the same accounts, each at its own time. An item is {"clip_idx": n} or
+    {"piece_id": id}, plus "due_at" (ISO with offset). Every time is checked before anything is sent; then each post
+    goes out on its own, so one refusal (a video-only network for an image, say) never stops the others.
+    Returns one result per item, in order: {"key", "ok", "error"?, "rows"?}."""
+    if not items:
+        raise UserError("Nothing to schedule. Every post here is already scheduled or posted.")
+    zernio.check(account_ids)
+    keys = []
+    for item in items:
+        key = f"piece:{item['piece_id']}" if item.get("piece_id") else f"clip:{item['clip_idx']}"
+        try:
+            zernio._when(item.get("due_at") or None)
+        except UserError as e:
+            n = "this piece" if item.get("piece_id") else f"clip {item['clip_idx']}"
+            raise UserError(f"The time for {n} won't work: {e}", e.detail)
+        keys.append(key)
+    out = []
+    for key, item in zip(keys, items):
+        try:
+            rows = (zernio.publish_piece(item["piece_id"], account_ids, item["due_at"]) if item.get("piece_id")
+                    else zernio.publish(project_id, int(item["clip_idx"]), account_ids, item["due_at"]))
+            failed = [r for r in rows if r["status"] == "error"]
+            out.append({"key": key, "ok": not failed, "rows": rows,
+                        **({"error": failed[0]["error"]} if failed else {})})
+        except UserError as e:
+            out.append({"key": key, "ok": False, "error": str(e)})
+    return out
 
 
 def publications(project_id: str) -> list[dict]:

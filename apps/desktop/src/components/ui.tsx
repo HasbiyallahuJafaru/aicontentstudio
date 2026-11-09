@@ -82,14 +82,14 @@ export function Choices<T extends string | number>({ legend, options, value, onC
   return (
     <fieldset className="grid gap-2">
       <legend className="mb-2 text-[13px] font-medium text-ink">{legend}</legend>
-      <div className="flex flex-wrap gap-1.5">
+      <div className="flex flex-wrap gap-2.5 p-1">
         {options.map((o) => (
           <label
             key={o.value}
             className={cx(
               'no-drag relative flex h-9 items-center rounded-control border px-4 text-[13px]',
               'transition-colors duration-150 has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-accent',
-              selected(o.value) ? 'chip-on' : 'border-line bg-black/[0.03] text-ink-2 hover:border-line-strong hover:text-ink',
+              selected(o.value) ? 'chip-on halo-sm' : 'border-line bg-black/[0.03] text-ink-2 hover:border-line-strong hover:text-ink',
             )}
           >
             <input
