@@ -317,7 +317,6 @@ mark { background: var(--accent); color: var(--on-accent); padding: 0 0.12em; bo
 .legal-links { display: flex; flex-wrap: wrap; gap: 18px; }
 .legal-links a { font-size: 14px; color: var(--ink-3); text-decoration: none; transition: color 0.2s; }
 .legal-links a:hover { color: var(--ink); }
-
 /* the download check */
 .gate { border: 0; padding: 32px; width: min(420px, calc(100vw - 32px)); border-radius: var(--radius); background: var(--panel); color: var(--ink); box-shadow: var(--shadow); }
 .gate::backdrop { background: rgb(13 14 16 / 0.45); backdrop-filter: blur(4px); }

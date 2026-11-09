@@ -1,7 +1,7 @@
 """Writes the four legal pages of the YT Clipper site from one shell. Run from apps/site."""
 from pathlib import Path
 
-UPDATED = "8 November 2026"
+UPDATED = "9 November 2026"
 CONTACT = '<a href="https://hasbiyallahu.xyz" target="_blank" rel="noopener">hasbiyallahu.xyz</a>'
 
 SHELL = """<!doctype html>
@@ -57,7 +57,7 @@ SHELL = """<!doctype html>
 
 PRIVACY = f"""
       <p class="summary">The short version: YT Clipper runs on your own computer. There is no account, and the app sends
-        nothing to us. The services you choose to connect (such as OpenRouter or Metricool) receive what they need to do
+        nothing to us. The services you choose to connect (such as OpenRouter or Zernio) receive what they need to do
         their job, directly from your computer.</p>
 
       <h2>Who this covers</h2>
@@ -90,8 +90,7 @@ PRIVACY = f"""
           <tr><td>OpenRouter</td><td>Your brief or topic, video transcripts and audio, and text to be voiced</td><td>Writing, clip selection, transcription and narration</td></tr>
           <tr><td>Pexels and Unsplash</td><td>Search terms</td><td>Finding stock footage and photos</td></tr>
           <tr><td>YouTube and other video sites</td><td>Requests for the videos you choose to clip</td><td>Downloading the source video</td></tr>
-          <tr><td>Metricool and Buffer</td><td>The clips, captions and times you choose to publish</td><td>Scheduling your posts</td></tr>
-          <tr><td>Your media host</td><td>The clip files you publish</td><td>A public link that Metricool or Buffer can fetch</td></tr>
+          <tr><td>Zernio</td><td>The clips, images, captions and times you choose to publish, and the social accounts you connect there</td><td>Posting and scheduling to your social accounts</td></tr>
         </tbody>
       </table>
 
@@ -143,7 +142,7 @@ TERMS = f"""
         deceives people, or breaks the rules of the platforms you post to.</p>
 
       <h2>Outside services</h2>
-      <p>OpenRouter, Pexels, Unsplash, YouTube, Metricool, Buffer, Cloudflare and other services are run by their own
+      <p>OpenRouter, Pexels, Unsplash, YouTube, Zernio, Cloudflare and other services are run by their own
         companies under their own terms. We do not control them and are not responsible for their availability, changes or
         decisions.</p>
 

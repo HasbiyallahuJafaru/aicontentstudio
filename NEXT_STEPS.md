@@ -19,6 +19,11 @@ the older milestone log (M1-M8) and is superseded where they disagree. Read this
 - **Committed and pushed 2026-11-09 as `e3b2311`** (everything below). **Installer rebuilt and uploaded 2026-11-09 05:10**
   (includes the creator card) to both R2 copies; verified public link 200 at 268,732,600 bytes, gate 400 without a
   token. `apps/desktop/release/` now holds only that one installer (owner: one, not several).
+- **Site deployed 2026-11-09:** posting copy now says Zernio (home, terms, privacy table); `robots.txt` +
+  `sitemap.xml`; IndexNow key `ed4c4a3fb4f795112f68126f75b83204` (file at the site root). All five pages submitted to
+  IndexNow (202 accepted); resubmit after site changes with the same POST to api.indexnow.org. Google Analytics was
+  built (consent banner) then dropped at the owner's request: no analytics, privacy page says so. Search Console not set
+  up yet (needs the owner's verification code; the sitemap is ready for it).
 - **Creator card (2026-11-09):** React Bits Lanyard
   (`components/Lanyard.tsx`, vendored, `@ts-nocheck`) in `components/CreatorCard.tsx`, mounted in the Shell. Drops in
   1.2 s after a `render`, `visuals_render` or `clip` job completes, at most twice a day (localStorage
