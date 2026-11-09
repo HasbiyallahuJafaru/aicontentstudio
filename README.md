@@ -1,83 +1,90 @@
-# AI Social Content Studio
+# YT Clipper - AI Content Studio
 
-A Windows desktop app that turns a short brief, or a long video you already have, into finished short-form
-content: written lines, spoken narration, cut and graded footage, burned captions, and per-platform copy ready to
-post. Local only. No accounts, no cloud, no subscription. Your API keys and your content never leave this machine.
+A free Windows desktop app that turns long videos into captioned shorts, and a short topic into quote images and
+narrated videos, then posts or schedules all of it to your social accounts. It runs on your own PC: no account, no
+cloud, no subscription. Your keys and your content stay on your machine.
 
-Built by [Hasbiyallahu](https://hasbiyallahu.xyz).
+**Download:** [ytclipper.xyz](https://ytclipper.xyz) · Built by [Hasbiyallahu Jafaru](https://hasbiyallahu.xyz)
 
-## Two ways in
+## What it makes
 
-**Write content.** Give it a topic and a genre. It plans a batch, writes each piece hook-first, picks a pool of
-stock shots, speaks the narration, cuts the video, and writes the caption, hashtags and metadata for every platform
-you targeted.
+**Clips from a video.** Paste a YouTube link or pick a file on your computer. The app transcribes every word, finds
+the moments that stand on their own, and cuts each one into a vertical short of at least a minute. Dead air and
+filler words come out, the crop follows the speaker's face, the strongest line can play first as a cold open, and
+captions are burned in in the style you pick. Every clip comes with its own title, hook and post copy for each
+network.
 
-**Clip from video.** Give it a YouTube URL or a local file. It transcribes the whole thing, scans the transcript
-for moments that stand alone, ranks them, tracks the speaker's face to reframe 16:9 into 9:16, burns karaoke
-captions, and writes native post copy per network.
+**Quote images.** Give it a topic and a genre, or bring your own quotes (typed, pasted, or imported from a CSV, with
+a sample file and a ready-made AI prompt for writing one). Every quote is a real, documented line with its author.
+Each image is laid out in one of 13 typographic designs (noir film still, paper note, Swiss poster, risograph print,
+instant photo and more) over a stock photo picked to match.
 
-Both land in the same review flow: preview, redo any single part, approve, export, publish.
+**Narrated videos.** The same brief becomes a spoken short: a script written hook-first, read by a Gemini voice you
+choose, cut across several stock shots with the genre's colour grade, film grain and optional karaoke subtitles.
 
-## Genres, not tones
+Before anything full-size downloads, you see the footage the app proposes as thumbnails and keep or swap each pick.
+**Download and render** then fetches exactly those and renders every piece on one progress bar, with a step-by-step
+log that shows which piece and which step is running, finished or failed.
 
-Content is organised by format rather than mood, because that is how the platforms actually reward it. Each genre
-carries its own writing voice and its own edit grammar.
+**Posting.** Connect your accounts once through [Zernio](https://zernio.com) (free for the first two). Post a single
+clip or image, or press **Schedule all**: choose the first post time and a spacing (every 10 minutes, 15 minutes,
+hour, day or other day), adjust any single time, and send the whole batch. Each item then shows Scheduled, Posted or
+Failed. Or export a folder with the files and per-platform captions and upload them yourself.
 
-| Genre | Voice | Cut |
+## Genres
+
+Content is organised by format rather than mood, because that is how the platforms reward it. Each genre has its own
+quote voices, narration style and edit grammar.
+
+| Genre | Quotes from | Cut |
 |---|---|---|
-| Hope | Hopecore spoken word, a letter to the listener's 2am self | 2.6-3.2s shots, dissolves throughout, warm lift and halation |
-| Hard Truth | Speech-edit energy, second person, escalating | 1.4-1.9s shots, hard cuts, bleach bypass, coarse grain |
-| Stoic Wisdom | Marcus Aurelius at night, plain declaratives | 3.0-4.0s holds, mostly locked off, cold and desaturated |
-| Historical Voices | Documented public-domain lines, attributed | 2.4-3.0s, black beats between shots, sepia and heavy grain |
-| Book Wisdom | Public-domain classics bridged into an ordinary day | 2.6-3.2s, alternating dissolves, warm paper mids |
-| Cinematic Minimal | The visuals carry it, words land like titles | 3.5-4.5s, fade to black, teal-orange, letterbox bars, one speed ramp |
+| Hope | Keller, Dickinson, Whitman, Hugo, Emerson, Tagore | 2.6-3.2 s shots, dissolves, warm lift and halation |
+| Hard Truth | Roosevelt, Douglass, Seneca, Epictetus, Nietzsche | 1.4-1.9 s shots, hard cuts, bleach bypass, coarse grain |
+| Stoic Wisdom | Marcus Aurelius, Seneca, Epictetus, Musonius Rufus | 3.0-4.0 s holds, mostly locked off, cold and desaturated |
+| Historical Voices | Documented words of public-domain figures | 2.4-3.0 s, black beats between shots, sepia, heavy grain |
+| Book Wisdom | Lines from public-domain classics | 2.6-3.2 s, alternating dissolves, warm paper mids |
+| Cinematic Minimal | Lao Tzu, Basho, Rumi, Thoreau, Muir, Rilke | 3.5-4.5 s, fade to black, teal-orange, letterbox, one speed ramp |
 
-Attributed genres quote real, documented, pre-1929 sources and name the author. Everything else is original.
+Quotes are never invented: every one is a real public-domain line (published before 1929) with its author named.
 
 ## How it edits
 
-The renders are meant to look edited, not illustrated. A piece is cut between a pool of distinct visuals rather
-than one clip panning: different subject, different location, mixed literal / metaphorical / atmospheric registers.
-Cuts land on breaths in the narration, not on a divisor, using real word timings. Every join is an `xfade`, stills
-are supersampled before the Ken Burns move so they do not stair-step, the turn shot can ramp, and the whole
-timeline gets one grade so unrelated stock reads as one film. Music ducks under the voice. A render that opens on
-a black frame fails its own quality check.
-
-The full spec, including the reference research and the ffmpeg capability audit, is in
-[.claude/edit-grammar.md](.claude/edit-grammar.md).
+Renders are meant to look edited, not illustrated. A narrated piece cuts between several distinct shots (different
+subject, different place) on the breaths in the narration, using real word timings. Stills get a slow push, every
+join is a proper transition, and the whole timeline gets one grade so unrelated stock footage reads as one film.
+Music ducks under the voice. A render that opens on a black frame fails its own quality check. The director's spec is
+in [.claude/edit-grammar.md](.claude/edit-grammar.md).
 
 ## Status
 
-| Milestone | Scope | State |
-|---|---|---|
-| 0 | Research and decisions | Done ([DECISIONS.md](DECISIONS.md)) |
-| 1 | Electron + React shell, Python stdio backend, SQLite, Settings, projects | Done |
-| 2 | DeepSeek generation: batch planning, content schemas, jobs with live progress | Done |
-| 3 | Pexels/Unsplash asset pipeline: scoring, dedup, cooldowns, Library | Done |
-| 4 | Visual analysis, HEX extraction, palette engine, composition detection | Done |
-| 5 | TTS, audio mixing, FFmpeg video and image renderers | Done |
-| 6 | Preview, per-part regeneration, queue, export | Done |
-| 7 | Branding, long-video clipper, Buffer and Metricool publishing, genres, director-cut renders | Done |
-| 8 | Packaging and installer | Done |
+Version 0.1.0 is released and downloadable from [ytclipper.xyz](https://ytclipper.xyz) (Windows, about 256 MB,
+unsigned for now, so Windows SmartScreen asks once on first run).
 
-Everything is verified end to end against local fake servers (`apps/desktop/scripts/smoke.mjs`) plus 135 backend
-tests. Real-key runs against DeepSeek, Pexels, Groq and Buffer are the user's own verification rounds and are
-still in progress, so treat output quality claims as unproven until you have run your own keys through it.
+The pipeline is covered by 224 backend tests and an end-to-end smoke run that drives the real app against local
+fake services (`apps/desktop/scripts/smoke.mjs`), plus a check of the packaged build. Real-key runs (OpenRouter,
+Pexels, Zernio) are verified in part; [NEXT_STEPS.md](NEXT_STEPS.md) lists exactly what has and has not been tried
+for real.
 
 ## Architecture
 
-- `apps/desktop` - Electron 44, React 19, TypeScript, Tailwind CSS 4. The renderer is sandboxed and reaches the
-  backend through a single preload bridge (`window.studio`). It never sees an API key. Keys are encrypted at rest
-  with the OS (safeStorage / DPAPI).
-- `apps/backend` - Python 3.12, stdlib plus pydantic, httpx, Pillow, opencv-python, yt-dlp. JSON
-  lines over stdio, one module per area, SQLite with plain SQL migrations. All pipeline logic lives here; the UI
-  never duplicates it.
-- `app/edit.py` is the edit grammar, `app/renders.py` plans the shots, `app/render.py` drives ffmpeg.
-  `app/motion.py` renders animated hook titles and callouts with HyperFrames (HTML + GSAP through Edge or Chrome,
-  `apps/desktop/motion/render.mjs` on the app's own Electron binary) and composites them over the edit.
-  `app/clipper/` is the long-video engine, `app/publish/` is Buffer and Metricool.
-- Anything provider-specific sits behind a small interface: `CreativeModel`, `VisualProvider`, `TTSProvider`,
-  `Renderer`, `Publisher`.
+- `apps/desktop`: Electron 44, React 19, TypeScript, Tailwind CSS 4. The renderer is sandboxed and reaches the
+  backend through one preload bridge (`window.studio`). It never sees an API key; keys are encrypted at rest with
+  Windows DPAPI (safeStorage).
+- `apps/backend`: Python 3.12 (stdlib plus pydantic, httpx, Pillow, opencv-python, yt-dlp). JSON lines over stdio,
+  one module per area, SQLite with plain SQL migrations. All pipeline logic lives here; the UI never duplicates it.
+  - `app/creative/` writes (OpenRouter), `app/assets/` finds and scores footage (Pexels, Unsplash), `app/design.py`
+    lays out the quote images, `app/edit.py` is the edit grammar, `app/renders.py` plans shots and `app/render.py`
+    drives ffmpeg.
+  - `app/clipper/` is the long-video engine: download, Whisper transcription, two-pass moment selection, face-tracked
+    crop, tightening, captions.
+  - `app/motion.py` renders animated hook titles and callouts with HyperFrames (HTML through Edge or Chrome) and
+    composites them over the edit.
+  - `app/publish/` posts and schedules through Zernio's API and keeps our record of every post.
+- `apps/site`: the landing site at ytclipper.xyz (Vite, TypeScript, three.js, GSAP), deployed on Vercel.
+- `apps/download-worker`: a Cloudflare Worker that serves the installer from a private R2 bucket after a Turnstile
+  check.
+- Provider-specific code sits behind small interfaces: `CreativeModel`, `VisualProvider`, `TTSProvider`, `Renderer`,
+  `Publisher`.
 - ffmpeg always runs as a subprocess with argument arrays, never shell strings, with a stall watchdog so a hung
   encode cannot wedge a job.
 
@@ -88,50 +95,47 @@ Requirements: Node 20+, Python 3.12, and ffmpeg on PATH.
 ```bash
 npm run setup     # once: Python venv + pip + npm install
 npm run dev       # Electron + Vite HMR + Python auto-restart
-npm test          # backend unittest + typecheck + build + end-to-end smoke (fake servers, no paid calls)
+npm test          # backend tests + typecheck + build + end-to-end smoke (fake servers, no paid calls)
 ```
 
-Behind a TLS-inspecting proxy, set `NODE_OPTIONS=--use-system-ca` before any network command. electron-builder
-downloads its toolchain on the first package, so it needs that too.
+Behind a TLS-inspecting proxy, set `NODE_OPTIONS=--use-system-ca` before any network command, including the first
+package (electron-builder downloads its toolchain).
 
 To build the Windows installer:
 
 ```bash
-npm run package          # freezes the backend, bundles ffmpeg, writes apps/desktop/release/*.exe
+npm run package          # freezes the backend, bundles ffmpeg, writes the NSIS installer
 npm run smoke:packaged   # launches the built app and checks the frozen backend comes up
 ```
 
-The installer is per-user, lets you choose the folder, and leaves your data behind on uninstall. It ships its own
-ffmpeg, so an installed copy needs nothing else on the machine. It is large (around 310 MB) because a frozen
-Python runtime and a static ffmpeg are both in the box.
+The installer is per-user, lets you choose the folder, and keeps your data on uninstall. It ships its own ffmpeg, so
+an installed copy needs nothing else on the machine. The full release steps (signing, upload, site deploy) are in
+[.claude/CLAUDE.md](.claude/CLAUDE.md).
 
 ## Keys
 
-Open Settings on first run. Nothing is required to launch the app, and each key unlocks one thing:
+The app opens without any key; first run walks you through each one, and every step can be skipped.
 
 | Key | Unlocks |
 |---|---|
-| OpenRouter | Every AI call: writing (batch plans, quotes, narration, per-platform copy), clip selection, Whisper transcription for clips and karaoke word timings, and the narration voice |
-| Pexels (Unsplash optional) | Stock footage and photos for written pieces |
-| Buffer | Scheduling and publishing, via OAuth. Optional |
-| Metricool | Publishing through the Metricool MCP. Optional, connect it with one button in Settings (no key) |
+| OpenRouter | Every AI call: writing, clip selection, Whisper transcription and word timings, and the narration voice |
+| Pexels (Unsplash optional) | Stock footage and photos for quote images and narrated videos |
+| Zernio | Posting and scheduling to your social accounts. Optional; each account is then a browser sign-in |
 
-Models are set in Settings → AI as OpenRouter ids: `deepseek/deepseek-v4-pro` writes, `deepseek/deepseek-v4.1-flash`
-scans transcripts. Transcription uses `openai/whisper-large-v3-turbo`, the cheapest Whisper on OpenRouter.
-
-Narration is Google's Gemini TTS (`google/gemini-3.8-flash-tts`) through the same OpenRouter key: pick a voice per
-project on Create, and each piece is read in the delivery it was written for. A 30 s narration costs well under a cent.
-Keys are stored encrypted in your user profile and are only ever decrypted by the app itself.
+Models are set in Settings, AI, as OpenRouter ids: `deepseek/deepseek-v4-pro` writes and
+`deepseek/deepseek-v4.1-flash` scans transcripts. Transcription uses `openai/whisper-large-v3-turbo`. Narration is
+Google's Gemini TTS (`google/gemini-3.8-flash-tts`) through the same OpenRouter key, with 18 voices; a 30 s narration
+costs well under a cent.
 
 ## Documentation
 
-- [Prd.txt](Prd.txt) is the source of truth for scope and phase order.
-- [DECISIONS.md](DECISIONS.md) records dependency and license choices, and the machine-specific gotchas.
-- [.claude/edit-grammar.md](.claude/edit-grammar.md) is the director's spec for how a piece is cut.
-- `.claude/handover.md` tracks exact progress, what is verified and what is not.
+- [NEXT_STEPS.md](NEXT_STEPS.md): current progress, what is verified, what is next.
+- [Prd.txt](Prd.txt): the source of truth for scope and phase order. [PRODUCT.md](PRODUCT.md): the product record.
+- [DECISIONS.md](DECISIONS.md): dependency and licence choices, and machine-specific gotchas.
+- [.claude/edit-grammar.md](.claude/edit-grammar.md): the director's spec for how a piece is cut.
 
-## The splash
+## Licence
 
-The splash is the studio's own background brought to life: the warm lamp, plum and floor glows drift through slow
-noise with embers rising, rendered live with three.js (`apps/desktop/src/components/Ember.tsx`). Inside the app the
-same light holds still and only moves while a job is running.
+The app is free to use under the [YT Clipper License Agreement](https://ytclipper.xyz/license). The source code in
+this repository has no open-source licence, so all rights are reserved. Third-party components and their licences
+are listed at [ytclipper.xyz/open-source](https://ytclipper.xyz/open-source).
