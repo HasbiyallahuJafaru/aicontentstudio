@@ -82,17 +82,22 @@ def _project_status(project_id: str, status: str) -> None:
                      (status, project_id))
 
 
+_start_lock = threading.Lock()
+
+
 def start(project_id: str, kind: str = "generate", piece_ids: list[str] | None = None) -> dict:
     if kind not in ("generate", "render", "export", "clip", "visuals", "visuals_render"):
         raise UserError("Unknown job kind.", kind)
-    running = latest(project_id)
-    if running and running["status"] in ("queued", "running"):
-        raise UserError("This project already has a job running.")
     job_id = uuid.uuid4().hex[:12]
-    with connect() as conn:
-        if conn.execute("SELECT 1 FROM projects WHERE id = ?", (project_id,)).fetchone() is None:
-            raise UserError("This project no longer exists.", f"project id {project_id}")
-        conn.execute("INSERT INTO generation_jobs (id, project_id, kind) VALUES (?, ?, ?)", (job_id, project_id, kind))
+    with _start_lock:  # check + insert as one step: a double-click on 4 RPC threads started two jobs (2026-11-09)
+        running = latest(project_id)
+        if running and running["status"] in ("queued", "running"):
+            raise UserError("This project already has a job running.")
+        with connect() as conn:
+            if conn.execute("SELECT 1 FROM projects WHERE id = ?", (project_id,)).fetchone() is None:
+                raise UserError("This project no longer exists.", f"project id {project_id}")
+            conn.execute("INSERT INTO generation_jobs (id, project_id, kind) VALUES (?, ?, ?)",
+                         (job_id, project_id, kind))
     if kind in ("generate", "clip"):  # render/export ride the same job system but don't change the project's own stage
         _project_status(project_id, "generating")
     threading.Thread(target=_run, args=(job_id, project_id, kind, piece_ids), daemon=True,
@@ -100,14 +105,19 @@ def start(project_id: str, kind: str = "generate", piece_ids: list[str] | None =
     return get(job_id)
 
 
-def ensure_idle(project_id: str) -> None:
-    """Refuse a delete while a job works on the project: ffmpeg may be reading the very files."""
+def ensure_idle(project_id: str, doing: str = "deleting") -> None:
+    """Refuse a delete (or an edit) while a job works on the project: ffmpeg may be reading the very files, and a
+    render writes the piece back when it finishes, over any change made meanwhile."""
     running = latest(project_id)
     if running and running["status"] in ("queued", "running"):
-        raise UserError("This project has a job running. Wait for it to finish (or cancel it) before deleting.")
+        raise UserError(f"This project has a job running. Wait for it to finish (or cancel it) before {doing}.")
 
 
 def cancel(id: str) -> dict:
+    with connect() as conn:
+        row = conn.execute("SELECT status FROM generation_jobs WHERE id = ?", (id,)).fetchone()
+    if row is None or row["status"] not in ("queued", "running"):
+        return {"cancelling": None}  # already finished: nothing to stop
     _cancelled.add(id)  # checked between pipeline steps; an in-flight API call finishes first
     return {"cancelling": id}
 
@@ -131,6 +141,9 @@ def _run(job_id: str, project_id: str, kind: str = "generate", piece_ids: list[s
     stage = {"generate": "Generating", "render": "Rendering", "export": "Exporting", "clip": "Clipping",
              "visuals": "Downloading footage", "visuals_render": "Downloading footage"}[kind]
     steps.stage(stage)
+    # only generate/clip move the project's own stage (as in start()): a failed export of a project full of good
+    # renders must not show the whole project as Failed
+    owns_stage = kind in ("generate", "clip")
     _set(job_id, "job.started", status="running", stage=stage, log=steps.json())
     try:
         if kind == "export":
@@ -152,20 +165,23 @@ def _run(job_id: str, project_id: str, kind: str = "generate", piece_ids: list[s
         _set(job_id, "job.cancelled", status="cancelled", stage="Cancelled", log=steps.json())
     except UserError as e:
         steps.close("failed", str(e), e.detail)
-        _project_status(project_id, "failed")
+        if owns_stage:
+            _project_status(project_id, "failed")
         _set(job_id, "job.failed", status="failed", error=json.dumps({"message": str(e), "detail": e.detail}),
              log=steps.json())
     except Exception as e:
         log.exception("job %s failed", job_id)
         message, detail = explain(e)
         steps.close("failed", message, detail)
-        _project_status(project_id, "failed")
+        if owns_stage:
+            _project_status(project_id, "failed")
         _set(job_id, "job.failed", status="failed", error=json.dumps({"message": message, "detail": detail}),
              log=steps.json())
     else:
         steps.close("done")
         failed = sum(s["status"] == "failed" for s in steps.steps)
-        _project_status(project_id, "ready")
+        if owns_stage:
+            _project_status(project_id, "ready")
         _set(job_id, "job.completed", status="completed", progress=1.0, log=steps.json(),
              stage=f"Done, {failed} failed" if failed else "Done")
     finally:
@@ -188,11 +204,24 @@ def _settled_status(project_id: str) -> str:
     return "ready" if has else "draft"
 
 
+# per job kind, for the honest "the app closed" note: what stopped, and what the person presses to retry
+STOPPED = {"generate": ("Generation", "Generate again"), "render": ("Rendering", "Render again"),
+           "export": ("The export", "Export again"), "clip": ("Clipping", "Clip again"),
+           "visuals": ("The footage download", "Download again"),
+           "visuals_render": ("Download and render", "Press Download and render again")}
+# a piece left 'rendering' by a cancel or a crash goes back to what it really is: ready if it still has renders
+UNSTICK = ("UPDATE content_pieces SET status = CASE WHEN EXISTS (SELECT 1 FROM renders r WHERE r.piece_id = "
+           "content_pieces.id) THEN 'ready' ELSE 'written' END")
+
+
 def recover() -> None:
     """On startup: jobs that were running when the app closed can't resume; mark them failed, honestly."""
-    err = json.dumps({"message": "Generation stopped because the app closed. Generate again to retry.", "detail": ""})
     with connect() as conn:
-        conn.execute("UPDATE generation_jobs SET status = 'failed', error = ? WHERE status IN ('queued','running')", (err,))
+        for kind, (what, again) in STOPPED.items():
+            err = json.dumps({"message": f"{what} stopped because the app closed. {again} to retry.", "detail": ""})
+            conn.execute("UPDATE generation_jobs SET status = 'failed', error = ? WHERE status IN ('queued','running') "
+                         "AND kind = ?", (err, kind))
+        conn.execute(UNSTICK + " WHERE status = 'rendering'")  # pieces a render was holding
         conn.execute("UPDATE projects SET status = CASE WHEN EXISTS (SELECT 1 FROM content_pieces c WHERE c.project_id = "
                      "projects.id) OR EXISTS (SELECT 1 FROM clips k WHERE k.project_id = projects.id) "
                      "THEN 'ready' ELSE 'failed' END WHERE status = 'generating'")

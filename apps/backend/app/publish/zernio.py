@@ -38,13 +38,29 @@ STATES = {"pending": "scheduled", "processing": "sending", "uploading": "sending
           "failed": "error", "cancelled": "canceled"}
 
 
+class Unconfirmed(UserError):
+    """A write that may have reached Zernio with no answer back (timeout, dropped reply, server error). Retrying with
+    the same Idempotency-Key is safe: Zernio won't create the post twice."""
+
+
+def _why(e: BaseException) -> str:
+    """An exception for "View technical details": its class and message, never repr (httpx puts the signed upload
+    URL there)."""
+    return f"{type(e).__name__}: {e}"
+
+
 def _request(method: str, path: str, key: str | None = None, **kw) -> dict:
     key = key or _key()
     try:
         r = httpx.request(method, f"{API}{path}", timeout=60, verify=ssl.create_default_context(),
                           headers={"Authorization": f"Bearer {key}"} | kw.pop("headers", {}), **kw)
+    except (httpx.ConnectError, httpx.ConnectTimeout) as e:  # never got through: nothing was sent
+        raise UserError("Couldn't reach Zernio. Check your internet connection and try again.", _why(e)) from e
     except httpx.HTTPError as e:
-        raise UserError("Couldn't reach Zernio. Check your internet connection and try again.", repr(e)) from e
+        if method == "GET":
+            raise UserError("Couldn't reach Zernio. Check your internet connection and try again.", _why(e)) from e
+        raise Unconfirmed("Zernio didn't answer in time, so we can't tell whether it took this. Try again: "
+                          "it won't post twice.", _why(e)) from e
     if r.status_code == 401:
         raise UserError(RECONNECT, r.text[:300])
     if r.status_code == 402 or (r.status_code == 403 and "plan" in r.text.lower()):
@@ -56,6 +72,9 @@ def _request(method: str, path: str, key: str | None = None, **kw) -> dict:
             reason = r.json().get("error") or ""
         except ValueError:
             reason = ""
+        if r.status_code >= 500 and method != "GET":  # it may have been created before the server failed
+            raise Unconfirmed(f"Zernio had a problem ({r.status_code}) and may not have saved this. Try again: it "
+                              "won't post twice.", f"HTTP {r.status_code}: {r.text[:300]}")
         raise UserError(f"Zernio: {reason}" if reason else f"Zernio had a problem ({r.status_code}). Try again in a minute.",
                         f"HTTP {r.status_code}: {r.text[:300]}")
     return r.json() if r.content else {}
@@ -130,13 +149,17 @@ VIDEO_ONLY = {"youtube"}  # networks that can't take a still image
 def _upload(path) -> tuple[str, str]:
     """Puts a render in Zernio's own storage. Returns its public link and the media type posts declare."""
     content_type, media = TYPES.get(path.suffix.lower(), ("video/mp4", "video"))
-    data = path.read_bytes()
-    slot = _request("POST", "/v1/media/presign", json={"filename": path.name, "contentType": content_type, "size": len(data)})
-    try:
-        r = httpx.put(slot["uploadUrl"], content=data, headers={"Content-Type": content_type}, timeout=600,
-                      verify=ssl.create_default_context())
-    except httpx.HTTPError as e:
-        raise UserError("The upload to Zernio stopped. Check your connection and try again.", repr(e)) from e
+    size = path.stat().st_size
+    slot = _request("POST", "/v1/media/presign", json={"filename": path.name, "contentType": content_type, "size": size})
+    for attempt in (1, 2):  # one retry: a dropped connection mid-upload is common on home Wi-Fi
+        try:
+            with path.open("rb") as f:  # streamed from disk, never held whole in memory
+                r = httpx.put(slot["uploadUrl"], content=f, timeout=600, verify=ssl.create_default_context(),
+                              headers={"Content-Type": content_type, "Content-Length": str(size)})
+            break
+        except httpx.HTTPError as e:
+            if attempt == 2:
+                raise UserError("The upload to Zernio stopped. Check your connection and try again.", _why(e)) from e
     if not r.is_success:
         raise UserError("Zernio's storage refused the upload. Try again in a minute.", f"HTTP {r.status_code}")
     return slot["publicUrl"], media
@@ -199,8 +222,10 @@ def _send(project_id: str, idx: int, chosen: list[dict], path, texts: dict[str, 
     url, media = _upload(path)
     rows = []
     for account in chosen:
-        pub_id = uuid.uuid4().hex[:12]
-        channel = {"id": f"zernio:{account['id']}", "service": NETWORKS[account["platform"]],
+        channel_id = f"zernio:{account['id']}"
+        # a retry after an unanswered attempt reuses that attempt's id as the Idempotency-Key: never two posts
+        pub_id = posts.unconfirmed(project_id, idx, channel_id, piece_id) or uuid.uuid4().hex[:12]
+        channel = {"id": channel_id, "service": NETWORKS[account["platform"]],
                    "displayName": f"{account['label']} · {account['name']}"}
         body = {"content": texts[account["platform"]], "mediaItems": [{"url": url, "type": media}],
                 "platforms": [{"platform": account["platform"], "accountId": account["id"],
@@ -209,7 +234,8 @@ def _send(project_id: str, idx: int, chosen: list[dict], path, texts: dict[str, 
         try:
             post = _request("POST", "/v1/posts", json=body, headers={"Idempotency-Key": pub_id})["post"]
         except UserError as e:
-            rows.append(posts.save(pub_id, project_id, idx, channel, when, error=str(e), piece_id=piece_id))
+            rows.append(posts.save(pub_id, project_id, idx, channel, when, error=str(e), piece_id=piece_id,
+                                   unconfirmed=isinstance(e, Unconfirmed)))
             if "Zernio: " not in str(e):  # key, plan or connection trouble: the other accounts would fail the same way
                 raise
             continue
@@ -275,7 +301,7 @@ def refresh(row: dict) -> dict | None:
     try:
         post = _request("GET", f"/v1/posts/{row['external_id']}")["post"]
     except UserError as e:
-        if "not found" in str(e).lower() or "404" in (e.detail or ""):
+        if (e.detail or "").startswith("HTTP 404"):  # only Zernio's own answer: a wrong base URL must never wipe rows
             return None
         raise
     entry = next(iter(post.get("platforms") or []), {})
@@ -289,5 +315,5 @@ def unschedule(external_id: str) -> None:
     try:
         _request("DELETE", f"/v1/posts/{external_id}")
     except UserError as e:
-        if "not found" not in str(e).lower() and "404" not in (e.detail or ""):
+        if not (e.detail or "").startswith("HTTP 404"):  # already gone there is fine; anything else is not
             raise

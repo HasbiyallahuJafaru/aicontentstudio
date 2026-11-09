@@ -278,13 +278,13 @@ export function PostDialog({ title, kind, video = true, send, onClose, onDone, o
   }
 
   return (
-    <Dialog label={`Post ${kind}`} width={560} onClose={onClose} className="grid-rows-[auto_minmax(0,1fr)_auto]">
+    <Dialog label={`Post ${kind}`} width={560} onClose={onClose} locked={busy} className="grid-rows-[auto_minmax(0,1fr)_auto]">
       <header className="flex items-start justify-between gap-3 border-b border-line px-6 py-5">
         <div className="min-w-0">
           <p className="text-xs text-ink-3">Post or schedule this {kind}</p>
           <h2 className="mt-0.5 line-clamp-2 font-display text-[18px] font-semibold tracking-[-0.02em] text-balance">{title}</h2>
         </div>
-        <Button variant="ghost" onClick={onClose} aria-label="Close" className="-mt-2 -mr-3 h-8"><X size={15} /></Button>
+        <Button variant="ghost" onClick={onClose} disabled={busy} aria-label="Close" className="-mt-2 -mr-3 h-8"><X size={15} /></Button>
       </header>
 
       <div className="grid content-start gap-5 overflow-y-auto px-6 py-5">
@@ -295,7 +295,7 @@ export function PostDialog({ title, kind, video = true, send, onClose, onDone, o
           <ZernioPicker picked={picked} onChange={setPicked} onSettings={() => { onClose(); onSettings?.() }}
             unsupported={video ? undefined : (a) => (a.platform === 'youtube' ? 'Videos only' : undefined)} />
           <Field label="When" hint="Leave empty to post in about two minutes. Zernio posts at this time even if this computer is off.">
-            {(id) => <Input id={id} type="datetime-local" value={when} onChange={(e) => setWhen(e.target.value)} />}
+            {(id) => <Input id={id} type="datetime-local" value={when} min={local(new Date())} onChange={(e) => setWhen(e.target.value)} />}
           </Field>
         </>}
         {error && <ErrorNote error={error} />}
@@ -303,7 +303,7 @@ export function PostDialog({ title, kind, video = true, send, onClose, onDone, o
 
       <div className="flex justify-end gap-2 border-t border-line px-6 py-4">
         {sent ? <Button variant="primary" onClick={onClose}>Done</Button> : <>
-          <Button variant="ghost" onClick={onClose}>Cancel</Button>
+          <Button variant="ghost" onClick={onClose} disabled={busy}>Cancel</Button>
           {zernio && (
             <Button variant="primary" disabled={!picked.length || busy} onClick={post}>
               <PaperPlaneTilt size={14} />{busy ? 'Uploading to Zernio…' : when ? 'Schedule' : 'Post now'}
@@ -389,14 +389,14 @@ export function ScheduleAllDialog({ projectId, items, onClose, onDone, onSetting
   const sent = results ? Object.values(results) : []
   const okCount = sent.filter((r) => r.ok).length
   return (
-    <Dialog label="Schedule all" width={680} onClose={onClose} className="grid-rows-[auto_minmax(0,1fr)_auto]">
+    <Dialog label="Schedule all" width={680} onClose={onClose} locked={busy} className="grid-rows-[auto_minmax(0,1fr)_auto]">
       <header className="flex items-start justify-between gap-3 border-b border-line px-6 py-5">
         <div>
           <p className="text-xs text-ink-3">Schedule all</p>
           <h2 className="mt-0.5 font-display text-[18px] font-semibold tracking-[-0.02em]">
             {items.length} {items.length === 1 ? 'post' : 'posts'}, each at its own time</h2>
         </div>
-        <Button variant="ghost" onClick={onClose} aria-label="Close" className="-mt-2 -mr-3 h-8"><X size={15} /></Button>
+        <Button variant="ghost" onClick={onClose} disabled={busy} aria-label="Close" className="-mt-2 -mr-3 h-8"><X size={15} /></Button>
       </header>
 
       <div className="grid content-start gap-5 overflow-y-auto px-6 py-5">
@@ -457,7 +457,7 @@ export function ScheduleAllDialog({ projectId, items, onClose, onDone, onSetting
       <div className="flex items-center justify-end gap-2 border-t border-line px-6 py-4">
         {results ? <Button variant="primary" onClick={onClose}>Done</Button> : <>
           {missing && <span className="mr-auto text-xs text-danger">Pick a time for every post, or untick it.</span>}
-          <Button variant="ghost" onClick={onClose}>Cancel</Button>
+          <Button variant="ghost" onClick={onClose} disabled={busy}>Cancel</Button>
           {zernio && (
             <Button variant="primary" disabled={!picked.length || !chosen.length || !!missing || busy} onClick={send}>
               <CalendarBlank size={14} />{busy ? 'Uploading to Zernio…' : `Schedule ${chosen.length}`}

@@ -4,9 +4,11 @@ import os
 from pathlib import Path
 
 from app import motion
+from app.render import DELIVERY, audio_misstamped
+from app.errors import UserError
 from app.clipper.captions import FONTS, captions
 from app.clipper.crop import crop_filter
-from app.clipper.ff import ffmpeg
+from app.clipper.ff import ffmpeg, frame_rate
 from app.clipper.tighten import retime
 
 # orientations a clip can take: crop ratio (w, h) and output pixel size
@@ -26,20 +28,27 @@ def render(video, start: float, end: float, out: Path, words: list[dict], burn: 
     ranges = ranges or [(start, end)]
     zooms = zooms or [1.0] * len(ranges)
     out = out.resolve()
+    # ranges land on the source's frame grid: trim rounds each piece to whole frames while the captions were
+    # retimed on the exact sums, so the words drifted ~0.2 s behind the voice over 28 joins (2026-11-09)
+    rate = frame_rate(video)
+    if rate:
+        ranges = [(round(a * rate) / rate, round(b * rate) / rate) for a, b in ranges]
+        ranges = [(a, b) for a, b in ranges if b > a] or [(round(start * rate) / rate, round(end * rate) / rate)]
     timed = retime(words, ranges)
     total = sum(b - a for a, b in ranges)
     out.with_suffix(".ass").write_text(captions(timed, 0, total, width, height, emphasis, caption_style), encoding="utf-8")
 
-    # one input seek to the earliest kept second, then every range is trimmed relative to it
-    s0, s1 = min(a for a, _ in ranges), max(b for _, b in ranges)
-    graph, joins = [], ""
+    # every range is its own seeked input: trimming one shared decode made concat buffer every frame between a
+    # late cold-open teaser and the body (4.2 GB at 1080p, 2026-11-09); separate inputs decode only what plays
+    graph, joins, inputs = [], "", []
     for i, ((a, b), z) in enumerate(zip(ranges, zooms)):
         d = b - a
+        inputs += ["-ss", f"{a:.3f}", "-t", f"{d:.3f}", "-i", str(Path(video).resolve())]
         # push-in centred across, a little above centre down: the face sits in the upper half, keep its headroom
         push = f",crop=iw/{z:.3f}:ih/{z:.3f}:(iw-iw/{z:.3f})/2:(ih-ih/{z:.3f})*0.4" if z > 1.001 else ""
-        graph.append(f"[0:v]trim=start={a - s0:.3f}:end={b - s0:.3f},setpts=PTS-STARTPTS,"
+        graph.append(f"[{i}:v]setpts=PTS-STARTPTS,"
                      f"{crop_filter(video, a, b, (rw, rh))}{push},scale={width}:{height},setsar=1[v{i}]")
-        graph.append(f"[0:a]atrim=start={a - s0:.3f}:end={b - s0:.3f},asetpts=PTS-STARTPTS,"
+        graph.append(f"[{i}:a]asetpts=PTS-STARTPTS,"
                      f"afade=t=in:d={FADE},afade=t=out:st={max(0, d - FADE):.3f}:d={FADE}[a{i}]")
         joins += f"[v{i}][a{i}]"
     # cwd = output dir and relative paths, so filter args carry no Windows drive colons (they break filter parsing)
@@ -47,20 +56,24 @@ def render(video, start: float, end: float, out: Path, words: list[dict], burn: 
     burned = f",ass={out.stem}.ass:fontsdir={fonts}" if burn else ""
     graph.append(f"{joins}concat=n={len(ranges)}:v=1:a=1[cv][ca]")
     graph.append(f"[cv]null{burned}[vb]")
-    motion_args, motion_chain, top = motion.overlay_graph("vb", list(layers), 1)  # animated hook/callouts on top
+    motion_args, motion_chain, top = motion.overlay_graph("vb", list(layers), len(ranges))  # animated hook/callouts on top
     graph += motion_chain
-    graph.append(f"[{top}]format=yuv420p[vout]")
-    graph.append("[ca]loudnorm=I=-14:TP=-1.5:LRA=11[aout]")
+    graph.append(f"[{top}]scale=out_range=tv:out_color_matrix=bt709,format=yuv420p,setparams=range=tv:colorspace=bt709:color_primaries=bt709:color_trc=bt709[vout]")
+    # loudnorm stamps its first ~3 s lookahead wrong (frames 1 sample apart, then a 2.4 s jump): desktop players
+    # ignore it, but platform transcoders obey the stamps and speed up / drag the opening. Restamp from samples.
+    graph.append("[ca]loudnorm=I=-14:TP=-1.5:LRA=11,aresample=48000,asetpts=N/SR/TB[aout]")
     script = out.with_suffix(".graph")
     script.write_text(";\n".join(graph), encoding="utf-8")  # many ranges overflow Windows' 32K command line
     try:
-        ffmpeg("-ss", f"{s0:.3f}", "-t", f"{s1 - s0:.3f}", "-i", str(Path(video).resolve()), *motion_args,
+        ffmpeg(*inputs, *motion_args,
                "-/filter_complex", script.name, "-map", "[vout]", "-map", "[aout]", "-ar", "48000",
                *(("-r", str(fps)) if fps else ()),
                # a high-quality master: every platform re-encodes on upload, so artifacts compound
                "-c:v", "libx264", "-preset", "medium", "-crf", "18",
-               "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", out.name, cwd=out.parent)
+               "-c:a", "aac", "-b:a", "192k", *DELIVERY, "-movflags", "+faststart", out.name, cwd=out.parent)
     finally:
         script.unlink(missing_ok=True)
-    # cover = frame at 1 s: the speaker already framed
-    ffmpeg("-ss", "1", "-i", out.name, "-frames:v", "1", "-q:v", "3", out.with_suffix(".jpg").name, cwd=out.parent)
+    if audio_misstamped(out):
+        raise UserError("The clip's audio came out with uneven timestamps.", f"{out.name}: AAC packets misstamped")
+    # cover = frame at 1.6 s: the speaker framed and the hook title settled (at 1 s it was mid-animation)
+    ffmpeg("-ss", f"{min(1.6, total / 2):.2f}", "-i", out.name, "-frames:v", "1", "-q:v", "3", out.with_suffix(".jpg").name, cwd=out.parent)

@@ -227,7 +227,8 @@ class Tightening(unittest.TestCase):
         # 1.3-2.8 is silent apart from the filler; 3.2-4.0 has an unlabelled sound (a laugh) in the middle
         silent = [(1.3, 1.5), (1.7, 2.8), (3.2, 3.35), (3.85, 4.0)]
         self.assertEqual(tighten.keep(words, 0.9, 4.6, silent), [(0.9, 1.42), (2.62, 4.52)])
-        self.assertEqual(len(tighten.keep(words, 0.9, 4.6)), 3, "no audio evidence: trust the word timings")
+        # no audio evidence (speech over music): only gaps over 1 s are cut, so the bed doesn't stutter
+        self.assertEqual(len(tighten.keep(words, 0.9, 4.6)), 2)
 
     def test_jump_cuts_alternate_zoom_and_the_cold_open_punches_in(self):
         words = [self.w("One.", 0.0, 0.4), self.w("Two.", 1.5, 1.9), self.w("Three.", 3.0, 3.4)]
@@ -381,17 +382,19 @@ class ClipProject(unittest.TestCase):
         floor.start()
         self.addCleanup(floor.stop)
 
-    def test_a_short_pick_grows_to_the_full_minute(self):
-        """Dead air cut from a picked moment must never leave a finished clip under the floor: it grows along
-        the talk, and backwards once it reaches the end of the speech."""
+    def test_a_short_pick_grows_into_its_setup_never_past_its_payoff(self):
+        """A clip under the floor grows EARLIER (its setup), never later: the end is the payoff (2026-11-09). With
+        no earlier talk to take in, it runs a little short rather than padding the ending."""
         words = [{"word": f"w{i}.", "start": i * 0.5, "end": i * 0.5 + 0.4} for i in range(240)]  # 120 s of talk
         with mock.patch.object(clips_app, "silences", lambda v, a, b: []):
-            start, end, ranges, _ = clips_app._at_least(None, words, 10.0, 30.0, None, 60.0, words[-1]["end"])
-            self.assertGreaterEqual(sum(b - a for a, b in ranges), 60.0)
-            self.assertEqual(start, 9.9)
             start, end, ranges, _ = clips_app._at_least(None, words, 100.0, 119.9, None, 60.0, words[-1]["end"])
             self.assertGreaterEqual(sum(b - a for a, b in ranges), 60.0)
+            self.assertEqual(end, 119.9)
             self.assertLess(start, 100.0)
+            self.assertLessEqual(ranges[-1][1], 119.9)  # the ranges are planned on the span returned
+            start, end, ranges, _ = clips_app._at_least(None, words, 10.0, 30.0, None, 60.0, words[-1]["end"])
+            self.assertLessEqual(start, 0.5)  # all the setup there is (snapped to a sentence)
+            self.assertEqual(end, 30.0)  # the payoff end stays put
 
     def test_create_validates_the_source(self):
         with self.assertRaises(UserError):
@@ -449,7 +452,7 @@ class ClipProject(unittest.TestCase):
         self.assertEqual(job["status"], "completed")
         self.assertEqual(len(clips_app.list_(p["id"])), 1)
 
-    def test_per_minute_clip_count_capped_at_thirty(self):
+    def test_clip_count_is_one_per_six_minutes_capped_at_ten(self):
         from app.clipper import acquire
         src = config.MEDIA_DIR / "fixtures" / "clip-src2.mp4"
         make_talking_head(str(src))
@@ -461,17 +464,33 @@ class ClipProject(unittest.TestCase):
         try:
             with mock.patch.object(clips_app.select, "find_clips", lambda t, n, a, b: asked.append(n) or []), \
                  mock.patch.object(jobs, "emit"):
-                job = jobs.start(p["id"], kind="clip")  # n=None -> about one clip per minute, capped at 30
+                job = jobs.start(p["id"], kind="clip")  # n=None -> about one clip per 6 minutes, capped at 10
                 for _ in range(400):
                     job = jobs.get(job["id"])
                     if job["status"] not in ("queued", "running"):
                         break
                     time.sleep(0.05)
             self.assertEqual(job["status"], "completed")
-            self.assertEqual(asked, [30])
+            self.assertEqual(asked, [10])
             self.assertEqual(clips_app.list_(p["id"]), [])
         finally:
             (config.MEDIA_DIR / clips_app.WORK / work.name / "transcript.json").unlink(missing_ok=True)
+
+
+class Phase5(unittest.TestCase):
+    def test_pass_two_sees_sentence_times(self):
+        from app.clipper.select import timed
+        words = [{"word": "So.", "start": 9.0}, {"word": "Here", "start": 10.0}, {"word": "it", "start": 10.4},
+                 {"word": "is.", "start": 10.6}, {"word": "Then", "start": 12.0}]
+        self.assertEqual(timed(words, 10.0, 13.0), "[10.0] Here it is. [12.0] Then")
+
+    def test_multi_word_emphasis_is_coloured(self):
+        from app.clipper.captions import captions
+        words = [{"word": w, "start": i * 0.3, "end": i * 0.3 + 0.2}
+                 for i, w in enumerate(["ten", "thousand", "hours", "is", "it."])]
+        plain = captions(words, 0, 2, style={"preset": "serif"}).count(r"\c&H")
+        marked = captions(words, 0, 2, emphasis=["ten thousand hours"], style={"preset": "serif"}).count(r"\c&H")
+        self.assertGreater(marked, plain)  # the phrase's words are coloured (bare() once ran them together)
 
 
 if __name__ == "__main__":

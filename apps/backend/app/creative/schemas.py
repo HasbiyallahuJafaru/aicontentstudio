@@ -4,6 +4,9 @@ from typing import Annotated, Literal
 from pydantic import AfterValidator, BaseModel, Field, field_validator, model_validator
 
 Text = Annotated[str, AfterValidator(lambda s: " ".join(s.split()))]  # collapse stray whitespace/newlines
+# narration keeps its line breaks: the prompt writes short lines and lets silence work, so each break is a pause
+# the voice must hear (tts.spoken). Spaces collapse within a line, blank runs collapse to one break.
+Lines = Annotated[str, AfterValidator(lambda s: "\n".join(" ".join(ln.split()) for ln in s.splitlines() if ln.strip()))]
 
 
 def capped(max_len: int):
@@ -44,7 +47,9 @@ class Quote(BaseModel):
 
 
 class Narration(BaseModel):
-    text: Text = Field(min_length=20, max_length=700)
+    # 3000: the longest length option (180 s at ~2.4 words a second, ~430 words) with room to spare. 700 failed
+    # validation on every "~60 s" piece (144 words is already ~800 characters), killing the whole generation.
+    text: Lines = Field(min_length=20, max_length=3000)
     delivery: Annotated[str, capped(40)] = Field(min_length=3)
 
 

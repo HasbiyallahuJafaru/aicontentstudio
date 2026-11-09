@@ -1,7 +1,7 @@
 import type { CSSProperties } from 'react'
 import { useEffect, useRef, useState } from 'react'
 import { ArrowLeft, CalendarBlank, Export, PaperPlaneTilt, Play, Sparkle, Trash, X } from '@phosphor-icons/react'
-import { call, formatDate, FORMATS, hasKey, label, PLATFORMS, useJob, useQuery, BackendError,
+import { call, formatDate, FORMATS, hasKey, label, PLATFORMS, useJob, useQuery, BackendError, startFailures,
   type Asset, type Piece, type Project as P, type Publication, type Render, type ScheduleItem } from '../lib/studio'
 import { Preview } from '../components/Preview'
 import { ClipWorkspace } from '../components/Clips'
@@ -11,15 +11,21 @@ import { Cover } from '../components/Cover'
 import { FootageReview } from '../components/FootageReview'
 import { PostDialog, PublicationChips, ScheduleAllDialog } from '../components/Posting'
 
+const CANCELLED: Record<string, string> = {
+  generate: 'Generation was cancelled.', render: 'Rendering was cancelled.', export: 'The export was cancelled.',
+  clip: 'Clipping was cancelled.', visuals: 'The footage download was cancelled.',
+  visuals_render: 'Download and render was cancelled.',
+}
+
 export function Project({ id, onBack, onSettings }: { id: string; onBack: () => void; onSettings: () => void }) {
   const { data: project, error: loadError, reload: reloadProject } = useQuery<P>('projects.get', { id })
   const { job, reload: reloadJob } = useJob(id)
   const running = job?.status === 'queued' || job?.status === 'running'
   const [rev, setRev] = useState(0)
   const { data: pieces } = useQuery<Piece[]>(
-    'pieces.list', { project_id: id }, `${job?.updated_at ?? ''}|${rev}`)
+    'pieces.list', { project_id: id }, `${job?.status ?? ''}|${job?.stage ?? ''}|${rev}`)  // per step, not per progress tick
   const { data: renders } = useQuery<Render[]>(
-    'renders.list', { project_id: id }, `${job?.updated_at ?? ''}|${rev}`)
+    'renders.list', { project_id: id }, `${job?.status ?? ''}|${job?.stage ?? ''}|${rev}`)
   const { data: assets } = useQuery<Asset[]>('assets.list')
   const [preview, setPreview] = useState<string>()
   const [posting, setPosting] = useState<string>()
@@ -33,7 +39,11 @@ export function Project({ id, onBack, onSettings }: { id: string; onBack: () => 
     return () => window.clearInterval(t)
   }, [pending])
   const [keySet, setKeySet] = useState<boolean>()
-  const [error, setError] = useState<BackendError>()
+  const [error, setError] = useState<BackendError | undefined>(() => {  // the first job may have failed to start
+    const e = startFailures.get(id)
+    startFailures.delete(id)
+    return e
+  })
 
   const refresh = () => setRev((r) => r + 1)  // piece-level changes (regenerate, delete) don't move any job timestamp
 
@@ -66,6 +76,15 @@ export function Project({ id, onBack, onSettings }: { id: string; onBack: () => 
     if (pieces?.length && !confirm('Generate again? This replaces the pieces below with a new batch.')) return
     setError(undefined)
     try { await call('jobs.start', { project_id: id }); reloadJob() } catch (e) { setError(e as BackendError) }
+  }
+
+  // "Try again" repeats the job that failed. A failed render or export must never regenerate (rewrite) the batch.
+  async function retry() {
+    if (running || !job) return
+    const kind = job.kind ?? 'generate'
+    if (kind === 'generate') return generate()
+    setError(undefined)
+    try { await call('jobs.start', { project_id: id, kind }); reloadJob() } catch (e) { setError(e as BackendError) }
   }
 
   async function render() {
@@ -137,15 +156,16 @@ export function Project({ id, onBack, onSettings }: { id: string; onBack: () => 
 
       {running && job && <JobProgress job={job} sectionRef={progressRef} />}
       {job?.status === 'failed' && job.error && !running && (
-        <div className="mb-8"><ErrorNote error={job.error} action={keySet && <Button onClick={generate}>Try again</Button>} /></div>
+        <div className="mb-8"><ErrorNote error={job.error}
+          action={(keySet || !['generate', 'clip'].includes(job.kind ?? 'generate')) && <Button onClick={retry}>Try again</Button>} /></div>
       )}
-      {job?.status === 'cancelled' && <p className="mb-8 text-[13px] text-ink-3">Generation was cancelled.</p>}
+      {job?.status === 'cancelled' && <p className="mb-8 text-[13px] text-ink-3">{CANCELLED[job.kind ?? 'generate'] ?? 'Cancelled.'}</p>}
       {job && !running && <JobLog job={job} />}
 
       {pieces?.length === 0 && !running && (
         <section className="grid max-w-md gap-3 py-12">
           <h2 className="text-base font-semibold">Nothing generated yet</h2>
-          <p className="text-ink-2">Generate writes {b.quantity === 1 ? 'one piece' : `${b.quantity} distinct pieces`} from this brief: {b.format === 'image' ? 'a quote, a photo search' : 'a quote, spoken narration, a visual search'} and platform captions for each.</p>
+          <p className="text-ink-2">Generate writes {b.quantity === 1 ? 'one piece' : `${b.quantity} distinct pieces`} from this brief: {b.format === 'image' || b.format === 'image_voiced' ? 'a quote, a photo search' : 'a quote, spoken narration, a visual search'} and platform captions for each.</p>
         </section>
       )}
 
@@ -193,6 +213,7 @@ function PieceRow({ piece: p, renders, pubs, onPubsChanged, onPost, onPreview, b
 }) {
   const c = p.content
   const tag = String(p.idx).padStart(3, '0')
+  const [renewing, setRenewing] = useState(false)
   async function drop(method: string, params: object, question: string) {
     if (!confirm(question)) return
     try { await call(method, params); onChanged() } catch (e) { onError(e as BackendError) }
@@ -214,7 +235,16 @@ function PieceRow({ piece: p, renders, pubs, onPubsChanged, onPost, onPreview, b
             <p className="text-[13px] text-ink-2">{p.angle}</p>
             <p className="text-[13px] text-danger">{c.error}</p>
           </div>
-          {deletePiece}
+          <div className="flex shrink-0 items-center gap-1">
+            {c.error?.startsWith("This quote couldn't be confirmed") && (  // the fact check failed it: a new quote fixes it
+              <Button disabled={busy || renewing} onClick={async () => {
+                setRenewing(true)
+                try { await call('pieces.regenerate', { piece_id: p.id, scope: 'quote' }); onChanged() }
+                catch (e) { onError(e as BackendError) } finally { setRenewing(false) }
+              }}>{renewing ? 'Writing…' : 'New quote'}</Button>
+            )}
+            {deletePiece}
+          </div>
         </div>
       </li>
     )

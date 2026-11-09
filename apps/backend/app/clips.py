@@ -16,24 +16,23 @@ from app.database import connect
 from app.errors import UserError
 
 WORK = "clipwork"  # under media/: downloaded sources + cached transcripts
-MIN_CLIP = config.MIN_CLIP  # seconds, of the FINISHED clip (owner 2026-11-08: every clip runs at least a minute)
+MIN_CLIP = config.MIN_CLIP  # seconds, of the FINISHED clip (the floor; 2026-11-09: 20 s, was 60)
 
 
 def _at_least(video, words, start, end, cold, min_len, spoken):
     """Plan the cut, then make sure what's left after dead air and fillers come out still runs min_len: grow the
-    clip along the talk (later first, earlier once it reaches the end of the speech), snapped to sentences."""
+    clip EARLIER, into its setup, snapped to sentences. Never later: the end is the payoff, and talk added after it
+    killed the ending and the loop (2026-11-09). A clip that can't reach min_len runs a little short."""
+    ranges, zooms = tighten.plan(words, start, end, cold, silences(video, start, end))
     for attempt in range(8):
-        ranges, zooms = tighten.plan(words, start, end, cold, silences(video, start, end))
         short = min_len - sum(b - a for a, b in ranges)
-        if short <= 0:
+        if short <= 0 or start <= 0:
             break
-        grow = short + 2.0 + 2.0 * attempt  # reach further each time: snapping may give back up to 1.5 s
-        new_end = min(spoken + 0.2, end + grow)
-        new_start = max(0.0, start - (grow - (new_end - end)))
-        if (new_start, new_end) == (start, end):
-            break  # the whole speech is in already
-        start, end = snap(new_start, new_end, words)
-        start, end = max(0.0, start - 0.1), min(spoken + 0.2, end + 0.2)
+        new_start, _ = snap(max(0.0, start - short - 2.0 - 2.0 * attempt), end, words)
+        if new_start >= start:
+            break  # no earlier sentence to take in
+        start = max(0.0, new_start - 0.1)
+        ranges, zooms = tighten.plan(words, start, end, cold, silences(video, start, end))
     return start, end, ranges, zooms
 
 
@@ -50,10 +49,16 @@ def save_transcript(key: str, transcript: dict) -> None:
 
 def run(project_id: str, report) -> None:
     """Same (project_id, report) runner shape as content.generate / renders.render_project (jobs.py dispatch)."""
+    from app.publish import posts
     b = projects.get(project_id)["brief"]
-    out = config.MEDIA_DIR / "clips" / project_id
-    with connect() as conn:  # a re-clip replaces the previous take
-        conn.execute("DELETE FROM clips WHERE project_id = ?", (project_id,))
+    # posts are keyed by clip number: new clips would inherit the old ones' "Scheduled" chips and slots
+    if left := posts.waiting(project_id, clips=True):
+        raise UserError(f"{len(left)} of this project's clip posts are still scheduled. Unschedule them (or wait "
+                        "until they've gone out), then clip again.")
+    # a re-clip renders into a staging folder and replaces the previous take only once it has succeeded: a
+    # failure (a 429 bot check, a bad model reply) used to leave the project with nothing (2026-11-09)
+    final = config.MEDIA_DIR / "clips" / project_id
+    out = final.with_name(f"{project_id}.next")
     if out.exists():
         shutil.rmtree(out)
 
@@ -74,7 +79,9 @@ def run(project_id: str, report) -> None:
         raise UserError("No speech found in this video, so there is nothing to clip.")
 
     report("Finding the best moments", 0.5)
-    n = b["n"] or max(3, min(30, round(transcript["segments"][-1]["end"] / 60)))  # about one clip per minute
+    # about one clip per 6 minutes of source, at most 10: one per minute (up to 30) made the model tile the whole
+    # transcript, so most clips were filler by design (2026-11-09)
+    n = b["n"] or max(3, min(10, round(transcript["segments"][-1]["end"] / 360)))
     # projects saved before the one-minute floor may hold shorter lengths: the floor wins
     min_len = max(float(b["min_len"]), MIN_CLIP)
     max_len = max(float(b["max_len"]), min_len + 15)
@@ -86,11 +93,13 @@ def run(project_id: str, report) -> None:
 
     out.mkdir(parents=True, exist_ok=True)
     total = len(found)
+    rows = []
     for i, clip in enumerate(found, 1):
         report(f"Rendering clip {i} of {total}", round(0.55 + 0.45 * (i - 1) / total, 3))
         words = transcript["words"]
         clip.start, clip.end = snap(clip.start, clip.end, words)
-        start, end = max(0, clip.start - 0.1), clip.end + 0.2
+        start, end = max(0, clip.start - 0.1), clip.end + 0.2  # the 0.2 s is air, not room for the next word
+        words = [w for w in words if w["start"] < clip.end]  # "...is patience. So" ended clips on the next sentence
         cold = tighten.to_words(words, *clip.cold_open) if clip.cold_open else None
         path = out / f"clip{i:02}.mp4"
         layers = motion.layers("clip", *ORIENTATIONS[b["orientation"]][1], hook=clip.hook)  # animated title
@@ -100,12 +109,20 @@ def run(project_id: str, report) -> None:
                     ranges=ranges, zooms=zooms, emphasis=clip.emphasis, layers=layers,
                     caption_style=b.get("captions"))
         clip.hook = clip.hook.replace("*", "")  # the keyword marks are for the animation, not the stored copy
-        with connect() as conn:
-            conn.execute("INSERT INTO clips (id, project_id, idx, start_at, end_at, score, reason, hook, title, "
+        landed = final / path.name  # where the file lives once the take is swapped in
+        rows.append((uuid.uuid4().hex[:12], project_id, i, clip.start, clip.end, clip.score, clip.reason,
+                     clip.hook, clip.title, clip.description, json.dumps(clip.hashtags, ensure_ascii=False),
+                     clip.posts.model_dump_json(), _rel(landed), _rel(landed.with_suffix(".jpg"))))
+    report("Saving the clips", 0.99)
+    if final.exists():
+        shutil.rmtree(final)
+    out.rename(final)
+    with connect() as conn:  # the new take replaces the old in one transaction, old clips' post history with it
+        conn.execute("DELETE FROM clips WHERE project_id = ?", (project_id,))
+        conn.execute("DELETE FROM publications WHERE project_id = ? AND piece_id IS NULL", (project_id,))
+        conn.executemany("INSERT INTO clips (id, project_id, idx, start_at, end_at, score, reason, hook, title, "
                          "description, hashtags, posts, video_path, cover_path) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                         (uuid.uuid4().hex[:12], project_id, i, clip.start, clip.end, clip.score, clip.reason,
-                          clip.hook, clip.title, clip.description, json.dumps(clip.hashtags, ensure_ascii=False),
-                          clip.posts.model_dump_json(), _rel(path), _rel(path.with_suffix(".jpg"))))
+                         rows)
     report("Done", 1.0)
 
 
@@ -121,6 +138,8 @@ def delete(clip_id: str) -> dict:
     if row is None:
         raise UserError("This clip no longer exists.", f"clip id {clip_id}")
     jobs.ensure_idle(row["project_id"])
+    from app.publish import posts
+    posts.release(row["project_id"], clip_idx=row["idx"])
     with connect() as conn:
         conn.execute("DELETE FROM clips WHERE id = ?", (clip_id,))
     video = config.MEDIA_DIR / row["video_path"]

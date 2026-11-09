@@ -77,6 +77,25 @@ the older milestone log (M1-M8) and is superseded where they disagree. Read this
   TikTok returned no public post link for the photo post, so its chip says Posted without a link.
 - A real clip of a real video end to end in the packaged app, and a real render by eye and ear (old step 12).
 
+## Installer 2026-11-09 (evening): built, not uploaded
+All audit phases + voiced quotes (`image_voiced`). Backend 240/240, `npm test` smoke OK, packaged smoke OK (2nd try),
+268.7 MB. electron-builder needs `NODE_OPTIONS=--use-system-ca` here too (its NSIS download fails TLS without it).
+Real run: 9.8 s narrated video verified (sync, BT.709, 0 misstamped packets); the YouTube test post was refused by
+YouTube's daily upload limit (uploadLimitExceeded), so on-platform playback is still unchecked. Not uploaded to R2.
+
+## Full system audit (2026-11-09): work from `AUDIT.md`
+Every finding from the five-area audit is a checkbox in `AUDIT.md` (repo root), grouped into fix phases 1-6. Tick
+items there as they're fixed, with the date and how it was verified. Phase 5 (virality) needs owner sign-off.
+
+## Posted videos warped for their first seconds (fixed 2026-11-09, uncommitted)
+- Cause: `loudnorm` (clips in `clipper/render_clip.py`, narration in `render.py`) stamped the opening AAC packets
+  1 sample apart for ~0.64 s, then jumped to 3.0 s. Local players ignore it; platform transcoders obey the stamps,
+  so the start sped up / dragged after posting through Zernio. Every existing clip has it (118 bad packets each).
+- Fix: `loudnorm=...,aresample=48000,asetpts=N/SR/TB`. Guard: `render.audio_misstamped` fails any render whose
+  AAC packets aren't all 1024 samples (`validate_video` + after each clip render). Backend tests 225/225 OK; real
+  14 s two-range clip renders clean. Not yet verified: an actual post of a new render. Old renders must be
+  re-rendered (or audio re-encoded with the same filter, `-c:v copy`) before posting.
+
 ## Zernio posting, new designs, landing site redesign (2026-11-08, uncommitted)
 
 - **Posting through Zernio** (owner pick, the recommended way): `app/publish/zernio.py`. Settings has a new visible

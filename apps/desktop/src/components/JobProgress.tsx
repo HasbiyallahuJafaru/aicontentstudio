@@ -48,13 +48,16 @@ export function JobProgress({ job, sectionRef }: { job: Job; sectionRef?: Ref<HT
   const list = useRef<HTMLOListElement>(null)
   useEffect(() => { list.current?.scrollTo({ top: list.current.scrollHeight }) }, [log.length])
   const failed = log.filter((s) => s.status === 'failed').length
+  const [cancelling, setCancelling] = useState(false)  // a cancel lands at the next step: say it was heard
   return (
     <section ref={sectionRef} aria-live="polite" className="glass mb-5 grid scroll-mt-6 gap-3 px-7 py-5">
       <div className="flex items-center justify-between gap-4 text-[13px]">
         <span className="text-ink">{job.stage || 'Starting'}</span>
         <span className="flex shrink-0 items-center gap-3">
           <span className="tabular-nums text-ink-3">{Math.round(job.progress * 100)}%</span>
-          <Button variant="ghost" onClick={() => call('jobs.cancel', { id: job.id })}>Cancel</Button>
+          <Button variant="ghost" disabled={cancelling}
+            onClick={() => { setCancelling(true); call('jobs.cancel', { id: job.id }).catch(() => setCancelling(false)) }}>
+            {cancelling ? 'Cancelling…' : 'Cancel'}</Button>
         </span>
       </div>
       <div className="h-0.5 overflow-hidden rounded-full bg-line" role="progressbar" aria-valuenow={Math.round(job.progress * 100)} aria-valuemin={0} aria-valuemax={100}>

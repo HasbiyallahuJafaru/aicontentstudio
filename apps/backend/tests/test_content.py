@@ -302,3 +302,51 @@ class BulkQuotes(unittest.TestCase):
         self.assertEqual(job["status"], "completed")
         self.assertEqual(sizes, [], "no planning call for quote images")
         self.assertEqual([x["content"]["quote"]["text"] for x in content.pieces(p["id"])], quotes)
+
+
+class WritingFixes(unittest.TestCase):
+    """2026-11-09 audit, phase 3."""
+    def test_a_truncated_group_reply_falls_back_to_single_pieces(self):
+        def handler(request):  # the reply ran out of room mid-JSON
+            return httpx.Response(200, json={"choices": [{"message": {"content": '{"pieces": [{"quo'},
+                                                          "finish_reason": "length"}]})
+        m = creative.OpenRouterModel("k", "m", 1.0, 2000, transport=httpx.MockTransport(handler))
+        plan = BatchPlan.model_validate(plan_json(2))
+        self.assertEqual(m.write_pieces(BRIEF, plan, plan.pieces, [], [None, None]), [None, None])
+
+    def test_a_sixty_second_narration_validates_and_keeps_its_lines(self):
+        from app.creative.schemas import Narration
+        from app.tts import spoken
+        text = "\n\n".join(["You kept the light on   for them"] + ["and nobody asked what it cost you."] * 20)
+        n = Narration(text=text, delivery="calm")  # ~150 words: the old 700-character cap refused this
+        self.assertEqual(n.text.split("\n")[0], "You kept the light on for them")
+        self.assertNotIn("\n\n", n.text)
+        self.assertTrue(spoken(n.text).startswith("You kept the light on for them, and nobody"))
+
+    def test_new_design_rotates_without_a_model_call(self):
+        from app import design
+        options = design.GENRE_DESIGNS["hope"]
+        self.assertEqual(design.another(options[0], "hope", "Short line."), options[1])
+        self.assertIn(design.another("not-a-design", "hope", "Short line."), options)
+
+    def test_a_fixed_quote_with_no_author_never_asks_for_one(self):
+        from app.creative import prompts
+        text = prompts._brief({**BRIEF, "given_quote": "My own line about mornings.", "given_author": None})
+        self.assertNotIn("REAL documented", text)
+        self.assertIn("This line has no author", text)
+
+    def test_a_quote_the_checker_calls_fake_is_failed_not_kept(self):
+        class Doubting(FakeModel):
+            def verify_quotes(self, quotes):
+                return ["no"] + ["yes"] * (len(quotes) - 1)
+        p = projects.create({**BRIEF, "quantity": 2})
+        run_job(p["id"], Doubting(["A line nobody ever wrote down.", "Keep the promise you made at dawn."]))
+        got = sorted((x["status"], x["content"].get("error", "")) for x in content.pieces(p["id"]))
+        self.assertEqual(got[0][0], "failed")
+        self.assertIn("couldn't be confirmed", got[0][1])
+        self.assertNotEqual(got[1][0], "failed")
+        # its fix is a new quote: regenerate is allowed on exactly this failure, and footage is proposed again
+        bad = next(x for x in content.pieces(p["id"]) if x["status"] == "failed")
+        with mock.patch.object(content, "get_model", lambda: FakeModel(["Rest, then rise and go again."])),                 mock.patch.object(assets, "get_providers", lambda: []):
+            fixed = content.regenerate(bad["id"], "quote")
+        self.assertEqual((fixed["status"], fixed["content"].get("error")), ("written", None))

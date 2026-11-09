@@ -132,21 +132,32 @@ export function ErrorNote({ error, action }: { error: { message: string; detail?
  * scroll regions, so a dialog's header and actions can never be pushed off screen by tall media.
  * Portalled to the body: mounted in place it lands inside a glass panel's stacking context, where
  * z-40 cannot beat later siblings such as the created-by footer's positioned social links. */
-export function Dialog({ label, width, onClose, className, children }: {
+export function Dialog({ label, width, onClose, locked, className, children }: {
   label: string
   width: number
   onClose: () => void
+  /** a request is in flight (an upload to Zernio): nothing closes the dialog until it answers, so nobody thinks
+   * they cancelled a post that is still going out and sends it again */
+  locked?: boolean
   className?: string
   children: ReactNode
 }) {
+  const shell = useRef<HTMLDivElement>(null)
+  const pressed = useRef(false)  // the press began on the backdrop (a drag out of a textarea must not close it)
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || locked) return
+      const open = document.querySelectorAll('[role="dialog"]')
+      if (open[open.length - 1] === shell.current) onClose()  // stacked dialogs: only the top one closes
+    }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [onClose])
+  }, [onClose, locked])
 
   return createPortal(
-    <div role="dialog" aria-modal="true" aria-label={label} onClick={onClose}
+    <div ref={shell} role="dialog" aria-modal="true" aria-label={label} aria-busy={locked || undefined}
+      onMouseDown={(e) => { pressed.current = e.target === e.currentTarget }}
+      onClick={(e) => { if (pressed.current && e.target === e.currentTarget && !locked) onClose() }}
       className="fixed inset-0 z-40 grid place-items-center bg-ink/40 p-6 backdrop-blur-sm">
       <div onClick={(e) => e.stopPropagation()} style={{ maxWidth: width }}
         className={cx('grid max-h-[calc(100dvh-3rem)] w-full grid-cols-[minmax(0,1fr)] rounded-panel bg-panel',  // the column never outgrows the panel, however long a title is

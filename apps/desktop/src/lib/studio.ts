@@ -17,7 +17,7 @@ export const GENRES: { value: string; label: string }[] = [
   { value: 'books', label: 'Book Wisdom' },
   { value: 'cinema', label: 'Cinematic Minimal' },
 ]
-export type Format = 'automatic' | 'video' | 'image' | 'video_image'
+export type Format = 'automatic' | 'video' | 'image' | 'video_image' | 'image_voiced'  // image_voiced: quote picture + the same picture read aloud as a 9:16 video
 export type Platform = 'youtube_shorts' | 'instagram_reels' | 'instagram_feed' | 'tiktok'
 export type Look = 'auto' | 'none' | 'warm' | 'cool' | 'mono' | 'vivid'
 export type CaptionStyle = {
@@ -118,11 +118,16 @@ export const TOPICS = ['Motivation', 'Discipline', 'Personal growth', 'Mindset',
 export const FORMATS: { value: Format; label: string }[] = [
   { value: 'automatic', label: 'Automatic' }, { value: 'video', label: 'Video' },
   { value: 'image', label: 'Image' }, { value: 'video_image', label: 'Video + image' },
+  { value: 'image_voiced', label: 'Quote image + voiced video' },
 ]
 export const PLATFORMS: { value: Platform; label: string }[] = [
   { value: 'youtube_shorts', label: 'YouTube Shorts' }, { value: 'instagram_reels', label: 'Instagram Reels' },
   { value: 'instagram_feed', label: 'Instagram Feed' }, { value: 'tiktok', label: 'TikTok' },
 ]
+
+/** Create opens the new project even when its first job couldn't start; this hands that error to the project
+ * page, which shows it once (a swallowed error left "Nothing generated yet" with no reason). */
+export const startFailures = new Map<string, BackendError>()
 
 export class BackendError extends Error {
   constructor(message: string, public detail?: string) { super(message) }

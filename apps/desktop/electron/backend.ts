@@ -1,6 +1,6 @@
 // Launches and supervises the Python backend; JSON lines over stdin/stdout (protocol in apps/backend/main.py).
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
-import { appendFileSync, existsSync, mkdirSync, watch } from 'node:fs'
+import { createWriteStream, existsSync, mkdirSync, renameSync, statSync, watch } from 'node:fs'
 import { join } from 'node:path'
 import { createInterface } from 'node:readline'
 
@@ -27,6 +27,9 @@ export function createBackend(o: Options) {
   const pending = new Map<number, (r: Reply) => void>()
   const logFile = join(o.dataDir, 'logs', 'backend.log')
   mkdirSync(join(o.dataDir, 'logs'), { recursive: true })
+  // one previous log kept; a log past 5 MB starts fresh, so ffmpeg-heavy runs can't grow it forever
+  if (existsSync(logFile) && statSync(logFile).size > 5 * 1024 * 1024) renameSync(logFile, logFile + '.old')
+  const log = createWriteStream(logFile, { flags: 'a' })
 
   // A packaged install ships the PyInstaller backend next to its data; a dev checkout runs the venv.
   const frozen = join(o.backendDir, 'AI Social Content Studio Engine.exe') // name set in apps/backend/backend.spec
@@ -68,7 +71,7 @@ export function createBackend(o: Options) {
     })
     createInterface({ input: proc.stderr }).on('line', (line) => {
       stderrTail = [...stderrTail.slice(-40), line]
-      appendFileSync(logFile, line + '\n')
+      log.write(line + '\n')  // async: a sync write per stderr line blocked the main thread
     })
     proc.on('error', (err) => {
       stderrTail.push(String(err))
@@ -121,7 +124,9 @@ export function createBackend(o: Options) {
   function restart() {
     crashes = []
     const proc = child
-    child = null
+    child = null  // the old process's exit handler now skips its cleanup, so answer its callers here
+    for (const resolve of pending.values()) resolve({ error: { message: 'The backend restarted before it answered.' } })
+    pending.clear()
     proc?.stdin.end()
     proc?.kill()
     start()

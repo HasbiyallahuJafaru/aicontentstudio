@@ -94,9 +94,13 @@ function Section({ title, description, children }: { title: string; description:
 
 function SecretField({ name, text, isSet, onSaved }: { name: SecretName; text: string; isSet: boolean; onSaved: (s: Record<SecretName, boolean>) => void }) {
   const [value, setValue] = useState('')
-  const save = async (v: string) => { onSaved(await studio.setSecret(name, v)); setValue('') }
+  const [failed, setFailed] = useState(false)
+  const save = async (v: string) => {
+    try { onSaved(await studio.setSecret(name, v)); setValue(''); setFailed(false) } catch { setFailed(true) }
+  }
   return (
-    <Field label={text} hint={isSet ? <span className="inline-flex items-center gap-1 text-ok"><Check size={12} weight="bold" />Saved and encrypted on this computer</span> : 'Not set'}>
+    <Field label={text} hint={failed ? <span className="text-danger">The key couldn't be saved. Try again.</span>
+      : isSet ? <span className="inline-flex items-center gap-1 text-ok"><Check size={12} weight="bold" />Saved and encrypted on this computer</span> : 'Not set'}>
       {(id) => (
         <div className="flex gap-2">
           <Input id={id} type="password" autoComplete="off" spellCheck={false} value={value}

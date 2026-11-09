@@ -49,8 +49,9 @@ def keep(words: list[dict], start: float, end: float,
     quiet = None if silences is None else _merge(
         [*silences, *((w["start"], w["end"]) for w in inside if bare(w["word"]) in FILLERS)])
     ranges, a = [], start
+    longest = MAX_PAUSE if quiet is not None else 1.0  # no waveform to confirm a pause: cut only clear ones
     for prev, w in zip(spoken, spoken[1:]):
-        if w["start"] - prev["end"] > MAX_PAUSE and _quiet(prev["end"], w["start"], quiet):
+        if w["start"] - prev["end"] > longest and _quiet(prev["end"], w["start"], quiet):
             ranges.append((a, prev["end"] + 0.4 * PAUSE_KEEP))
             a = w["start"] - 0.6 * PAUSE_KEEP
     ranges.append((a, end))

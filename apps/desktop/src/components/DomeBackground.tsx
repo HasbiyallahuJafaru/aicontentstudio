@@ -33,7 +33,8 @@ export function DomeBackground({ images }: { images: string[] }) {
     return () => ro.disconnect()
   }, [])
 
-  if (!images.length) return null
+  // reduced motion turns all motion off: animated WebP can't be paused, so the dome isn't shown
+  if (!images.length || matchMedia('(prefers-reduced-motion: reduce)').matches) return null
   return (
     <div ref={stage} aria-hidden className="dome-stage pointer-events-none absolute inset-0 overflow-hidden">
       <div className="dome-sphere">

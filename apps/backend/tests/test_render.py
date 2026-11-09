@@ -1,6 +1,7 @@
 """Milestone 5: composition, TTS and the renderers. TTS is faked at httpx; uses the real ffmpeg binary (skipped
 automatically where unavailable); no network."""
 import asyncio
+from pathlib import Path
 import math
 import os
 import struct
@@ -63,6 +64,18 @@ class Composition(unittest.TestCase):
 
     def test_escapes_filter_specials(self):
         self.assertEqual(render.esc("a:b\\c"), "a\\:b\\\\c")
+
+
+class AudioStamps(unittest.TestCase):
+    """The 2026-11-09 posted-video bug: loudnorm squeezed the opening audio stamps, platforms warped the start."""
+    def _check(self, durations):
+        out = subprocess.CompletedProcess([], 0, stdout="".join(f"{d},\n" for d in durations), stderr="")
+        with mock.patch.object(render.subprocess, "run", return_value=out):
+            return render.audio_misstamped(Path("x.mp4"))
+
+    def test_even_stamps_pass_and_squeezed_stamps_are_caught(self):
+        self.assertEqual(self._check([1024] * 50 + [300]), 0)  # a short last packet is normal
+        self.assertEqual(self._check([1024] * 5 + [1, 1, 1, 215, 1024, 113498] + [1024] * 40), 5)
 
 
 class TTS(unittest.TestCase):
@@ -136,7 +149,7 @@ class Renderers(unittest.TestCase):
         info = self.renderer.render_video(src=self.still, narration=self.narration, scrim_png=self.scrim_png, out=out,
                                           quote="The quiet work is the real work.", subject_position="left",
                                           palette=PAL, src_fps=0, src_duration=0, still=True, progress=None)
-        self.assertAlmostEqual(info["fps"], 60.0, delta=1.0)
+        self.assertAlmostEqual(info["fps"], 30.0, delta=1.0)
 
     def test_render_still_with_an_animated_layer(self):
         """The real-app path (animated titles on): a still with a camera move plus a motion layer composited on
@@ -188,6 +201,24 @@ class Renderers(unittest.TestCase):
         self.assertAlmostEqual(info["fps"], 60.0, delta=1.0)
         self.assertAlmostEqual(info["duration"], 1.8, delta=1.0)
 
+    def test_mixed_frame_rates_keep_their_planned_length(self):
+        """2026-11-09: zoompan re-timed every shot to the output rate, so a 25 fps clip at 30 played 1.2x fast and
+        a still-first timeline ran far shorter than the narration. Every stream must fill the plan, in limited-range
+        BT.709 (stills used to leave the whole video full-range)."""
+        src25 = config.MEDIA_DIR / "fixtures" / "src25.mp4"
+        subprocess.run([config.FFMPEG, "-v", "error", "-y", "-f", "lavfi", "-i", "testsrc=d=2:r=25:s=640x360",
+                        "-c:v", "libx264", "-pix_fmt", "yuv420p", str(src25)], check=True, timeout=120,
+                       stdin=subprocess.DEVNULL)
+        shots = [{"src": str(self.still), "seek": 0.0, "length": 0.8, "still": True, "motion": "push"},
+                 {"src": str(src25), "seek": 0.0, "length": 1.1, "still": False, "motion": "in"}]
+        out = config.MEDIA_DIR / "renders" / "test" / "005b-video.mp4"
+        info = self.renderer.render_video(src=src25, narration=self.narration, out=out, subject_position="center",
+                                          src_fps=25, src_duration=2.0, still=False, progress=None, out_fps=30,
+                                          shots=shots)  # validate_video checks each stream's own length + range
+        v = next(s for s in render._probe(out)["streams"] if s["codec_type"] == "video")
+        self.assertAlmostEqual(float(v["duration"]), info["duration"], delta=0.1)
+        self.assertEqual((v["color_range"], v.get("color_primaries")), ("tv", "bt709"))
+
     def test_render_genre_cut_with_transitions_ramp_bars_and_music(self):
         """The heaviest graph: xfade joins, a ramped shot, halation bloom, letterbox bars, ducked music."""
         music = config.MEDIA_DIR / "fixtures" / "music.wav"
@@ -227,6 +258,44 @@ class RenderJob(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         database.migrate()
+
+    def test_voiced_quote_renders_the_picture_then_reads_it(self):
+        """image_voiced (2026-11-09): the quote picture, then a 9:16 video of it read aloud, at least 10 s."""
+        settings.update(render_width=540, render_height=960)
+        p = projects.create({**BRIEF, "quantity": 1, "format": "image_voiced"})
+        with database.connect() as conn:
+            conn.execute("DELETE FROM asset_usage")
+        make_thumbs("a1")
+        run_job_with([FakeProvider2([cand("a1", "image", h=1350, w=1080)])],
+                     FakeModel(["Begin again, and mean it this time."]), p["id"])  # quote pictures want photos
+        piece = content.pieces(p["id"])[0]
+        with database.connect() as conn:
+            row = conn.execute("SELECT id, local_path FROM assets WHERE id = ?",
+                               (piece["content"]["asset"]["id"],)).fetchone()
+            Image.new("RGB", (1080, 1350), (60, 70, 80)).save(config.MEDIA_DIR / row["local_path"], "JPEG")
+            conn.execute("UPDATE assets SET subject_position = 'center' WHERE id = ?", (row["id"],))
+        said = []
+
+        class FakeTTS(tts.TTSProvider):
+            async def generate(self, text, voice, delivery=""):
+                said.append(text)
+                path = config.MEDIA_DIR / "audio" / "voiced-fake.wav"
+                path.parent.mkdir(parents=True, exist_ok=True)
+                tone_wav(path, 2.0)
+                return tts.AudioResult(path)
+
+        with mock.patch.object(renders.tts, "get_tts", lambda: FakeTTS()), mock.patch.object(jobs, "emit"):
+            job = jobs.start(p["id"], kind="render")
+            for _ in range(600):
+                job = jobs.get(job["id"])
+                if job["status"] not in ("queued", "running"):
+                    break
+                time.sleep(0.05)
+        self.assertEqual(job["status"], "completed", job["log"])
+        rows = {r["kind"]: r for r in renders.list_(p["id"])}
+        self.assertEqual(set(rows), {"image", "video"})
+        self.assertTrue(said[0].startswith("Begin again, and mean it this time."))
+        self.assertGreaterEqual(rows["video"]["duration"], renders.VOICED_HOLD - 0.1)  # 2 s of voice, 10 s on screen
 
     def test_full_render_job(self):
         settings.update(render_width=540, render_height=960)  # small and fast, like the other tests here

@@ -1,8 +1,12 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, net, protocol, screen, shell } from 'electron'
-import { existsSync } from 'node:fs'
-import { join, resolve, sep } from 'node:path'
+import { createReadStream, existsSync, statSync } from 'node:fs'
+import { extname, join, resolve, sep } from 'node:path'
+import { Readable } from 'node:stream'
 import { pathToFileURL } from 'node:url'
 import { createBackend, type BackendStatus } from './backend'
+
+const MEDIA_TYPES: Record<string, string> = { '.mp4': 'video/mp4', '.webm': 'video/webm', '.wav': 'audio/wav',
+  '.mp3': 'audio/mpeg', '.jpg': 'image/jpeg', '.png': 'image/png', '.webp': 'image/webp' }
 import { createSecrets, type SecretName } from './secrets'
 
 const dev = !app.isPackaged
@@ -77,7 +81,19 @@ app.whenReady().then(() => {
     const rel = decodeURIComponent(`${u.host}${u.pathname}`).replace(/^\/+/, '')
     const file = resolve(mediaDir, rel)
     if (!file.startsWith(mediaDir + sep) || !existsSync(file)) return new Response('Not found', { status: 404 })
-    return net.fetch(pathToFileURL(file).toString())
+    const range = /^bytes=(\d*)-(\d*)$/.exec(req.headers.get('range') ?? '')
+    if (!range) return net.fetch(pathToFileURL(file).toString())
+    // net.fetch ignores Range (200 + the whole file), so a long video couldn't seek until it had all loaded
+    const size = statSync(file).size
+    const start = range[1] ? Number(range[1]) : Math.max(0, size - Number(range[2]))
+    const end = range[1] && range[2] ? Math.min(Number(range[2]), size - 1) : size - 1
+    if (start >= size || start > end) return new Response(null, { status: 416, headers: { 'Content-Range': `bytes */${size}` } })
+    const type = MEDIA_TYPES[extname(file).toLowerCase()] ?? 'application/octet-stream'
+    return new Response(Readable.toWeb(createReadStream(file, { start, end })) as ReadableStream, {
+      status: 206,
+      headers: { 'Content-Type': type, 'Content-Length': String(end - start + 1), 'Accept-Ranges': 'bytes',
+        'Content-Range': `bytes ${start}-${end}/${size}` },
+    })
   })
   backend = createBackend({
     backendDir: dev ? resolve(app.getAppPath(), '../backend') : join(process.resourcesPath, 'backend'),

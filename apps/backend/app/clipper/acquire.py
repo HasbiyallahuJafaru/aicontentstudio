@@ -15,8 +15,8 @@ def acquire(source: str, root: Path, progress=lambda percent: None, meta: dict |
     caller owns) receives the source's own title when the extractor reports one. `cookies`: a browser name
     (firefox, chrome, edge, ...) or a cookies.txt path, for hosts that bot-check anonymous downloads."""
     if Path(source).is_file():
-        with open(source, "rb") as f:
-            work = root / hashlib.file_digest(f, "sha256").hexdigest()[:16]
+        st = Path(source).stat()  # hashing a multi-GB file on every run took longer than the cache saved
+        work = root / hashlib.sha256(f"{Path(source).resolve()}|{st.st_size}|{st.st_mtime_ns}".encode()).hexdigest()[:16]
         work.mkdir(parents=True, exist_ok=True)
         return Path(source), work
     if not source.startswith(("http://", "https://")):
@@ -47,10 +47,11 @@ def options(outtmpl: str, cookies: str = "", reported=lambda done, total: None) 
     opts = {
         "format": "bv*+ba/b",
         # prefer H.264/AAC: YouTube's default pick is often AV1, which is several times slower to decode on CPU
-        "format_sort": ["res:1080", "vcodec:h264", "acodec:aac"],
+        "format_sort": ["res:1440", "vcodec:h264", "acodec:aac"],  # 1440p: a 9:16 crop of 1080p is ~2x upscaled
         "merge_output_format": "mp4",
         "outtmpl": outtmpl,
         "noplaylist": True,
+        "max_filesize": 8 * 1024 ** 3,  # 8 GB: a 2-hour 1440p talk fits; a mistaken 4K livestream doesn't
         "js_runtimes": {"deno": {}, "node": {}},  # YouTube extraction needs a JS runtime now
         "retries": 10,  # the library defaults to no retries (only its CLI sets 10)
         "fragment_retries": 10,

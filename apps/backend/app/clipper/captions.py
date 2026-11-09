@@ -59,7 +59,7 @@ ScaledBorderAndShadow: yes
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Caption,{font},{size},&H00FFFFFF,&H00FFFFFF,{outline_colour},&H99000000,{bold},{italic},0,0,100,100,0,0,{border},{outline},{shadow},{align},{margin_x},{margin_x},{margin_v},1
+Style: Caption,{font},{size},&H00FFFFFF,&H00FFFFFF,{outline_colour},&H99000000,{bold},{italic},0,0,100,100,0,0,{border},{outline},{shadow},{align},{margin_x},{margin_r},{margin_v},1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -130,8 +130,9 @@ def captions(words: list[dict], start: float, end: float, width: int = 1080, hei
     header = ASS_HEADER.format(width=width, height=height, font=family, size=size, bold=bold, italic=italic,
                                outline_colour=outline_colour, border=3 if box else 1, outline=p["outline"],
                                shadow=p["shadow"], align=align, margin_v=margin_v,
-                               margin_x=round(80 * min(width, height) / 1080))
-    keys = ({bare(e) for e in emphasis} - {""}) if p["mode"] != "none" else set()
+                               margin_x=round(80 * min(width, height) / 1080),
+                               margin_r=round((160 if height > width else 80) * min(width, height) / 1080))
+    keys = ({bare(x) for e in emphasis for x in e.split()} - {""}) if p["mode"] != "none" else set()
 
     def ts(t):
         cs = max(0, round((t - start) * 100))

@@ -1,5 +1,6 @@
 """Projects: one creative brief (topic, tone, format, quantity, platforms). Content pieces attach in Milestone 2."""
 import json
+import shutil
 import uuid
 from pathlib import Path
 from typing import Literal
@@ -23,7 +24,8 @@ class CreativeBrief(BaseModel):
     tone: Tone
     mood: str = Field("", max_length=80)
     audience: str = Field("", max_length=80)
-    format: Literal["automatic", "video", "image", "video_image"] = "automatic"
+    # image_voiced (2026-11-09): quote images, each also read aloud over its own picture as a 9:16 video
+    format: Literal["automatic", "video", "image", "video_image", "image_voiced"] = "automatic"
     quantity: int = Field(ge=1, le=20)
     platforms: list[Platform] = Field(min_length=1)
     voice: str = Field("", max_length=120)  # "engine:voice" from the Create picker; empty = Settings default
@@ -58,9 +60,9 @@ class ClipBrief(BaseModel):
     kind: Literal["clip"] = "clip"
     source: str = Field(min_length=1, max_length=500)  # http(s) URL or a local file path
     n: int | None = Field(None, ge=1, le=30)  # None = about one clip per minute of source
-    # owner 2026-11-08: every clip runs at least a minute. The Create form enforces it and clips.run floors any
+    # the floor is config.MIN_CLIP (20 s since 2026-11-09; 60 s was the owner rule of 2026-11-08). The Create form enforces it and clips.run floors any
     # saved brief at clips.MIN_CLIP, so older projects and the CLI get it too (tests lower the floor to stay fast).
-    min_len: float = Field(60, ge=1, le=600)
+    min_len: float = Field(20, ge=1, le=600)
     max_len: float = Field(90, ge=1, le=900)
     orientation: Literal["9:16", "16:9", "1:1"] = "9:16"
     burn_captions: bool = True
@@ -139,7 +141,14 @@ def get(id: str) -> dict:
 
 
 def delete(id: str) -> dict:
+    """The project, its pieces, clips and renders, their files, and its posts still waiting in Zernio."""
+    from app import jobs
+    from app.publish import posts
+    jobs.ensure_idle(id)
+    posts.release(id)  # unschedule first: a deleted project's posts must not still go out
     with connect() as conn:
         n = conn.execute("DELETE FROM projects WHERE id = ?", (id,)).rowcount
+    for folder in ("renders", "clips"):
+        shutil.rmtree(config.MEDIA_DIR / folder / id, ignore_errors=True)
     (config.MEDIA_DIR / preview.THUMBS / f"{id}.jpg").unlink(missing_ok=True)
     return {"deleted": n}

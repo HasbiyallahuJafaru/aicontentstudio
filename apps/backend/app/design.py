@@ -66,6 +66,13 @@ def pick(design: str, genre: str, composition: str | None, idx: int, text: str) 
     return options[idx % len(options)]
 
 
+def another(current: str, genre: str, text: str) -> str:
+    """The genre's next design after `current` that fits this quote's length: what "new design" means."""
+    words = len(text.split())
+    options = [d for d in GENRE_DESIGNS.get(genre, GENRE_DESIGNS["hope"]) if words <= SHORT_ONLY.get(d, 99)] or ["classic"]
+    return options[(options.index(current) + 1) % len(options)] if current in options else options[0]
+
+
 def copy_for(quote: dict) -> dict:
     """What a design sets: the quote and its author. Nothing is added around them (owner, 2026-11-08: no emphasis
     phrase, no kicker line; simple content reads better)."""

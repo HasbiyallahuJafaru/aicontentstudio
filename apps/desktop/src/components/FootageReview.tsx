@@ -2,7 +2,7 @@
 // Each piece shows its candidates as thumbnails with the AI's picks pre-selected and numbered in play order; a click
 // swaps a shot (saved at once, so a restart keeps it), and one button under the shots downloads exactly the picked
 // footage and then renders every piece (the "visuals_render" job).
-import { useState, type CSSProperties } from 'react'
+import { useRef, useState, type CSSProperties } from 'react'
 import { DownloadSimple, Play } from '@phosphor-icons/react'
 import { call, mediaUrl, BackendError, type Piece } from '../lib/studio'
 import { Button, ErrorNote, cx } from './ui'
@@ -14,6 +14,9 @@ export function FootageReview({ pieces, onStarted, disabled }: {
     () => Object.fromEntries(pieces.map((p) => [p.id, p.content.review!.picked])))
   const [error, setError] = useState<BackendError>()
   const [starting, setStarting] = useState(false)
+  // each piece's saves run in order (a later click never lands before an earlier one), and "Download and render"
+  // waits for all of them, so the job downloads exactly what is on screen
+  const saving = useRef<Record<string, Promise<void>>>({})
   const total = Object.values(picks).reduce((n, k) => n + k.length, 0)
   const missing = pieces.filter((p) => !picks[p.id]?.length)
 
@@ -25,13 +28,20 @@ export function FootageReview({ pieces, onStarted, disabled }: {
     setPicks({ ...picks, [piece.id]: next })
     setError(undefined)
     if (!next.length) return  // nothing to save yet: the backend refuses an empty pick, the button waits for one
-    try { await call('visuals.pick', { piece_id: piece.id, keys: next }) } catch (e) { setError(e as BackendError) }
+    const save = (saving.current[piece.id] ?? Promise.resolve()).then(() =>
+      call('visuals.pick', { piece_id: piece.id, keys: next }).then(() => undefined))
+    saving.current[piece.id] = save.catch(() => undefined)
+    try { await save } catch (e) {
+      setPicks((p) => ({ ...p, [piece.id]: now }))  // not saved: show what the backend really holds
+      setError(e as BackendError)
+    }
   }
 
   async function confirm() {
     setStarting(true)
     setError(undefined)
     try {
+      await Promise.all(Object.values(saving.current))  // every pick saved first
       await call('jobs.start', { project_id: pieces[0].project_id, kind: 'visuals_render' })
       onStarted()
     } catch (e) { setError(e as BackendError) } finally { setStarting(false) }

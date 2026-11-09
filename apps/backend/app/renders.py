@@ -6,6 +6,7 @@ import asyncio
 import json
 import logging
 import shutil
+import tempfile
 import uuid
 from pathlib import Path
 
@@ -29,9 +30,14 @@ def _assets_for(piece: dict) -> list[dict]:
     return [rows[i] for i in ids if i in rows]
 
 
+VOICED_HOLD = 10.0  # seconds: a voiced quote video never runs shorter; longer quotes run as long as they're read
+
+
 def _wanted_kinds(brief: dict, piece: dict) -> list[str]:
     """video_image renders both; explicit format forces one; otherwise the plan's preferred type.
     Instagram Feed is a 4:5 image post (PRD §72), so targeting it always renders the image as well."""
+    if brief["format"] == "image_voiced":  # the picture first: the video is made from it
+        return ["image", "video"]
     if brief["format"] in ("video", "image"):
         kinds = [brief["format"]]
     elif brief["format"] == "video_image":
@@ -48,7 +54,11 @@ def _words(text: str, audio, duration: float) -> list[dict]:
     from app.clipper.transcribe import estimate_words, transcribe
     if config.SECRETS.get("OPENROUTER_API_KEY"):
         try:
-            return transcribe(audio, config.MEDIA_DIR / "tmp" / "narration")["words"]
+            tmp = config.MEDIA_DIR / "tmp"
+            tmp.mkdir(parents=True, exist_ok=True)
+            # a folder per call: two projects rendering at once shared tmp/narration and read each other's audio
+            with tempfile.TemporaryDirectory(dir=tmp) as work:
+                return transcribe(audio, Path(work))["words"]
         except UserError:
             pass  # STT is a nicety here, not the job: fall back rather than fail a render over it
     return estimate_words(text, 0.0, duration)
@@ -90,13 +100,14 @@ def render_project(project_id: str, report, piece_ids: list[str] | None = None) 
     # the project's narration voice; briefs saved before Gemini hold "engine:voice" pairs (kokoro:af_heart),
     # which fall back to the default voice
     voice = (brief.get("voice") or "").rpartition(":")[2]
-    voice = voice if voice in tts.VOICES else tts.DEFAULT_VOICE
+    voice = voice if voice in tts.VOICES else tts.GENRE_VOICES.get(brief.get("tone"), tts.DEFAULT_VOICE)
 
     n = len(pieces)
     fail = getattr(report, "fail", None)  # jobs.py's report can mark one step failed and carry on
     for i, piece in enumerate(pieces, 1):
         content_data = piece["content"]
         kinds = _wanted_kinds(brief, piece)
+        voiced = brief["format"] == "image_voiced"
 
         def at(step: str, f: float, i=i, piece=piece) -> None:
             # "Piece 3 (2 of 5): Encoding video": the piece number matches the list, the count shows the way left
@@ -108,8 +119,14 @@ def render_project(project_id: str, report, piece_ids: list[str] | None = None) 
             narration = None
             if "video" in kinds:  # a quote image has no voice: never pay for (or wait on) narration it won't use
                 at("Narrating", 0.0)
-                narration = asyncio.run(engine.generate(content_data["narration"]["text"], voice,
-                                                        content_data["narration"].get("delivery", "")))
+                if voiced:  # the quote read aloud, then who said it
+                    q = content_data["quote"]
+                    narration = asyncio.run(engine.generate(
+                        q["text"] + (f"\n\n{q['author']}." if q.get("author") else ""), voice,
+                        "slow and unhurried, letting each phrase land, a breath of silence before the name"))
+                else:
+                    narration = asyncio.run(engine.generate(content_data["narration"]["text"], voice,
+                                                            content_data["narration"].get("delivery", "")))
             pool = _assets_for(piece)
             if not pool:
                 raise UserError("This piece has no visual asset yet.", "Generate visuals, then render again.")
@@ -120,7 +137,17 @@ def render_project(project_id: str, report, piece_ids: list[str] | None = None) 
                 out = Path("renders") / project_id / f"{piece['idx']:03d}-{kind}.{'mp4' if kind == 'video' else 'jpg'}"
                 full_out = config.MEDIA_DIR / out
                 try:
-                    if kind == "video":
+                    if kind == "video" and voiced:
+                        # the quote picture just rendered, fitted over a blurred fill of itself, read aloud: at least
+                        # VOICED_HOLD seconds so a short quote still gets a moment on screen
+                        at("Encoding video", enc[0])
+                        info = renderer.render_video(src=full_out.with_name(f"{piece['idx']:03d}-image.jpg"),
+                                                     narration=narration.path, out=full_out, subject_position="center",
+                                                     src_fps=0, src_duration=0, still=True, blur_background=True,
+                                                     progress=lambda f: at("Encoding video", enc[0] + f * (enc[1] - enc[0])),
+                                                     out_fps=brief["fps"], hold=VOICED_HOLD)
+                        duration, fps, w, h = info["duration"], info["fps"], renderer.w, renderer.h
+                    elif kind == "video":
                         # clean video: no scrim, no quote text burned in (user decision 2026-09-20)
                         timeline = narration.duration + edit.TAIL
                         at("Timing the words", 0.25)
@@ -182,6 +209,9 @@ def render_project(project_id: str, report, piece_ids: list[str] | None = None) 
                 conn.execute("UPDATE content_pieces SET status = 'ready' WHERE id = ?", (piece["id"],))
             piece["status"] = "ready"
         except Cancelled:
+            from app.jobs import UNSTICK
+            with connect() as conn:
+                conn.execute(UNSTICK + " WHERE id = ? AND status = 'rendering'", (piece["id"],))
             raise
         except Exception as e:  # one bad piece never sinks the batch: log it on the step and on the piece
             if not isinstance(e, UserError):
@@ -194,6 +224,11 @@ def render_project(project_id: str, report, piece_ids: list[str] | None = None) 
             with connect() as conn:
                 conn.execute("UPDATE content_pieces SET status = 'written', content = ? WHERE id = ?",
                              (json.dumps(content_data, ensure_ascii=False), piece["id"]))
+        finally:  # the voice track and the frame/subtitle scratch are baked into the render now: never kept
+            if narration is not None:
+                Path(narration.path).unlink(missing_ok=True)
+            for scratch in (f"{piece['id']}-frame.jpg", f"{piece['id']}-subs.ass"):
+                (config.MEDIA_DIR / "tmp" / scratch).unlink(missing_ok=True)
     report("Done", 1.0)
 
 

@@ -16,6 +16,12 @@ from app.errors import UserError
 EXPORTABLE = ("ready", "approved", "exported")
 
 
+def _root(date: str, project_id: str) -> Path:
+    """exports/<date>/<project>-<id>: one folder per project, so two projects with the same name (or clip
+    titles) exported the same day can't overwrite, or on delete wipe, each other (2026-11-09)."""
+    return Path("exports") / date / f"{_slug(projects.get(project_id)['name'])}-{project_id[:6]}"
+
+
 def _slug(s: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", s.lower()).strip("-")[:40] or "piece"
 
@@ -32,7 +38,7 @@ def export_project(project_id: str, report=None, piece_ids: list[str] | None = N
 
     slug = _slug(projects.get(project_id)["name"])
     date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    root = Path("exports") / date
+    root = _root(date, project_id)
     abs_root = config.DATA_DIR / root
     abs_root.mkdir(parents=True, exist_ok=True)
 
@@ -90,7 +96,7 @@ def _export_clips(project_id: str, report) -> dict:
 
     project = projects.get(project_id)
     date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    root = Path("exports") / date
+    root = _root(date, project_id)
     abs_root = config.DATA_DIR / root
     abs_root.mkdir(parents=True, exist_ok=True)
 
@@ -150,7 +156,9 @@ def delete(export_id: str) -> dict:
     if config.DATA_DIR.resolve() not in root.parents:
         raise UserError("This export's folder is outside the app's data folder.", str(root))
     suffixes = {f"_{_slug(project['name'])}"} | {f"_{_slug(t)}" for t in titles}
-    if root.is_dir():
+    if root.is_dir() and root.name.endswith(f"-{row['project_id'][:6]}"):  # its own folder: all of it is this export
+        shutil.rmtree(root)
+    elif root.is_dir():  # exports made before 2026-11-09 share the date folder: match this project's names
         for folder in root.iterdir():
             if folder.is_dir() and folder.name[:3].isdigit() and any(folder.name.endswith(s) for s in suffixes):
                 shutil.rmtree(folder)

@@ -66,7 +66,7 @@ export function ClipWorkspace({ project, onBack, onSettings }: { project: P; onB
   const { job, reload: reloadJob } = useJob(project.id)
   const running = job?.status === 'queued' || job?.status === 'running'
   const [rev, setRev] = useState(0)
-  const { data: clips } = useQuery<Clip[]>('clips.list', { project_id: project.id }, `${job?.updated_at ?? ''}|${rev}`)
+  const { data: clips } = useQuery<Clip[]>('clips.list', { project_id: project.id }, `${job?.status ?? ''}|${job?.stage ?? ''}|${rev}`)
   const [preview, setPreview] = useState<string>()
   const [publishing, setPublishing] = useState<Clip>()
   const [planning, setPlanning] = useState(false)
@@ -188,7 +188,7 @@ export function ClipWorkspace({ project, onBack, onSettings }: { project: P; onB
       ))}
       {clips?.filter((c) => c.id === publishing?.id).map((c) => (
         <PublishDialog key={c.id} clip={c} onClose={() => setPublishing(undefined)} onSettings={onSettings}
-          onChanged={() => { setPublishing(undefined); setRev((r) => r + 1) }} />
+          onChanged={() => setRev((r) => r + 1)} />  // refresh only: the dialog stays to show each account's result; Done closes it
       ))}
       {planning && <ScheduleAllDialog projectId={project.id} items={unscheduled} onClose={() => setPlanning(false)}
         onDone={() => setRev((r) => r + 1)} onSettings={onSettings} />}

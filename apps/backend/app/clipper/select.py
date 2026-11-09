@@ -22,9 +22,13 @@ answer, a specific number, a named person or tool, "I tried / I spent"), stands 
 no pronoun whose person was named earlier, no ending mid-thought), emotional intensity 20% (conviction, surprise,
 humor, honest failure beat calm recitation), value density 15% (an exact method or a counter-intuitive insight
 beats a platitude), payoff 10% (ends on a punchline, reveal or complete thought). Leave out moments under 60.
-Each moment must hold a complete arc for its whole length: setup, development and payoff, never padded.
+Each moment must hold a complete arc for its whole length: setup, development and payoff, never padded. The
+payoff lands in the final third, and the moment ends within a breath of it: no wrap-up, no "so yeah", no thanks.
+Prefer endings whose last line leads back into the first, so a rewatch reads as one loop.
+Let the arc set the length: a punchy claim-and-payoff runs short, a story runs long. Never stretch a moment to
+reach a length.
 Each moment is {min:g}-{max:g} seconds (never shorter), starts at a segment start, ends at a segment end, and does not overlap others.
-Return json only, up to {n} moments:
+Return json only, up to {n} moments. Fewer strong moments beat many weak ones: return only what scores 60+.
 {{"moments": [{{"start": 734.2, "end": 781.6, "score": 80, "reason": "why it works"}}]}}"""
 
 PASS2 = """You are a senior short-form video editor. From the numbered candidate clips, pick the best {n} and write their copy.
@@ -33,10 +37,12 @@ Drop any candidate that would not stand alone: one that opens mid-thought or on 
 "anyway", "like I said"), leans on what comes before or after to make sense, or ends before its payoff lands.
 Prefer clips whose first sentence is a hook strong enough to stop a scroll, and pick a diverse set: skip a
 candidate that makes the same point as one you already picked.
-You may trim a clip's edges to the nearest complete sentence by giving a tighter "start"/"end" (seconds,
-within the candidate's own bounds); omit them to keep the candidate as-is.
+Every sentence in a candidate starts with its time in seconds, like [752.1]. You may trim a clip's edges to a
+complete sentence by giving a tighter "start"/"end" (those times, within the candidate's own bounds); omit them to
+keep the candidate as-is. The end must land on the payoff line itself: cut any wrap-up after it.
 Cold open: if the clip's single most gripping sentence (the payoff, the surprising claim) is NOT its first
-sentence, give its span as "cold_open_start"/"cold_open_end" (1-4 seconds, inside the clip). It plays first as a
+sentence, give its span as "cold_open_start"/"cold_open_end" (1-4 seconds, inside the clip, from the [time]
+marks: start on a sentence's mark, end before the next one). It plays first as a
 teaser, then the clip runs from the top. Omit both when the clip already opens on its strongest line.
 "emphasis": 2-6 words actually said in the clip that carry its meaning (names, numbers, the key idea); the
 captions colour them.
@@ -44,7 +50,7 @@ captions colour them.
 it: name the kind of payoff the clip delivers (with a concrete noun or number) without giving it away. Never a
 vague tease ("you won't believe", "this changed everything"), a command ("stop scrolling", "wait"), or wordplay,
 and never promise more than the clip pays off.
-Use only what is actually said in each clip. Write natively per platform: TikTok and Instagram casual with 3-5
+Use only what is actually said in each clip.{language} Write natively per platform: TikTok and Instagram casual with 3-5
 niche hashtags (never #fyp, #viral or other generic tags), YouTube Shorts a searchable description, LinkedIn a
 professional takeaway, Facebook conversational. A post never repeats the hook word for word, and ends on at most
 one ask that fits the clip: save it (a method, a list), send it to a specific kind of person (a story, a
@@ -185,25 +191,40 @@ def find_clips(transcript: dict, n: int, min_len: float, max_len: float) -> list
     segments, words = transcript["segments"], transcript["words"]
     lines = "\n".join(f"[{s['start']:.1f}-{s['end']:.1f}] {s['text']}" for s in segments)
     s = settings.get()
-    moments = _ask(PASS1.format(min=min_len, max=max_len, n=min(3 * n, 90)), lines,  # the whole transcript: fast
+    moments = _ask(PASS1.format(min=min_len, max=max_len, n=min(2 * n, 40)), lines,  # the whole transcript: fast
                    lambda c: parse_moments(c, segments[-1]["end"], min_len, max_len), s["ai_model_fast"])
     said = lambda a, b: " ".join(w["word"] for w in words if a <= w["start"] < b)
     candidates = "\n\n".join(
         f"#{i} ({m.end - m.start:.0f}s) {m.reason}\n"
         f"before: {said(m.start - 15, m.start) or '(silence)'}\n"
-        f"{said(m.start, m.end)}\n"
+        f"{timed(words, m.start, m.end)}\n"
         f"after: {said(m.end, m.end + 15) or '(silence)'}"
         for i, m in enumerate(moments))
     limits = ", ".join(f"{network} {cap}" for network, cap in LIMITS.items())
-    return _ask(PASS2.format(n=n, limits=limits), candidates,
+    lang = transcript.get("language")
+    language = f" Write every hook, title and post in the video's own language ({lang})." if lang and lang != "en" else ""
+    return _ask(PASS2.format(n=n, limits=limits, language=language), candidates,
                 lambda c: parse_picks(c, moments, n, min_len, max_len), s["ai_model"])  # judgment + copy
+
+
+ENDS = ".?!\u3002\uff1f\uff01"  # sentence ends, CJK full stops included
+
+
+def timed(words: list[dict], a: float, b: float) -> str:
+    """The words in [a, b] with each sentence's start time in front, like "[752.1] So here is the thing."."""
+    out, fresh = [], True
+    for w in words:
+        if a <= w["start"] < b:
+            out.append(f"[{w['start']:.1f}] {w['word']}" if fresh else w["word"])
+        fresh = w["word"][-1:] in ENDS if a <= w["start"] < b else fresh
+    return " ".join(out)
 
 
 def snap(start: float, end: float, words: list[dict]) -> tuple[float, float]:
     """Move cut points to sentence boundaries where one sits within 1.5s, else to whole words: never start a
     clip mid-sentence or end it between sentences."""
-    sentence_starts = [w["start"] for a, w in zip(words, words[1:]) if a["word"][-1:] in ".?!"]
-    sentence_ends = [w["end"] for w in words if w["word"][-1:] in ".?!"]
+    sentence_starts = [w["start"] for a, w in zip(words, words[1:]) if a["word"][-1:] in ENDS]
+    sentence_ends = [w["end"] for w in words if w["word"][-1:] in ENDS]
     near = lambda t, edges: min((e for e in edges if abs(e - t) <= 1.5), key=lambda e: abs(e - t), default=None)
     s, e = near(start, sentence_starts), near(end, sentence_ends)
     start = s if s is not None else max((w["start"] for w in words if w["start"] <= start + 0.2), default=start)

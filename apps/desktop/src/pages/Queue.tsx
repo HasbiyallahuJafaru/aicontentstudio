@@ -1,7 +1,7 @@
 // The content queue (PRD §46): every piece across projects at its current stage, with jobs that are working now.
-import { Fragment, useState, type CSSProperties } from 'react'
+import { Fragment, useEffect, useRef, useState, type CSSProperties } from 'react'
 import { CaretRight } from '@phosphor-icons/react'
-import { call, formatDate, label, useQuery, type PieceStatus, type QueueData } from '../lib/studio'
+import { call, studio, formatDate, label, useQuery, type PieceStatus, type QueueData } from '../lib/studio'
 import { Button, ErrorNote, PageHeader, cx } from '../components/ui'
 import { Cover } from '../components/Cover'
 
@@ -23,6 +23,13 @@ const EMPTY: Record<PieceStatus, string> = {
 
 export function Queue({ onOpen }: { onOpen: (id: string) => void }) {
   const { data, error, reload } = useQuery<QueueData>('queue.list')
+  const lastTick = useRef(0)
+  useEffect(() => studio.onEvent((event) => {
+    if (!event.startsWith('job.')) return
+    if (event === 'job.progress' && Date.now() - lastTick.current < 1000) return
+    lastTick.current = Date.now()
+    reload()
+  }), [reload])
   const [stage, setStage] = useState<PieceStatus>('ready')
   const pieces = data?.pieces.filter((p) => p.status === stage) ?? []
   const counts = Object.fromEntries(STAGES.map((s) => [s.id, data?.pieces.filter((p) => p.status === s.id).length ?? 0]))

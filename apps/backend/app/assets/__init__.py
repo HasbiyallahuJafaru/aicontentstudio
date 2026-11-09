@@ -212,6 +212,8 @@ def _store(rel: str, data: bytes) -> None:
 
 def _wanted(brief: dict, content: dict) -> str:
     wanted = content["plan"]["visual_type"]  # ponytail: video_image forces per-type asset pairs at export (M6)
+    if brief["format"] == "image_voiced":  # the video is the picture itself, read aloud: photos, not footage
+        return "image"
     return brief["format"] if brief["format"] in ("video", "image") else wanted
 
 
@@ -345,10 +347,12 @@ def propose(brief: dict, pieces: list[dict], report) -> None:
 
 def pick(piece_id: str, keys: list[str]) -> dict:
     """Save the user's footage choice for one piece (in play order). Saved at once, so it survives a restart."""
+    from app import jobs
     with connect() as conn:
-        row = conn.execute("SELECT content FROM content_pieces WHERE id = ?", (piece_id,)).fetchone()
+        row = conn.execute("SELECT project_id, content FROM content_pieces WHERE id = ?", (piece_id,)).fetchone()
     if row is None:
         raise UserError("This piece no longer exists.", f"piece id {piece_id}")
+    jobs.ensure_idle(row["project_id"], "changing its footage")  # the download job reads these picks
     content = json.loads(row["content"])
     review = content.get("review")
     if not review:
@@ -426,6 +430,8 @@ async def _download_all(project_id: str, report) -> None:
         content["asset"] = content["assets"][0]
         del content["review"]
         with connect() as conn:  # new footage makes any earlier render of this piece stale
+            for r in conn.execute("SELECT local_path FROM renders WHERE piece_id = ?", (piece["id"],)).fetchall():
+                (config.MEDIA_DIR / r["local_path"]).unlink(missing_ok=True)
             conn.execute("DELETE FROM renders WHERE piece_id = ?", (piece["id"],))
             conn.execute("UPDATE content_pieces SET status = 'written', content = ? WHERE id = ?",
                          (json.dumps(content, ensure_ascii=False), piece["id"]))

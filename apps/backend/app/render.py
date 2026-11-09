@@ -6,6 +6,7 @@ Text placement follows the M4 analysis (§26): subject left -> text right, subje
 block, over a subtle scrim built from the piece palette (§27). Quote lines are wrapped with the bundled Sora font.
 """
 import json
+import os
 import subprocess
 import tempfile
 import threading
@@ -94,6 +95,13 @@ def scrim(path: Path, hex_color: str, w: int, h: int, strength: tuple[int, int])
     return path
 
 
+# what every platform-bound encode carries: a peak-bitrate cap (film grain pushed crf-only renders to 25-50 Mbps,
+# over Instagram's limit), BT.709 limited-range tags (untagged video gets colour-shifted on re-encode) and a
+# keyframe every 2 s. Shared with the clip renderer.
+DELIVERY = ("-maxrate", "12M", "-bufsize", "24M", "-force_key_frames", "expr:gte(t,n_forced*2)",
+            "-color_range", "tv", "-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709")
+
+
 def esc(text: str) -> str:
     return text.replace("\\", "\\\\").replace(":", "\\:")
 
@@ -115,6 +123,17 @@ def open_luma(path: Path) -> float:
     return sum(proc.stdout) / len(proc.stdout) / 255 if proc.stdout else 1.0
 
 
+def audio_misstamped(path: Path) -> int:
+    """AAC packets (all but the last) whose timestamps don't advance one full 1024-sample frame. loudnorm used
+    to squeeze the opening ~0.6 s together then jump to 3 s; local players don't care, but every platform's
+    transcoder obeys the stamps and the posted video speeds up or drags for its first seconds (2026-11-09)."""
+    proc = subprocess.run([config.FFPROBE, "-v", "error", "-select_streams", "a", "-show_entries", "packet=duration",
+                           "-of", "csv=p=0", str(path)], capture_output=True, text=True, stdin=subprocess.DEVNULL,
+                          timeout=60)
+    durs = [line.strip().rstrip(",") for line in proc.stdout.splitlines() if line.strip()]
+    return sum(d != "1024" for d in durs[:-1])
+
+
 def validate_video(path: Path, want: dict, w: int, h: int) -> dict:
     """§34: resolution, orientation, codec, fps and duration are checked before anything is accepted."""
     d = _probe(path)
@@ -132,6 +151,15 @@ def validate_video(path: Path, want: dict, w: int, h: int) -> dict:
         problems.append(f"fps is {fps:.2f}, wanted {want['fps']:.2f}")
     if abs(float(d["format"]["duration"]) - want["duration"]) > 1.5:
         problems.append(f"duration is {float(d['format']['duration']):.2f}s, wanted ~{want['duration']:.2f}s")
+    # the container reports its longest stream, so a picture that ran short (shots re-timed by the wrong frame
+    # rate, 2026-11-09) hid behind the audio: each stream has to fill the timeline on its own
+    for kind, stream in (("picture", v), ("sound", a)):
+        if stream and stream.get("duration") and abs(float(stream["duration"]) - want["duration"]) > 0.25:
+            problems.append(f"the {kind} runs {float(stream['duration']):.2f}s, wanted {want['duration']:.2f}s")
+    if v.get("pix_fmt") != "yuv420p" or v.get("color_range") not in (None, "tv"):
+        problems.append(f"picture format is {v.get('pix_fmt')}/{v.get('color_range')}, wanted yuv420p limited range")
+    if a is not None and audio_misstamped(path):
+        problems.append("the audio timestamps are uneven, so platforms would warp the opening")
     if open_luma(path) < 0.02:
         problems.append("the video opens on a black frame, so the hook is wasted")
     if problems:
@@ -176,6 +204,7 @@ class FFmpegRenderer:
                      src_duration: float, still: bool, progress, out_fps: float | None = None,
                      scrim_png: Path | None = None, quote: str | None = None, palette: dict | None = None,
                      look: str = "none", duck: float = 6.0, blur_background: bool = False, parallax: bool = False,
+                     hold: float = 0.0,
                      subtitles: Path | None = None, shots: list[dict] | None = None,
                      layers: list[dict] | None = None) -> dict:
         """Edits a finished video the way the top motivational studios do: the footage is cut into motion shots
@@ -187,9 +216,9 @@ class FFmpegRenderer:
         from the piece's asset pool. Without it a single shot is synthesised from `src` (old behaviour)."""
         from app.tts import AudioResult
         audio = AudioResult(narration)
-        duration = round(audio.duration + 0.6, 3)
+        duration = round(max(audio.duration + 0.6, hold), 3)  # `hold`: the shortest the video may run
         out.parent.mkdir(parents=True, exist_ok=True)
-        fps = out_fps or (60.0 if still else (src_fps or 30.0))
+        fps = out_fps or (30.0 if still else (src_fps or 30.0))
 
         if not shots:
             seek = round(max((src_duration - duration) / 2, 0), 3) if src_duration > duration + 2 else 0.0
@@ -199,6 +228,10 @@ class FFmpegRenderer:
 
         # each shot's camera move is `move`: a local named `motion` shadowed the motion module and crashed every
         # render with animated titles on (2026-11-07)
+        out, narration, run_dir = Path(out).resolve(), Path(narration).resolve(), None
+        # encode beside the old render and swap only after the check passes: a cancelled or failed re-render
+        # used to leave a 'ready' piece pointing at a truncated file, which then got posted
+        final, out = out, out.with_suffix(".part.mp4")
         args = [config.FFMPEG, "-y", "-nostdin", "-nostats", "-progress", "pipe:1", "-hide_banner"]
         chain = []
         for i, shot in enumerate(shots):
@@ -206,7 +239,7 @@ class FFmpegRenderer:
             # a ramped shot plays slower, so it needs less source; stills and the blur treatment never ramp
             speed = 1.0 if shot.get("still") or shot.get("blur") else float(shot.get("speed", 1.0))
             if shot.get("still"):
-                args += ["-loop", "1", "-t", f"{length:.3f}", "-i", str(shot["src"])]
+                args += ["-loop", "1", "-framerate", f"{fps:g}", "-t", f"{length:.3f}", "-i", str(shot["src"])]
                 move = shot.get("motion") or "push"
             else:
                 if shot.get("loop"):  # shorter than the edit: loop the source instead of running out mid-shot
@@ -240,7 +273,10 @@ class FFmpegRenderer:
                            f":d=1:s={self.w}x{self.h}:fps={fps:g}"}.get(move, "")
             if not zoom:  # a locked-off shot still has to land on the canvas at the timeline's frame rate
                 zoom = f",scale={self.w}:{self.h},fps={fps:g}"
-            chain.append(f"[{i}:v]{geom}{zoom}{ramp},setsar=1[v{i}]")
+            # conform to the timeline rate BEFORE zoompan: zoompan (d=1) stamps one output frame per input frame
+            # at its own rate, so a 25 fps clip played 1.2x fast and 59.94 fps at half speed (2026-11-09). The ramp
+            # comes first so fps fills the slow-mo with whole frames instead of leaving a VFR gap.
+            chain.append(f"[{i}:v]{geom}{ramp},fps={fps:g}{zoom},setsar=1[v{i}]")
 
         # every join is an xfade, a hard cut included (one frame): one timeline, one set of offset maths.
         # xfade eats `duration` seconds at each join, which the planned shot lengths already carry back.
@@ -278,9 +314,14 @@ class FFmpegRenderer:
         chain.append(f"[{prev}]{','.join(dress) or 'null'}[film]")
         prev = "film"
         if subtitles is not None:  # burned subtitles in the brief's caption style
-            sub_file = esc(str(subtitles).replace("\\", "/"))
-            fonts_dir = esc(str(SUBTITLES_FONTS).replace("\\", "/"))
-            chain.append(f"[{prev}]ass='{sub_file}':fontsdir='{fonts_dir}'[sub]")
+            # run from the subtitle's folder with relative names: an apostrophe in an absolute path (a Windows
+            # username like O'Brien) can't be quoted inside the filter graph. Every input path is absolute.
+            run_dir = subtitles.parent
+            try:
+                fonts_dir = Path(os.path.relpath(SUBTITLES_FONTS, run_dir)).as_posix()
+            except ValueError:  # fonts on another drive: no relative path exists
+                fonts_dir = esc(str(SUBTITLES_FONTS).replace("\\", "/"))
+            chain.append(f"[{prev}]ass='{esc(subtitles.name)}':fontsdir='{fonts_dir}'[sub]")
             prev = "sub"
         narr_idx = len(shots)
         if scrim_png is not None:
@@ -306,9 +347,11 @@ class FFmpegRenderer:
                 nxt = f"t{i + 1}"
                 chain.append(f"[{prev}]{dt}[{nxt}]")
                 prev = nxt
-        chain.append(f"[{prev}]format=yuv420p[vout]")
+        # stills arrive as full-range JPEG (yuvj420p, BT.601): convert so platforms don't crush or wash the blacks
+        chain.append(f"[{prev}]scale=out_range=tv:out_color_matrix=bt709,format=yuv420p,setparams=range=tv:colorspace=bt709:color_primaries=bt709:color_trc=bt709[vout]")
 
-        a_chain = f"[{narr_idx}:a]loudnorm=I=-16:TP=-1.5:LRA=11[na]"
+        a_chain = (f"[{narr_idx}:a]loudnorm=I=-16:TP=-1.5:LRA=11,aresample=48000,asetpts=N/SR/TB,"  # restamp: see render_clip.py
+                   f"apad=whole_dur={duration}[na]")  # the sound runs the whole timeline, the 0.6 s tail included
         if self.music and self.music.exists():
             a_chain += (";[na]asplit=2[nk][key]"
                         f";[{narr_idx + 1}:a]volume={self.music_volume},afade=t=in:st=0:d=1,"
@@ -316,7 +359,7 @@ class FFmpegRenderer:
                         # ponytail: ratio stands in for the genre's duck depth in dB; close enough by ear
                         f";[mu][key]sidechaincompress=threshold=0.03:ratio={max(2.0, duck * 1.5):g}"
                         ":attack=20:release=400[duck]"
-                        ";[nk][duck]amix=inputs=2:duration=first:normalize=0[aout]")
+                        ";[nk][duck]amix=inputs=2:duration=first:normalize=0,alimiter=limit=0.89[aout]")
             args += ["-i", str(self.music)]
         else:
             a_chain += ";[na]anull[aout]"
@@ -325,7 +368,7 @@ class FFmpegRenderer:
         args += ["-filter_complex", ";".join(chain) + ";" + a_chain, "-map", "[vout]", "-map", "[aout]",
                  "-c:v", "libx264", "-crf", str(self.crf), "-preset", "veryfast", "-c:a", "aac",  # CRF sets quality; medium here
                 # more than doubles a director-cut render (smoke: >240 s vs 98 s) for mostly a smaller file
-                 "-b:a", self.audio_bitrate, "-movflags", "+faststart", "-t", f"{duration}", str(out)]
+                 "-b:a", self.audio_bitrate, *DELIVERY, "-movflags", "+faststart", "-t", f"{duration}", str(out)]
 
         # §32 control: stderr goes to a temp file, never a pipe - a stderr pipe here deadlocks or makes
         # ffmpeg exit 1 mid-teardown (bisected 2026-09-20); -nostdin because ffmpeg otherwise polls the
@@ -333,7 +376,7 @@ class FFmpegRenderer:
         # a watchdog kills a wedged ffmpeg for good either way.
         stalled = threading.Event()
         with tempfile.TemporaryFile() as errf:
-            proc = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=errf, stdin=subprocess.DEVNULL,
+            proc = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=errf, stdin=subprocess.DEVNULL, cwd=run_dir,
                                     text=True, encoding="utf-8")
             watchdog = threading.Timer(STALL_SECS, lambda: (stalled.set(), proc.kill()))
             watchdog.start()
@@ -364,7 +407,13 @@ class FFmpegRenderer:
                 errf.seek(0)
                 raise UserError("FFmpeg failed while rendering the video.",
                                 errf.read().decode("utf-8", "replace")[-800:])
-        return validate_video(out, {"fps": fps, "duration": duration}, self.w, self.h)
+        try:
+            info = validate_video(out, {"fps": fps, "duration": duration}, self.w, self.h)
+        except BaseException:
+            out.unlink(missing_ok=True)
+            raise
+        os.replace(out, final)
+        return info
 
     def render_image(self, *, src: Path | None, out: Path, quote: dict | str, subject_position: str, palette: dict,
                      design_name: str = "classic", face: str = "auto", position: str = "auto") -> None:

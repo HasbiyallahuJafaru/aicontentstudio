@@ -63,9 +63,14 @@ class Regenerate(unittest.TestCase):
 
     def test_1_regenerate_narration_keeps_everything_else(self):
         before = self.piece()
-        with mock.patch.object(content, "get_model",
-                               lambda: FakeModel(["Step again in the wrong direction."])):
+        model = FakeModel(["Step again in the wrong direction."])
+        seen = []
+        write = model.write_piece
+        model.write_piece = lambda brief, *a: (seen.append(brief), write(brief, *a))[1]
+        with mock.patch.object(content, "get_model", lambda: model):
             fresh = content.regenerate(before["id"], "narration")
+        # new narration is written around the SAME quote, so the script still lands on it (2026-11-09)
+        self.assertEqual(seen[0]["given_quote"], before["content"]["quote"]["text"])
         self.assertNotEqual(fresh["content"]["narration"]["text"], before["content"]["narration"]["text"])
         self.assertEqual(fresh["content"]["quote"], before["content"]["quote"])
         self.assertEqual(fresh["content"]["asset"], before["content"]["asset"])

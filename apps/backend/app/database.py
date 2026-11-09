@@ -23,4 +23,6 @@ def migrate() -> None:
         for path in sorted(MIGRATIONS.glob("*.sql")):
             n = int(path.name.split("_")[0])
             if n > current:
-                conn.executescript(path.read_text(encoding="utf-8") + f"\nPRAGMA user_version = {n};")
+                # one transaction per migration: a crash midway used to leave the columns added but the version
+                # unbumped, and the next start failed on "duplicate column" forever
+                conn.executescript("BEGIN;\n" + path.read_text(encoding="utf-8") + f"\nPRAGMA user_version = {n};\nCOMMIT;")

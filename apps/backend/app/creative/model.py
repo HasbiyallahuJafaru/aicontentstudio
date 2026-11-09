@@ -34,6 +34,10 @@ class CreativeModel:
 
     def write_piece(self, brief: dict, plan: BatchPlan, item: PlanItem, avoid: list[str]) -> PieceContent: ...
 
+    def verify_quotes(self, quotes: list[tuple[str, str]]) -> list[str]:
+        """"yes" | "no" | "unsure" per (text, author). The default can't check, so it says nothing against them."""
+        return ["unsure"] * len(quotes)
+
     def write_pieces(self, brief: dict, plan: BatchPlan, items: list[PlanItem], avoid: list[str],
                      given: list) -> list[PieceContent | None]:
         """Several pieces at once. This default writes them one by one; OpenRouterModel asks in one request. A None
@@ -45,12 +49,19 @@ class CreativeModel:
         return out
 
 
+class OutOfRoom(UserError):
+    """The reply hit max_tokens mid-JSON (a reasoning model spends the budget thinking). A group write survives it
+    by writing its pieces one at a time; a single piece can't, so its message says which setting to raise."""
+
+
 class OpenRouterModel(CreativeModel):
     URL = BASE + "/chat/completions"
     RETRIES = 3  # PRD §79: API calls, exponential backoff
 
-    def __init__(self, api_key: str, model: str, temperature: float, max_tokens: int, transport=None):
+    def __init__(self, api_key: str, model: str, temperature: float, max_tokens: int, transport=None,
+                 fast_model: str | None = None):
         self.model, self.temperature, self.max_tokens = model, temperature, max_tokens
+        self.fast_model = fast_model or model
         # Windows cert store via the stdlib context: works behind TLS-inspecting local CAs where certifi doesn't.
         self.http = httpx.Client(headers={"Authorization": f"Bearer {api_key}"}, timeout=httpx.Timeout(120, connect=15),
                                  verify=ssl.create_default_context(), transport=transport)
@@ -72,7 +83,7 @@ class OpenRouterModel(CreativeModel):
         schema = PieceContent if prompts.quotes_only(brief) else VideoPieceContent
         try:
             found = json.loads(self._chat(prompts.pieces(brief, plan, items, avoid, given))).get("pieces") or []
-        except (ValueError, AttributeError) as e:
+        except (ValueError, AttributeError, OutOfRoom) as e:  # a group too big for the reply: write each alone
             log.warning("batch write returned no usable JSON: %s", e)
             found = []
         out = []
@@ -83,6 +94,19 @@ class OpenRouterModel(CreativeModel):
                 log.warning("batch piece %d invalid: %s", j + 1, str(e)[:300])
                 out.append(None)
         return out
+
+    def verify_quotes(self, quotes):
+        """One call on the fast model for the whole batch. Fails open (all "unsure"): a check that can't run must
+        not stop a generation. ponytail: only "no" is acted on; "unsure" passes, tighten if fakes slip through."""
+        if not quotes:
+            return []
+        try:
+            got = json.loads(self._chat(prompts.verify(quotes), model=self.fast_model, temperature=0)).get("verdicts")
+        except (UserError, ValueError, AttributeError) as e:
+            log.warning("quote check skipped: %s", e)
+            return ["unsure"] * len(quotes)
+        got = [str(v).lower() for v in got] if isinstance(got, list) else []
+        return got[:len(quotes)] + ["unsure"] * (len(quotes) - len(got))
 
     def _json(self, messages: list[dict], schema: type[BaseModel]):
         """Call, validate; if invalid, ask the model to repair once; if still invalid, regenerate once (PRD §100)."""
@@ -100,8 +124,9 @@ class OpenRouterModel(CreativeModel):
                 log.warning("invalid %s from model (attempt %d): %s", schema.__name__, i + 1, last[:300])
         raise UserError("The AI kept returning content in the wrong shape.", last)
 
-    def _chat(self, messages: list[dict]) -> str:
-        body = {"model": self.model, "messages": messages, "temperature": self.temperature,
+    def _chat(self, messages: list[dict], model: str | None = None, temperature: float | None = None) -> str:
+        body = {"model": model or self.model, "messages": messages,
+                "temperature": self.temperature if temperature is None else temperature,
                 "max_tokens": self.max_tokens, "response_format": {"type": "json_object"},
                 # only route to providers that honour JSON mode: without it a provider may ignore response_format
                 "provider": {"require_parameters": True}}
@@ -125,7 +150,7 @@ class OpenRouterModel(CreativeModel):
                     # Out of output room: the JSON is cut mid-string. Repairing or retrying just truncates again,
                     # and reasoning-capable models spend this budget before they emit a single visible character.
                     if choice.get("finish_reason") == "length":
-                        raise UserError(
+                        raise OutOfRoom(
                             "The AI ran out of room before it finished writing. Raise \"AI max tokens\" in "
                             "Settings, then try again.",
                             f"finish_reason=length, usage={reply.get('usage')}, max_tokens={self.max_tokens}")
@@ -141,4 +166,5 @@ class OpenRouterModel(CreativeModel):
 
 def get_model() -> CreativeModel:
     s = settings.get()
-    return OpenRouterModel(api_key("generate content"), s["ai_model"], s["ai_temperature"], s["ai_max_tokens"])
+    return OpenRouterModel(api_key("generate content"), s["ai_model"], s["ai_temperature"], s["ai_max_tokens"],
+                           fast_model=s["ai_model_fast"])

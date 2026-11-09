@@ -25,6 +25,9 @@ VOICES = {"Charon": "informative", "Kore": "firm", "Puck": "upbeat", "Fenrir": "
           "Iapetus": "clear", "Achird": "friendly", "Sulafat": "warm", "Aoede": "breezy", "Leda": "youthful",
           "Zephyr": "bright", "Despina": "smooth", "Vindemiatrix": "gentle", "Achernar": "soft"}
 DEFAULT_VOICE = "Charon"
+# a brief that picks no voice gets its genre's: one "informative" voice read every genre the same (2026-11-09)
+GENRE_VOICES = {"hope": "Sulafat", "speech": "Algenib", "stoic": "Gacrux", "cinema": "Enceladus",
+                "history": "Sadaltager", "books": "Sadaltager"}
 RETRIES = 3
 
 
@@ -39,9 +42,16 @@ class TTSProvider:
     async def generate(self, text: str, voice: str, delivery: str = "") -> AudioResult: ...
 
 
+def spoken(text: str) -> str:
+    """The narration as the voice should read it: each written line is a beat, so a line with no closing
+    punctuation gets a comma (a breath) and the lines run on as one text."""
+    lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+    return " ".join(ln if ln[-1] in ".!?,;:\u2026\u2014-\"'\u201d" else ln + "," for ln in lines)
+
+
 class GeminiTTS(TTSProvider):
     async def generate(self, text, voice, delivery=""):
-        body = {"model": MODEL, "input": text, "voice": voice if voice in VOICES else DEFAULT_VOICE,
+        body = {"model": MODEL, "input": spoken(text), "voice": voice if voice in VOICES else DEFAULT_VOICE,
                 "response_format": "pcm",  # the only format Gemini TTS accepts
                 "instructions": f"Short-form video narration. Delivery: {delivery.replace('_', ' ') or 'natural'}. "
                                 "Human pacing with real pauses, never an announcer voice."}

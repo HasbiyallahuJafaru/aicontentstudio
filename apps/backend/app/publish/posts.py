@@ -36,24 +36,76 @@ def taken(project_id: str, idx: int, channel_ids: list[str], piece_id: str | Non
     return [r["channel_name"] for r in rows]
 
 
+def unconfirmed(project_id: str, idx: int, channel_id: str, piece_id: str | None = None) -> str | None:
+    """The id of an earlier attempt at this post that Zernio never answered, to resend under the same key."""
+    which, key = ("piece_id = ?", piece_id) if piece_id else ("clip_idx = ? AND piece_id IS NULL", idx)
+    with connect() as conn:
+        row = conn.execute(f"SELECT id FROM publications WHERE project_id = ? AND {which} AND channel_id = ? AND "
+                           "status = 'error' AND unconfirmed = 1 ORDER BY created_at DESC LIMIT 1",
+                           (project_id, key, channel_id)).fetchone()
+    return row["id"] if row else None
+
+
+def _scope(project_id: str, piece_id: str | None, clip_idx: int | None, clips: bool) -> tuple[str, list]:
+    where, args = "project_id = ?", [project_id]
+    if piece_id:
+        where, args = where + " AND piece_id = ?", args + [piece_id]
+    elif clip_idx is not None:
+        where, args = where + " AND piece_id IS NULL AND clip_idx = ?", args + [clip_idx]
+    elif clips:
+        where += " AND piece_id IS NULL"
+    return where, args
+
+
+def waiting(project_id: str, piece_id: str | None = None, clip_idx: int | None = None,
+            clips: bool = False) -> list[dict]:
+    """Posts of this content that Zernio still has to send."""
+    where, args = _scope(project_id, piece_id, clip_idx, clips)
+    with connect() as conn:
+        return [dict(r) for r in conn.execute(f"SELECT * FROM publications WHERE {where} AND status NOT IN "
+                                              "('sent', 'error', 'canceled') AND external_id IS NOT NULL", args)]
+
+
+def release(project_id: str, piece_id: str | None = None, clip_idx: int | None = None, clips: bool = False) -> None:
+    """Before content is deleted: unschedule its posts still waiting in Zernio, then drop its publication rows.
+    Refuses (deleting nothing more) when Zernio can't be reached, so deleted content never goes out with no record
+    left to stop it. Scope: one piece, one clip, every clip (`clips`), or the whole project (no scope given)."""
+    left = waiting(project_id, piece_id, clip_idx, clips)
+    if any(r["status"] == "sending" for r in left):
+        raise UserError("A post of this is going out right now. Wait a minute, then delete it.")
+    for row in left:
+        try:
+            zernio.unschedule(row["external_id"])
+        except UserError as e:
+            raise UserError(f"Couldn't reach Zernio to cancel {len(left)} scheduled "
+                            f"post{'s' if len(left) > 1 else ''} of this, so it wasn't deleted. Check your "
+                            "connection and try again.", e.detail)
+        with connect() as conn:  # cancelled there: say so here at once, in case a later one fails
+            conn.execute("UPDATE publications SET status = 'canceled' WHERE id = ?", (row["id"],))
+    where, args = _scope(project_id, piece_id, clip_idx, clips)
+    with connect() as conn:
+        conn.execute(f"DELETE FROM publications WHERE {where}", args)
+
+
 def save(pub_id: str, project_id: str, clip_idx: int, channel: dict, due_at: datetime | None,
-         post: dict | None = None, error: str | None = None, piece_id: str | None = None) -> dict:
+         post: dict | None = None, error: str | None = None, piece_id: str | None = None,
+         unconfirmed: bool = False) -> dict:
     """Records the service's view of a post, or why it failed."""
     if post is None:
         post = {"id": None, "status": "error", "dueAt": None, "sentAt": None, "externalLink": None,
                 "error": {"message": error}}
     with connect() as conn:
         conn.execute("INSERT INTO publications (id, project_id, clip_idx, provider, channel_id, service, "
-                     "channel_name, status, due_at, sent_at, external_id, external_link, error, piece_id, checked_at) "
-                     "VALUES (?,?,?,'zernio',?,?,?,?,?,?,?,?,?,?,strftime('%Y-%m-%dT%H:%M:%SZ','now')) "
+                     "channel_name, status, due_at, sent_at, external_id, external_link, error, piece_id, unconfirmed, checked_at) "
+                     "VALUES (?,?,?,'zernio',?,?,?,?,?,?,?,?,?,?,?,strftime('%Y-%m-%dT%H:%M:%SZ','now')) "
                      "ON CONFLICT (id) DO UPDATE SET status = excluded.status, due_at = COALESCE(excluded.due_at, due_at), "
                      "sent_at = excluded.sent_at, external_id = COALESCE(excluded.external_id, external_id), "
-                     "external_link = excluded.external_link, error = excluded.error, "
+                     "external_link = excluded.external_link, error = excluded.error, unconfirmed = excluded.unconfirmed, "
                      "checked_at = strftime('%Y-%m-%dT%H:%M:%SZ','now')",
                      (pub_id, project_id, clip_idx, channel["id"], channel["service"],
                       channel.get("displayName") or channel["service"],
                       post["status"], _iso(post["dueAt"]), _iso(post["sentAt"]), post["id"],
-                      post["externalLink"], error or (post.get("error") or {}).get("message"), piece_id))
+                      post["externalLink"], error or (post.get("error") or {}).get("message"), piece_id, int(unconfirmed)))
     return _get(pub_id)
 
 
@@ -95,8 +147,9 @@ def schedule(project_id: str, account_ids: list[str], items: list[dict]) -> list
     out = []
     for key, item in zip(keys, items):
         try:
-            rows = (zernio.publish_piece(item["piece_id"], account_ids, item["due_at"]) if item.get("piece_id")
-                    else zernio.publish(project_id, int(item["clip_idx"]), account_ids, item["due_at"]))
+            due = item.get("due_at") or None  # validated above with the same reading
+            rows = (zernio.publish_piece(item["piece_id"], account_ids, due) if item.get("piece_id")
+                    else zernio.publish(project_id, int(item["clip_idx"]), account_ids, due))
             failed = [r for r in rows if r["status"] == "error"]
             out.append({"key": key, "ok": not failed, "rows": rows,
                         **({"error": failed[0]["error"]} if failed else {})})
@@ -119,8 +172,11 @@ def publications(project_id: str) -> list[dict]:
             continue
         try:
             fresh = zernio.refresh(row)
-        except UserError:
-            continue  # last known state; try again on the next list
+        except UserError:  # last known state; ask again in a minute, not on every list
+            with connect() as conn:
+                conn.execute("UPDATE publications SET checked_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') "
+                             "WHERE id = ?", (row["id"],))
+            continue
         if fresh is None:  # deleted inside Zernio
             with connect() as conn:
                 conn.execute("DELETE FROM publications WHERE id = ?", (row["id"],))

@@ -7,7 +7,8 @@ One table so the grade cannot drift from the cadence. `renders.py` reads CUTS to
 # A colour grade plus the film dressing that rides with it.
 #   grade:    filter terms applied to the whole timeline (curves/eq/colorbalance, no leading comma)
 #   bloom:    halation opacity, 0 disables the blurred highlight pass
-#   grain:    `noise=alls=` strength
+#   grain:    `noise=alls=` strength, at most 5: temporal grain is noise the encoder must spend bits on (8 ran
+#             24 Mbps, 10 ran 50 Mbps, 2026-11-09) and platform re-encodes turn heavy grain into blocks
 #   vignette: corner falloff angle divisor (higher = subtler), None disables
 #   unsharp:  micro-contrast amount, 0 disables
 #   bars:     letterbox height as a share of the frame, 0 disables
@@ -19,7 +20,7 @@ LOOKS = {
              "vignette": 5.0, "unsharp": 0.0, "bars": 0.0},
     "cool": {"grade": "colorbalance=rm=-.06:bm=.07", "bloom": 0.0, "grain": 4, "vignette": 5.0,
              "unsharp": 0.0, "bars": 0.0},
-    "mono": {"grade": "hue=s=0", "bloom": 0.18, "grain": 6, "vignette": 4.0, "unsharp": 0.0, "bars": 0.0},
+    "mono": {"grade": "hue=s=0", "bloom": 0.18, "grain": 5, "vignette": 4.0, "unsharp": 0.0, "bars": 0.0},
     "vivid": {"grade": "eq=saturation=1.32:contrast=1.05", "bloom": 0.0, "grain": 4, "vignette": 5.0,
               "unsharp": 0.0, "bars": 0.0},
     # genre grades: reached when the brief's Look is "auto"
@@ -28,13 +29,13 @@ LOOKS = {
              "bloom": 0.30, "grain": 4, "vignette": 6.0, "unsharp": 0.0, "bars": 0.0},
     "speech": {"grade": "curves=r='0/0 0.5/0.52 1/1':b='0/0.02 0.5/0.48 1/0.98',"
                         "eq=saturation=0.75:contrast=1.22",
-               "bloom": 0.0, "grain": 8, "vignette": 3.5, "unsharp": 0.6, "bars": 0.0},
+               "bloom": 0.0, "grain": 5, "vignette": 3.5, "unsharp": 0.6, "bars": 0.0},
     "stoic": {"grade": "curves=r='0/0 0.5/0.47 1/0.97':b='0/0.05 0.5/0.53 1/1',"
                        "eq=saturation=0.85:contrast=1.06",
               "bloom": 0.0, "grain": 3, "vignette": 6.0, "unsharp": 0.0, "bars": 0.0},
     "history": {"grade": "eq=saturation=0.35,colorbalance=rm=.12:gm=.04:bm=-.10,"
                          "curves=all='0/0.06 0.5/0.5 1/0.96'",
-                "bloom": 0.20, "grain": 10, "vignette": 3.0, "unsharp": 0.0, "bars": 0.11},
+                "bloom": 0.20, "grain": 5, "vignette": 3.0, "unsharp": 0.0, "bars": 0.11},
     "books": {"grade": "curves=r='0/0.01 0.5/0.51 1/0.99':b='0/0.03 0.5/0.5 1/0.97',"
                        "eq=saturation=0.95:contrast=1.04",
               "bloom": 0.18, "grain": 5, "vignette": 5.0, "unsharp": 0.0, "bars": 0.0},

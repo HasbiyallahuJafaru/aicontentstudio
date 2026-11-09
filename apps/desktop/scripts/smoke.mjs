@@ -54,7 +54,7 @@ const fake = createServer((req, res) => {
 
 function makePiece() {
   return {
-              quote: { text: QUOTES[piece % 3], author: null },
+              quote: { text: QUOTES[piece % 3], author: 'Seneca' },  // real-quote genres refuse an authorless line (content._signed)
               narration: { text: `Nobody sees the early hours. ${QUOTES[piece++ % 3]} Keep going anyway.`, delivery: 'calm_reflective' },
               visual: { preferred_type: 'video', search_query: 'runner mountain ridge sunrise', secondary_query: 'trail runner dawn fog', mood: 'quiet determination' },
               design: { text_density: 'low', animation: 'slow', composition: 'editorial' },
@@ -203,6 +203,7 @@ for (const [label, value, nextHeading] of [['OpenRouter key', 'sk-or-smoke', 'Ad
 }
 await win.getByRole('button', { name: 'Skip for now' }).click()  // Unsplash is optional
 await win.getByRole('heading', { name: 'Post to your socials' }).waitFor()
+await win.getByLabel('Zernio API key').waitFor()  // the connection check loads after the heading
 assert.equal(await win.getByLabel('Zernio API key').count(), 1, 'Zernio is set up with a pasted key')
 assert.equal(await win.getByRole('button', { name: /Open zernio\.com/ }).count(), 1, 'setup links to Zernio sign-up')
 await shot(win, '0d-setup-posting')
@@ -315,7 +316,7 @@ await win.getByText('Also a 4:5 picture', { exact: true }).click() // video + de
 // render timeouts, and the burn itself is covered by test_render's subtitle renders, so the smoke turns them off
 await win.getByRole('group', { name: 'Subtitles' }).getByText('Off', { exact: true }).click()
 await win.keyboard.press('Control+Enter') // Look -> create + generate
-await win.getByText(/Writing pieces? [\d-]+ of 3|Planning 3 angles/).waitFor({ timeout: 15_000 })
+await win.getByText(/Writing pieces? [\d-]+ of 3|Planning 3 angles/).first().waitFor({ timeout: 15_000 })  // header + step log both show it
 await shot(win, '4-generating')
 await win.locator('blockquote').getByText(QUOTES[2]).waitFor({ timeout: 30_000 })
 await win.getByRole('button', { name: /Generate again/ }).waitFor()

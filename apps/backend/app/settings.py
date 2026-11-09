@@ -29,7 +29,9 @@ class Settings(BaseModel):
         return v
 
     ai_temperature: float = Field(1.0, ge=0, le=2)
-    ai_max_tokens: int = Field(8192, ge=256, le=8192)  # a piece + its metadata, with room for a thinking model
+    # a group of pieces + metadata, with room for a thinking model's reasoning (which shares this budget). The old
+    # cap of 8192 was also the default, so the "raise AI max tokens" advice could never be followed (2026-11-09).
+    ai_max_tokens: int = Field(16384, ge=256, le=32768)
     default_topic: str = Field("", max_length=60)  # blank: the Create page starts empty
     default_tone: Genre = "hope"
 
@@ -60,6 +62,11 @@ class Settings(BaseModel):
     render_audio_bitrate: str = Field("192k", pattern=r"^\d+k$")
     render_width: int = Field(1080, ge=360, le=2160)
     render_height: int = Field(1920, ge=640, le=3840)
+
+    @field_validator("render_width", "render_height")
+    @classmethod
+    def _even(cls, v: int) -> int:
+        return v - v % 2  # H.264 4:2:0 needs even sides: libx264 refuses 1081 outright
     # Animated hook titles and callouts (HyperFrames through Edge/Chrome). Off = plain edit, same as no browser.
     motion_graphics: bool = True
     # Clip downloads: a browser name (firefox, chrome, edge, ...) or a cookies.txt path, for YouTube's bot check.

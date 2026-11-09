@@ -60,6 +60,9 @@ class FakeZernio(BaseHTTPRequestHandler):
             return self._send(200, {"privacyLevels": [{"value": "SELF_ONLY", "label": "Only Me"},  # the live shape
                                                       {"value": "PUBLIC_TO_EVERYONE", "label": "Public To Everyone"}]})
         if path == "/v1/posts" and method == "POST":
+            if STATE.get("post_fail"):  # one 502 after the post may have been made: the caller can't know
+                STATE["post_fail"] = False
+                return self._send(502, {"error": "Bad gateway"})
             if body["platforms"][0]["accountId"] == "acc-bad":
                 return self._send(400, {"error": "Video too long for this network"})
             n = len([r for r in SEEN["requests"] if r["path"].endswith("/v1/posts") and r["method"] == "POST"])
@@ -310,3 +313,79 @@ class PublishPiece(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class Safety(unittest.TestCase):
+    """Phase 2 of the 2026-11-09 audit: no double posts, no orphaned scheduled posts."""
+    def setUp(self):
+        store.delete("zernio")
+        zernio.save_key(GOOD_KEY)
+        self.project = clip_project()
+        self.when = (datetime.now(timezone.utc) + timedelta(days=2)).replace(microsecond=0).isoformat()
+
+    def _posts(self):
+        return [r for r in SEEN["requests"] if r["path"].endswith("/v1/posts") and r["method"] == "POST"]
+
+    def test_an_unanswered_post_retries_under_the_same_key(self):
+        STATE["post_fail"] = True
+        with self.assertRaises(zernio.Unconfirmed):
+            zernio.publish(self.project["id"], 1, ["acc-yt"], self.when)
+        first = self._posts()[-1]["idem"]
+        rows = zernio.publish(self.project["id"], 1, ["acc-yt"], self.when)  # "Try again"
+        self.assertEqual(self._posts()[-1]["idem"], first)  # Zernio sees the same key: it can't post twice
+        self.assertEqual(rows[0]["status"], "scheduled")
+        with connect() as conn:
+            n = conn.execute("SELECT COUNT(*) FROM publications WHERE project_id = ?", (self.project["id"],)).fetchone()[0]
+        self.assertEqual(n, 1)  # the failed attempt's row became the post
+
+    def test_deleting_a_project_unschedules_its_posts(self):
+        row = zernio.publish(self.project["id"], 1, ["acc-yt"], self.when)[0]
+        projects.delete(self.project["id"])
+        self.assertEqual(SEEN["requests"][-1]["method"], "DELETE")
+        self.assertTrue(SEEN["requests"][-1]["path"].endswith(f"/v1/posts/{row['external_id']}"))
+        with connect() as conn:
+            self.assertIsNone(conn.execute("SELECT 1 FROM publications WHERE id = ?", (row["id"],)).fetchone())
+
+    def test_delete_is_refused_when_zernio_cant_cancel(self):
+        zernio.publish(self.project["id"], 1, ["acc-yt"], self.when)
+        api = zernio.API
+        zernio.API = "http://127.0.0.1:9/api"  # nothing listens there
+        try:
+            with self.assertRaisesRegex(UserError, "wasn't deleted"):
+                projects.delete(self.project["id"])
+        finally:
+            zernio.API = api
+        self.assertEqual(projects.get(self.project["id"])["id"], self.project["id"])  # still there
+
+    def test_reclip_is_refused_while_clip_posts_wait(self):
+        from app import clips
+        zernio.publish(self.project["id"], 1, ["acc-yt"], self.when)
+        with self.assertRaisesRegex(UserError, "still scheduled"):
+            clips.run(self.project["id"], lambda *a: None)
+        self.assertTrue(clips.list_(self.project["id"]))  # the old take is untouched
+
+    def test_two_starts_at_once_make_one_job(self):
+        import time
+        from unittest import mock
+        from app import jobs
+        real = jobs.latest
+        slow = lambda pid: (time.sleep(0.2), real(pid))[1]  # noqa: E731 - widen the old race window
+        results = []
+        with mock.patch.object(jobs, "latest", slow), mock.patch.object(jobs, "_run"):
+            def go():
+                try:
+                    results.append(jobs.start(self.project["id"], "export")["id"])
+                except UserError as e:
+                    results.append(str(e))
+            threads = [threading.Thread(target=go) for _ in range(2)]
+            [t.start() for t in threads]
+            [t.join() for t in threads]
+        self.assertEqual(sum("already has a job" in r for r in results), 1, results)
+
+    def test_a_failed_reclip_keeps_the_previous_take(self):
+        from app import clips
+        with self.assertRaises(Exception):  # the fixture's "source" is three bytes: download/transcribe fails
+            clips.run(self.project["id"], lambda *a: None)
+        kept = clips.list_(self.project["id"])
+        self.assertEqual(len(kept), 1)
+        self.assertTrue((config.MEDIA_DIR / f"clips/{self.project['id']}/clip01.mp4").exists())

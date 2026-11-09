@@ -150,11 +150,32 @@ def generate(project_id: str, report: Callable[[str, float], None]) -> None:
             _insert(project_id, i, item.angle, piece.quote.text, {**content, "error": why}, status="failed")
         else:
             batch.append(piece.quote.text)
+            if piece.narration:  # later groups in this batch must not open the same way either
+                openings.append(piece.narration.text.splitlines()[0])
             written.append({"id": _insert(project_id, i, item.angle, piece.quote.text, content), "content": content})
+    written = _drop_fakes(model, written, {t for t, _ in own})
     if written:
         # footage options only (thumbnails): nothing full-size downloads until the user confirms the picks
         assets.propose(brief, written, report)  # same (stage, 0..1) scale: it counts the same total steps
     report("Done", 1.0)
+
+
+FAKE = "This quote couldn't be confirmed as a real line by its author, so it wasn't kept. Regenerate the quote."
+
+
+def _drop_fakes(model, written: list[dict], own: set[str]) -> list[dict]:
+    """Q1 (2026-11-09): one check over the batch's "real" quotes; a line the checker calls invented or
+    misattributed fails its piece rather than going out under a famous name. The user's own lines are never checked."""
+    check = [w for w in written if w["content"]["quote"]["text"] not in own]
+    verdicts = model.verify_quotes([(w["content"]["quote"]["text"], w["content"]["quote"].get("author") or "")
+                                    for w in check])
+    fakes = {w["id"] for w, v in zip(check, verdicts) if v == "no"}
+    with connect() as conn:
+        for w in written:
+            if w["id"] in fakes:
+                conn.execute("UPDATE content_pieces SET status = 'failed', content = ? WHERE id = ?",
+                             (json.dumps({**w["content"], "error": FAKE}, ensure_ascii=False), w["id"]))
+    return [w for w in written if w["id"] not in fakes]
 
 
 def pieces(project_id: str) -> list[dict]:
@@ -184,8 +205,10 @@ def _rewrite(piece: dict, status: str) -> None:
 def delete_piece(piece_id: str) -> dict:
     """Delete one piece: its writing, its render files and its usage records (the project and the others stay)."""
     from app import jobs
+    from app.publish import posts
     piece = _piece(piece_id)
     jobs.ensure_idle(piece["project_id"])
+    posts.release(piece["project_id"], piece_id=piece_id)
     with connect() as conn:
         files = [r["local_path"] for r in conn.execute("SELECT local_path FROM renders WHERE piece_id = ?", (piece_id,))]
         conn.execute("DELETE FROM content_pieces WHERE id = ?", (piece_id,))  # renders + usage cascade
@@ -196,20 +219,33 @@ def delete_piece(piece_id: str) -> dict:
 
 def regenerate(piece_id: str, scope: str) -> dict:
     """§43: redo exactly one component (quote/narration/design/visual). Everything else is left untouched."""
+    from app import jobs
     piece = _piece(piece_id)
-    if piece["status"] == "failed":
-        raise UserError("A failed piece has no base to regenerate from. Generate the project again.")
+    jobs.ensure_idle(piece["project_id"], "changing it")  # a running render writes the piece back when done
     content_data = piece["content"]
+    # a piece failed only for its quote (the fact check) still has its plan: a new quote is exactly the fix
+    unverified = piece["status"] == "failed" and content_data.get("error") == FAKE
+    if piece["status"] == "failed" and not (unverified and scope == "quote"):
+        raise UserError("A failed piece has no base to regenerate from. Generate the project again.")
     brief = projects.get(piece["project_id"])["brief"]
 
     if scope == "visual":  # fresh footage options for review; the current footage stays until the user confirms
         assets.propose(brief, [{"id": piece_id, "content": content_data}], lambda stage, p: None)
         if content_data.get("visual_error"):
             raise UserError(content_data["visual_error"])
-    elif scope in ("quote", "narration", "design"):
+    elif scope == "design":  # the next design in the genre's rotation: instant, free, and visible on re-render
+        from app import design
+        quote = content_data["quote"]["text"]
+        current = design.pick(content_data.get("image_design") or brief.get("image_design", "auto"), brief["tone"],
+                              (content_data.get("design") or {}).get("composition"), piece["idx"] - 1, quote)
+        content_data["image_design"] = design.another(current, brief["tone"], quote)
+    elif scope in ("quote", "narration"):
         if scope == "narration" and quotes_only(brief):
             raise UserError("Quote images have no narration to redo.")
         model = get_model()
+        if scope == "narration":  # new words around the SAME quote: the script lands on it and may say who said it
+            brief = {**brief, "given_quote": content_data["quote"]["text"],
+                     "given_author": content_data["quote"].get("author")}
         item = PlanItem.model_validate(content_data["plan"])
         plan = BatchPlan(reading=content_data.get("reading", ""), batch_theme=brief["topic"], pieces=[item])
         history, openings = _history(200)
@@ -223,10 +259,21 @@ def regenerate(piece_id: str, scope: str) -> dict:
             avoid = [fresh.quote.text] + avoid
         if repeat:
             raise UserError("Every attempt repeated an earlier line.", f'"{repeat}"')
-        content_data[scope] = fresh.model_dump()[scope]
+        if scope == "quote" and model.verify_quotes([(fresh.quote.text, fresh.quote.author or "")]) == ["no"]:
+            raise UserError(FAKE.replace("Regenerate the quote.", "Try again."), f'"{fresh.quote.text}"')
+        new = fresh.model_dump()
+        # a new quote takes what was written around it: the narration lands on the quote (and may name its author)
+        # and the caption, title and alt text describe it, so keeping the old ones would contradict it on screen
+        keys = {"quote": ["quote", "metadata", "narration", "hook", "callouts"], "narration": ["narration"]}[scope]
+        for k in keys:
+            if k in new and (k != "narration" or new[k]):
+                content_data[k] = new[k]
     else:
         raise UserError("Unknown regeneration scope.", scope)
 
+    if unverified:  # it skipped the footage step when it failed: propose footage now, as generation would have
+        content_data.pop("error", None)
+        assets.propose(brief, [{"id": piece_id, "content": content_data}], lambda stage, p: None)
     _rewrite(piece, "written")
     return _piece(piece_id)
 

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { ArrowLeft, CaretRight, Check, Copy, DownloadSimple, FolderOpen, Scissors, UploadSimple } from '@phosphor-icons/react'
-import { call, studio, DEFAULT_CAPTIONS, GENRES, hasKey, label, PLATFORMS, TOPICS, useQuery, voiceOptions, BackendError,
+import { call, studio, DEFAULT_CAPTIONS, GENRES, hasKey, label, PLATFORMS, TOPICS, useQuery, voiceOptions, BackendError, startFailures,
   type Brief, type CaptionStyle, type DownloadStatus, type Project, type Settings, type VoiceList } from '../lib/studio'
 import { Button, Autocomplete, Choices, ErrorNote, Field, Input, PageHeader, Select, Textarea, cx, spot } from '../components/ui'
 import { CaptionPicker, ImageDesignPicker, PalettePicker } from '../components/StylePicker'
@@ -16,7 +16,7 @@ const artFor = (k: Kind) => ART[`../assets/create/${k}.webp`]
 const TITLES: Record<Kind, string> = { images: 'Quote images', videos: 'Narrated videos', clips: 'Clips from a video' }
 const MAX_QUOTE = 180
 const MAX_QUOTES = 100  // pasted or imported; the AI writes up to 20
-const MIN_CLIP = 60  // seconds: every finished clip runs at least a minute (owner 2026-11-08; clips.MIN_CLIP)
+const MIN_CLIP = 20  // seconds: the floor (config.MIN_CLIP); set 60 for TikTok's Creator Rewards
 const ORIENTATIONS = [
   { value: '9:16', label: '9:16 — Shorts, Reels, TikTok' },
   { value: '16:9', label: '16:9 — landscape' },
@@ -96,8 +96,9 @@ export function Create({ onCreated }: { onCreated: (id: string) => void }) {
         : { brief: { ...brief!, quotes: ownQuotes ? lines : [],
             topic: (brief!.topic.trim() || lines[0]?.replace(/[.!?,;:].*$/, '').trim().slice(0, 60) || 'my quotes').toLowerCase() } })
       // A failed start still opens the project; its page shows the job error or the action button.
-      if (kind === 'clips') await call('jobs.start', { project_id: p.id, kind: 'clip' }).catch(() => {})
-      else if (keySet) await call('jobs.start', { project_id: p.id }).catch(() => {})
+      const failed = (e: unknown) => { startFailures.set(p.id, e as BackendError) }
+      if (kind === 'clips') await call('jobs.start', { project_id: p.id, kind: 'clip' }).catch(failed)
+      else if (keySet) await call('jobs.start', { project_id: p.id }).catch(failed)
       onCreated(p.id)
     } catch (err) {
       setError(err as BackendError)
@@ -245,7 +246,7 @@ function Quantity({ brief, set, custom, setCustom }: {
   )
 }
 
-/** Quote images: the quotes (the AI's or the user's own), then the design. No voice, no video settings. */
+/** Quote images: the quotes (the AI's or the user's own), then the design, and optionally a voiced 9:16 video of each picture. */
 function ImagesForm({ brief, setBrief, own, setOwn, quotesText, setQuotesText, custom, setCustom, keySet, error,
   saving, step, setStep, valid }: {
   brief: Brief; setBrief: (b: Brief) => void; own: boolean; setOwn: (v: boolean) => void
@@ -256,9 +257,11 @@ function ImagesForm({ brief, setBrief, own, setOwn, quotesText, setQuotesText, c
   const lines = quoteLines(quotesText)
   const long = lines.findIndex((l) => l.length > MAX_QUOTE)
   const n = own ? lines.length : brief.quantity
+  const { data: voices } = useQuery<VoiceList>('tts.voices')
+  const voiced = brief.format === 'image_voiced'
   return (
     <Stepped steps={IMAGE_STEPS} step={step} setStep={setStep} canNext={valid} canCreate={valid} error={error}
-      saving={saving} keySet={keySet} createLabel={`Create ${n} ${n === 1 ? 'image' : 'images'}`}
+      saving={saving} keySet={keySet} createLabel={`Create ${n} ${n === 1 ? 'quote' : 'quotes'}${voiced ? ' with voiced videos' : ''}`}
       lastHint="The AI picks a photo for each quote and writes its caption. You confirm the photos, then render and export.">
       {step === 0 && (
         <>
@@ -282,6 +285,14 @@ function ImagesForm({ brief, setBrief, own, setOwn, quotesText, setQuotesText, c
 
       {step === 1 && (
         <>
+          <Choices legend="Make" value={brief.format} onChange={(v) => setBrief({ ...brief, format: v as Brief['format'],
+              platforms: v === 'image_voiced' ? ['instagram_feed', 'instagram_reels', 'tiktok', 'youtube_shorts'] : ['instagram_feed'] })}
+            options={[{ value: 'image', label: 'Pictures' }, { value: 'image_voiced', label: 'Pictures + voiced videos' }]} />
+          {brief.format === 'image_voiced' && (
+            <Field label="Voice" hint="Each quote is also read aloud over its picture as a 9:16 video, 10 seconds or more. One voice across the series keeps it recognisable.">
+              {(id) => <Select id={id} value={brief.voice} onChange={(v) => set('voice', v)} options={voiceOptions(voices)} />}
+            </Field>
+          )}
           <ImageDesignPicker design={brief.image_design} font={brief.image_font} position={brief.image_position}
             onChange={(patch) => setBrief({ ...brief, ...patch })} />
           <PalettePicker value={brief.palette} onChange={(v) => set('palette', v)} />

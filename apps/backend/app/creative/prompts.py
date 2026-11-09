@@ -29,8 +29,10 @@ anything a gym poster or a LinkedIn guru would say."""
 ATTRIBUTION = """- Every quote is REAL: a documented line said or written by a real person whose work is in the public \
 domain (died before 1955, the words published before 1929). quote.text is the documented wording, never invented, \
 never paraphrased, never "in the style of". quote.author is always that person's name ("Seneca", "Marcus Aurelius", \
-"Ralph Waldo Emerson"); never null, never "Unknown", "Anonymous" or a made-up name. A translation is fine; a line \
-you are not sure is genuine and correctly attributed is not: pick another.
+"Ralph Waldo Emerson"); never null, never "Unknown", "Anonymous" or a made-up name. A translated line must use a \
+translation published before 1929 (Marcus Aurelius: George Long 1862; Seneca: Gummere 1917-25; Epictetus: Long or \
+Oldfather 1925; Lao Tzu: Legge 1891); never a modern translation (Hays, Campbell, Mitchell, Kaufmann) and never Rumi \
+via Coleman Barks. A line you are not sure is genuine and correctly attributed is not fine: pick another.
 - Pick the line for the topic: it must genuinely speak to the reading of the topic, not merely sound wise."""
 
 INTEGRITY = f"""{ATTRIBUTION}
@@ -67,18 +69,22 @@ person mid-scroll.
 
 The craft:
 - Talk to ONE person. Use "you" when the topic is about them; describe the subject plainly when it is not.
-- The first line is the hook and lands in the first breath: a striking truth, a vivid image, or a name for something \
-the listener knows but never says. No greetings, no setup, no "we all have days when".
+- The first line is the hook and lands in the first breath, at most 12 words: a striking truth, a vivid image, or \
+one small, specific detail from the topic's world the listener has lived. No greetings, no setup, no "we all have \
+days when", no "there's a kind of".
+- Default length: 55 to 80 words (about 22 to 32 seconds aloud); Cinematic Minimal 25 to 45. Shorter beats longer.
 - Hooks that lose the scroll: a vague tease ("this changed everything"), a command ("stop scrolling"), wordplay to \
 decode, a slow build where the real hook is line three. The piece delivers exactly what the hook promised.
-- Every line earns the next. Lines connect by "but" or "so", never "and then". Turn the piece about a third of the \
-way in so attention climbs. Where it fits, the last line makes the first line hit differently.
+- Every line earns the next: show the "but" or "so" logic without starting lines with those words, never "and \
+then". Turn the piece about a third of the way in so attention climbs.
 - Concrete beats abstract: specific images from the topic's own world, never "X is important".
-- Short lines. Fragments are fine. One idea per line. Let silence do work.
+- One idea per line, written like speech: mostly full sentences of mixed length, at most two fragments. Each line \
+break is a pause.
 - It ends on ONE line worth screenshotting. That line is the quote: a REAL documented line (4 to 25 words) with \
 its real author, chosen to fit the topic. You never write the quote yourself.
-- The narration is your own spoken script, natural rhythm with room to breathe. It must OPEN on the hook and land \
-on the quote: it may end by saying the line and who said it.
+- The narration is your own spoken script, natural rhythm with room to breathe. It must OPEN on the hook and say \
+the quote LAST, word for word. Never "as X once said" and never the author's name aloud: the author is credited in \
+the caption. The last line should make the first line read differently on a rewatch.
 - Visual searches are cinematic, filmable stock-footage searches from the topic's world: subject + setting + light \
 or motion, 3 to 8 words, no brand names, no text-in-image requests.
 - The piece is CUT, not illustrated: "shots" is the shot list the edit cuts between, 4 beats in narration order. \
@@ -94,25 +100,31 @@ list, already in motion. Across the four use at least one "literal" (shows what 
 GENRES = {
     "hope": {"label": "Hope — spoken word",
              "quote": "Tender and hopeful lines: soft certainty, warmth earned through honesty, never toxic "
-                      "positivity. Voices like Helen Keller, Emily Dickinson, Walt Whitman, Victor Hugo, Ralph Waldo "
+                      "positivity. Voices like Emily Dickinson, Walt Whitman, Victor Hugo, Ralph Waldo "
                       "Emerson, Henry David Thoreau, Rabindranath Tagore, Kahlil Gibran.",
-             "voice": "Hopecore spoken word: gentle, vulnerable, unhurried. Name the quiet battles nobody sees and "
-                      "answer them with earned hope, never toxic positivity. It reads like a letter to the listener."},
+             "voice": "Hopecore spoken word: gentle, vulnerable, unhurried. Open on one small, specific detail from the "
+                      "topic's world (an object, a place, a gesture) the listener has lived; hope comes from that "
+                      "detail turning, never from reassurance. Banned: 'nobody sees', 'a kind of tired', 'it's "
+                      "okay to', 'you're not alone'. It reads like a letter to the listener."},
     "speech": {"label": "Hard Truth — speech edit",
                "quote": "Blunt, hard-edged lines: a truth or a challenge that does not soften itself. Voices like "
                         "Theodore Roosevelt, Frederick Douglass, Seneca, Epictetus, Friedrich Nietzsche, Booker T. "
-                        "Washington, Benjamin Franklin, Napoleon.",
+                        "Washington.",
                "voice": "Hard-truth speech edit: second person, present tense, high stakes. Short hard sentences "
-                        "that escalate; name the excuse, name the cost; end by calling them to hold the line."},
+                        "that escalate through concrete costs specific to the topic. End on a decision the "
+                        "listener can make today, in your own words (never 'hold the line', 'stay hard', 'get "
+                        "after it')."},
     "stoic": {"label": "Stoic Wisdom",
               "quote": "Calm, timeless Stoic lines: plain declaratives, unimpressed by noise. Marcus Aurelius, Seneca, "
                        "Epictetus, Musonius Rufus, Zeno of Citium, Cato, Cicero.",
-              "voice": "Stoic journal voice: calm, eternal, unimpressed by noise. Control versus not-control, "
-                       "mortality as a tool, duty over feeling. Plain declaratives, no self-help vocabulary."},
+              "voice": "Stoic journal voice: calm, eternal, unimpressed by noise. A Stoic's lens on THIS topic: "
+                       "what a Stoic would notice about it, said plainly. Use the dichotomy of control or mortality "
+                       "only when the topic invites it. Plain declaratives, no self-help vocabulary."},
     "history": {"label": "Historical Voices",
                 "quote": "Real documented words from public-domain figures that genuinely speak to the topic.",
-                "voice": "Historical voices: documented words from public-domain figures. The narration sets the "
-                         "moment the line came from and brings it to the topic at hand."},
+                "voice": "Historical voices: documented words from public-domain figures. The narration may name the "
+                         "work and roughly when, only when certain; it never invents where or to whom a line was "
+                         "said. It brings the line to the topic at hand."},
     "books": {"label": "Book Wisdom",
               "quote": "Real documented lines from public-domain classics that genuinely speak to the topic.",
               "voice": "Book wisdom: documented lines from public-domain classics. The narration bridges the classic "
@@ -145,10 +157,13 @@ VIDEO_PLAN_SHAPE = {
 QUOTE_FIELD = {"text": "the real documented line", "author": "the real person who said or wrote it"}
 DESIGN_FIELD = {"text_density": "low|medium|high", "animation": "still|slow|medium",
                 "composition": "editorial|centered|minimal|bold"}
-METADATA_FIELD = {"title": "short title, no hashtags", "description": "2-3 sentences",
-                  "caption": "social caption, 1-3 short lines: adds to the quote instead of repeating it, and ends "
-                             "on at most ONE ask that fits the piece (save it for a named future moment, or send it "
-                             "to a specific kind of person). Never 'follow for more', 'like if', 'tag a friend', "
+METADATA_FIELD = {"title": "what someone would type to find this, max 60 characters, no hashtags, e.g. "
+                           "'Marcus Aurelius on being ignored'",
+                  "description": "YouTube: 1-2 sentences, naming the quote's author and the work it comes from",
+                  "caption": "social caption, 1-3 short lines. Line 1 is the searchable phrase in plain words; then "
+                             "a detail the visual doesn't show, and credit the quote's author. Most captions need no "
+                             "ask: at most 1 in 3 per batch ends on one (save it, or send it to a specific kind of "
+                             "person), never two alike. Never 'follow for more', 'like if', 'tag a friend', "
                              "'comment YES'",
                   "hashtags": ["#tag", "3-5 niche, specific tags about the topic; never #fyp #viral #explore"],
                   "keywords": ["5-10 search keywords"],
@@ -173,7 +188,7 @@ VIDEO_PIECE_SHAPE = {
 
 def quotes_only(brief: dict) -> bool:
     """Quote images: the brief makes images and nothing else, so nothing is ever narrated."""
-    return brief.get("format") == "image"
+    return brief.get("format") in ("image", "image_voiced")
 
 
 def _brief(b: dict) -> str:
@@ -181,8 +196,9 @@ def _brief(b: dict) -> str:
     quotes = quotes_only(b)
     parts = [f'Topic: "{b["topic"]}"',
              f"Genre: {genre['label']}. {genre['quote'] if quotes else genre['voice']}"]
-    parts.append("Quote: a REAL documented public-domain line that genuinely speaks to the topic, with its real "
-                 "author's name in quote.author (never null).")
+    if not b.get("given_quote") and not b.get("quotes"):  # the user's own lines are never swapped for "real" ones
+        parts.append("Quote: a REAL documented public-domain line that genuinely speaks to the topic, with its real "
+                     "author's name in quote.author (never null).")
     if b.get("mood"):
         parts.append(f"Mood: {b['mood']}")
     if b.get("audience"):
@@ -199,10 +215,25 @@ def _brief(b: dict) -> str:
         parts.append(f"This piece's quote is fixed, written by the user: \"{b['given_quote']}\". quote.text must be "
                      f'exactly that, word for word; author = {json.dumps(b.get("given_author"))}. Write everything '
                      "else around it.")
+        if not b.get("given_author"):
+            parts.append("This line has no author. Never name or imply one, in the narration or anywhere else.")
     if b.get("target_seconds") and not quotes:
         parts.append(f"Narration target: about {b['target_seconds']} seconds aloud (roughly "
                      f"{round(b['target_seconds'] * 2.4)} words) - this overrides the default narration length")
     return "\n".join(parts)
+
+
+def verify(quotes: list[tuple[str, str]]) -> list[dict]:
+    """Q1 (2026-11-09): a cheap second opinion on each "real" quote before it is kept."""
+    lines = "\n".join(f'{i}. "{q}" - {a}' for i, (q, a) in enumerate(quotes, 1))
+    return [{"role": "system", "content": "You check quotations for a publisher. Be strict about attribution."},
+            {"role": "user", "content": f"""For each numbered quote, is it a genuine, documented line by the named \
+author? Translation wording may differ slightly. Answer "no" if it is invented, a paraphrase presented as a quote, or \
+misattributed (a well-known misattribution is "no"). Answer "unsure" if you can't tell.
+
+{lines}
+
+Return JSON: {{"verdicts": ["yes" | "no" | "unsure", ...]}}, one per quote, in order."""}]
 
 
 def _avoid(avoid: list[str]) -> str:
@@ -239,11 +270,14 @@ def piece(brief: dict, plan, item, avoid: list[str]) -> list[dict]:
     reading = getattr(plan, "reading", "") or f'the topic "{brief["topic"]}", read literally'
     head = f"""{_brief(brief)}
 
-Reading of the topic (stay inside it): {reading}
-Batch: {plan.batch_theme}. Other pieces cover: {", ".join(siblings) or "none"}."""
+Reading of the topic (stay inside it): {reading}""" + (
+        f"\nBatch: {plan.batch_theme}. Other pieces cover: {', '.join(siblings)}." if siblings else "")
     if quotes_only(brief):
-        ask = f"""This quote: facet "{item.angle}", photo subject "{item.visual_subject}", intensity {item.intensity}.
-Write the quote, its photo search, design hints and post copy. No narration, no script.{_avoid(avoid)}
+        facet = f' on the facet "{item.angle}"' if item.angle and item.angle != "quote" else ""
+        subject = (f', photo subject "{item.visual_subject}"'
+                   if item.visual_subject and item.visual_subject != brief["topic"] else "")
+        ask = f"""Write one quote{facet}{subject}, intensity {item.intensity}: the quote, its photo search and its post \
+copy. No narration, no script.{_avoid(avoid)}
 
 Before you answer, check the quote against the reading above. If it drifted to a neighbouring theme, or would sit \
 unchanged under a different topic, rewrite it.
