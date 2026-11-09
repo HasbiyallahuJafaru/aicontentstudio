@@ -16,10 +16,14 @@ the older milestone log (M1-M8) and is superseded where they disagree. Read this
   post + every 10 min / 15 min / hour / day / other day, each time editable). The posting calendar is gone.
   Checked: 224 backend tests, typecheck, build, packaged smoke. **Not run: `npm test`'s smoke** (updated for all of
   the above). Not tried for real: a generation with the real-quote prompts, Schedule all against Zernio.
-- **Creator card (2026-11-09, uncommitted, not in the uploaded installer):** React Bits Lanyard
+- **Committed and pushed 2026-11-09 as `e3b2311`** (everything below). **Installer rebuilt and uploaded 2026-11-09 05:10**
+  (includes the creator card) to both R2 copies; verified public link 200 at 268,732,600 bytes, gate 400 without a
+  token. `apps/desktop/release/` now holds only that one installer (owner: one, not several).
+- **Creator card (2026-11-09):** React Bits Lanyard
   (`components/Lanyard.tsx`, vendored, `@ts-nocheck`) in `components/CreatorCard.tsx`, mounted in the Shell. Drops in
   1.2 s after a `render`, `visuals_render` or `clip` job completes, at most twice a day (localStorage
-  `acs.creatorCard`); Escape, backdrop or Close dismiss it; a bar under it links website, LinkedIn, GitHub. Card art
+  `acs.creatorCard`); Escape, backdrop or Close dismiss it; under it three icon links (website, LinkedIn, GitHub) and Close. After each drop
+  it settles on the front, flips to the back ~5 s in, rests 2 s and turns home (Lanyard `peek` prop, ours). Card art
   (front with the owner's portrait `scripts/creator-photo.png`, back, strap) drawn by
   `scripts/make-creator-card.py` into `src/assets/lanyard/`. three.js loads lazily (1.2 MB chunk) only when it opens.
   Verified in the built app by screenshot (drop-in, flip, Escape). The smoke run disables the daily pop-up and opens
