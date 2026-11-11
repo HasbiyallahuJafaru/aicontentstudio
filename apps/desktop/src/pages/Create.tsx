@@ -16,7 +16,7 @@ const artFor = (k: Kind) => ART[`../assets/create/${k}.webp`]
 const TITLES: Record<Kind, string> = { images: 'Quote images', videos: 'Narrated videos', clips: 'Clips from a video' }
 const MAX_QUOTE = 180
 const MAX_QUOTES = 100  // pasted or imported; the AI writes up to 20
-const MIN_CLIP = 20  // seconds: the floor (config.MIN_CLIP); set 60 for TikTok's Creator Rewards
+const MIN_CLIP = 60  // seconds: the floor (config.MIN_CLIP), owner 2026-11-10: every clip runs a full minute
 const ORIENTATIONS = [
   { value: '9:16', label: '9:16 — Shorts, Reels, TikTok' },
   { value: '16:9', label: '16:9 — landscape' },
@@ -32,7 +32,7 @@ export function Create({ onCreated }: { onCreated: (id: string) => void }) {
   const { data: settings } = useQuery<Settings>('settings.get')
   const [kind, setKind] = useState<Kind | null>(null)
   const [brief, setBrief] = useState<Brief>()
-  const [clip, setClip] = useState<ClipForm>({ source: '', n: null, orientation: '9:16', min_len: MIN_CLIP, max_len: 90, burn_captions: true, fps: 30, captions: DEFAULT_CAPTIONS })
+  const [clip, setClip] = useState<ClipForm>({ source: '', n: null, orientation: '9:16', min_len: MIN_CLIP, max_len: 120, burn_captions: true, fps: 30, captions: DEFAULT_CAPTIONS })
   const [own, setOwn] = useState(false)  // quote images: the user's own lines instead of the AI's
   const [quotesText, setQuotesText] = useState('')
   const [custom, setCustom] = useState(false)

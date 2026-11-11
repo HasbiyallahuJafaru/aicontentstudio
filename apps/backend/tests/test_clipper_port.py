@@ -383,8 +383,8 @@ class ClipProject(unittest.TestCase):
         self.addCleanup(floor.stop)
 
     def test_a_short_pick_grows_into_its_setup_never_past_its_payoff(self):
-        """A clip under the floor grows EARLIER (its setup), never later: the end is the payoff (2026-11-09). With
-        no earlier talk to take in, it runs a little short rather than padding the ending."""
+        """A clip under the floor grows EARLIER (its setup) first: the end is the payoff (2026-11-09). With no
+        earlier talk left, it runs on past the end: the minute is a hard floor (owner 2026-11-10)."""
         words = [{"word": f"w{i}.", "start": i * 0.5, "end": i * 0.5 + 0.4} for i in range(240)]  # 120 s of talk
         with mock.patch.object(clips_app, "silences", lambda v, a, b: []):
             start, end, ranges, _ = clips_app._at_least(None, words, 100.0, 119.9, None, 60.0, words[-1]["end"])
@@ -394,7 +394,8 @@ class ClipProject(unittest.TestCase):
             self.assertLessEqual(ranges[-1][1], 119.9)  # the ranges are planned on the span returned
             start, end, ranges, _ = clips_app._at_least(None, words, 10.0, 30.0, None, 60.0, words[-1]["end"])
             self.assertLessEqual(start, 0.5)  # all the setup there is (snapped to a sentence)
-            self.assertEqual(end, 30.0)  # the payoff end stays put
+            self.assertGreater(end, 30.0)  # then the following sentences, until the minute is reached
+            self.assertGreaterEqual(sum(b - a for a, b in ranges), 60.0)
 
     def test_create_validates_the_source(self):
         with self.assertRaises(UserError):
@@ -452,7 +453,7 @@ class ClipProject(unittest.TestCase):
         self.assertEqual(job["status"], "completed")
         self.assertEqual(len(clips_app.list_(p["id"])), 1)
 
-    def test_clip_count_is_one_per_six_minutes_capped_at_ten(self):
+    def test_clip_count_grows_with_the_source(self):
         from app.clipper import acquire
         src = config.MEDIA_DIR / "fixtures" / "clip-src2.mp4"
         make_talking_head(str(src))
@@ -464,14 +465,14 @@ class ClipProject(unittest.TestCase):
         try:
             with mock.patch.object(clips_app.select, "find_clips", lambda t, n, a, b: asked.append(n) or []), \
                  mock.patch.object(jobs, "emit"):
-                job = jobs.start(p["id"], kind="clip")  # n=None -> about one clip per 6 minutes, capped at 10
+                job = jobs.start(p["id"], kind="clip")  # n=None -> one per 2.5 min of speech, no cap
                 for _ in range(400):
                     job = jobs.get(job["id"])
                     if job["status"] not in ("queued", "running"):
                         break
                     time.sleep(0.05)
             self.assertEqual(job["status"], "completed")
-            self.assertEqual(asked, [10])
+            self.assertEqual(asked, [24])  # an hour of talk
             self.assertEqual(clips_app.list_(p["id"]), [])
         finally:
             (config.MEDIA_DIR / clips_app.WORK / work.name / "transcript.json").unlink(missing_ok=True)

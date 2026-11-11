@@ -10,7 +10,7 @@ DB_PATH = DATA_DIR / "app.db"
 # shortest finished clip, seconds (owner 2026-11-08: a minute). Only the smoke run lowers it, to clip a 12 s fixture.
 # seconds of finished clip. 20, not 60 (2026-11-09): strong hook-and-payoff moments often run 20-45 s and
 # Shorts/Reels reward completion; set 60 in Create for TikTok's Creator Rewards.
-MIN_CLIP = float(os.environ.get("ACS_MIN_CLIP") or 20)
+MIN_CLIP = float(os.environ.get("ACS_MIN_CLIP") or 60)  # owner 2026-11-10: every clip runs a full minute
 MEDIA_DIR = DATA_DIR / "media"
 
 # A packaged install ships its own ffmpeg and passes these; on a dev machine they fall back to PATH.

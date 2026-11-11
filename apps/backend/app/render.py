@@ -23,7 +23,12 @@ IMAGE_W, IMAGE_H = 1080, 1350
 MARGIN = 96
 SIZES = (96, 84, 72, 64, 56)  # §25: size follows quote length and line count
 STALL_SECS = 180  # no ffmpeg progress for this long = wedged; real renders emit progress ~2x/sec
-SUBTITLES_FONTS = design.FONTS_DIR  # every bundled face, so any caption font resolves
+SUBTITLES_FONTS = design.FONTS_DIR
+# Shot matching (owner 2026-11-10: "no colour grading so everything matches"): per-channel level stretch, half
+# strength and temporally smoothed, so each source reaches a common exposure and a near-neutral white balance before
+# the genre grade. ponytail: levels only, not a learned colour transfer; enough to stop one clip reading orange and
+# the next blue under the same grade.
+NORMALIZE = "normalize=smoothing=24:independence=0.6:strength=0.45"  # every bundled face, so any caption font resolves
 
 
 def _font(size: int, weight: int = 600) -> ImageFont.FreeTypeFont:
@@ -251,12 +256,17 @@ class FFmpegRenderer:
             frames = max(round(length * fps), 1)
             ramp = f",setpts={speed:g}*PTS" if speed != 1.0 else ""
             if shot.get("blur"):
-                blur_geom = (f"scale={self.w}:{self.h}:force_original_aspect_ratio=decrease")
-                chain.append(f"[{i}:v]split=2[bg{i}][fg{i}];"
-                             f"[bg{i}]scale={self.w}:{self.h}:force_original_aspect_ratio=increase,"
-                             f"crop={self.w}:{self.h},boxblur=24:2[bgb{i}];"
-                             f"[fg{i}]{blur_geom}[fgp{i}];"
-                             f"[bgb{i}][fgp{i}]overlay=(W-w)/2:(H-h)/2,fps={fps:g},setsar=1[v{i}]")
+                # a still (archival painting, map) is composed at 2x and pushed in slowly, so it moves like the
+                # rest of the edit instead of freezing; a video keeps the plain fit
+                k = 2 if shot.get("still") else 1
+                bw, bh = k * self.w, k * self.h
+                push = (f",zoompan=z='min(1+0.05*on/{frames:g},1.05)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'"
+                        f":d=1:s={self.w}x{self.h}:fps={fps:g}") if k == 2 else ""
+                chain.append(f"[{i}:v]{NORMALIZE},split=2[bg{i}][fg{i}];"
+                             f"[bg{i}]scale={bw // 4}:{bh // 4}:force_original_aspect_ratio=increase,"
+                             f"crop={bw // 4}:{bh // 4},boxblur=12:2,scale={bw}:{bh}[bgb{i}];"
+                             f"[fg{i}]scale={bw}:{bh}:force_original_aspect_ratio=decrease[fgp{i}];"
+                             f"[bgb{i}][fgp{i}]overlay=(W-w)/2:(H-h)/2,fps={fps:g}{push},setsar=1[v{i}]")
                 continue
             # zoompan quantises its zoom in source pixels, which stair-steps on a still: supersample first
             box = (2 * self.w, 2 * self.h) if shot.get("still") else (self.w, self.h)
@@ -276,7 +286,11 @@ class FFmpegRenderer:
             # conform to the timeline rate BEFORE zoompan: zoompan (d=1) stamps one output frame per input frame
             # at its own rate, so a 25 fps clip played 1.2x fast and 59.94 fps at half speed (2026-11-09). The ramp
             # comes first so fps fills the slow-mo with whole frames instead of leaving a VFR gap.
-            chain.append(f"[{i}:v]{geom}{ramp},fps={fps:g}{zoom},setsar=1[v{i}]")
+            # NORMALIZE first, on the 1x frame: every source lands on the same exposure and a neutral white
+            # before the shared grade, so clips from different cameras and a scanned painting cut as one film
+            # (a still is matched on its source frame, before the 2x supersample, to keep the cost down)
+            order = f"{NORMALIZE},{geom}" if shot.get("still") else f"{geom},{NORMALIZE}"
+            chain.append(f"[{i}:v]{order}{ramp},fps={fps:g}{zoom},setsar=1[v{i}]")
 
         # every join is an xfade, a hard cut included (one frame): one timeline, one set of offset maths.
         # xfade eats `duration` seconds at each join, which the planned shot lengths already carry back.
@@ -360,7 +374,7 @@ class FFmpegRenderer:
                         f";[mu][key]sidechaincompress=threshold=0.03:ratio={max(2.0, duck * 1.5):g}"
                         ":attack=20:release=400[duck]"
                         ";[nk][duck]amix=inputs=2:duration=first:normalize=0,alimiter=limit=0.89[aout]")
-            args += ["-i", str(self.music)]
+            args += ["-stream_loop", "-1", "-i", str(self.music)]  # a short bed loops rather than stopping mid-video
         else:
             a_chain += ";[na]anull[aout]"
 

@@ -15,7 +15,7 @@ from itertools import groupby
 from PIL import Image
 
 from app import config, settings, visual
-from app.assets.providers import Candidate, VisualProvider, get_providers
+from app.assets.providers import Candidate, CommonsProvider, VisualProvider, get_providers
 from app.database import connect
 from app.errors import UserError
 
@@ -26,7 +26,9 @@ SEARCH_LIMIT = 6        # candidates per provider per query (one request); thumb
 ENOUGH = 3              # usable candidates from one query that make asking the next provider unnecessary
 CACHE_SECS = 6 * 3600   # a repeated search (re-roll, "find another visual") is answered from memory, not the API
 PALETTE_WEIGHT = 0.35   # how much a chosen palette counts in the ranking (soft genre default: a third of that)
-SHOTS = 4               # distinct visuals a video piece is cut from (one clip on its own reads as a slideshow)
+SHOTS = 4               # the fewest distinct visuals a video piece is cut from (one clip alone reads as a slideshow)
+MAX_SHOTS = 14          # the most: one per narration sentence (2026-11-10), each a search, so it stays bounded
+ARCHIVE_MIN_HEIGHT = 500  # old paintings and maps are smaller than stock and are shown whole, not cropped
 
 
 # --- perceptual hashing ---------------------------------------------------------------------------------------------
@@ -46,6 +48,8 @@ def hamming(a: str, b: str) -> int:
 # --- suitability and scoring (PRD §16) --------------------------------------------------------------------------------
 
 def suitable(c: Candidate) -> bool:
+    if c.provider == "commons":  # archival stills are shown whole over a blurred fill (renders._shots_for)
+        return min(c.width, c.height) >= ARCHIVE_MIN_HEIGHT
     if c.width > c.height:  # outputs are portrait; landscape masters waste bandwidth and crop badly
         return False
     if c.height < MIN_HEIGHT:
@@ -138,6 +142,11 @@ async def _search_all(providers: list[VisualProvider], query: str, wanted: str, 
     return out
 
 
+def _archival(content: dict) -> set[str]:
+    """Shot queries meant for Wikimedia Commons (documentaries' real portraits, maps, artefacts)."""
+    return {s["query"] for s in content["visual"].get("shots") or [] if s.get("role") == "archival"}
+
+
 def _queries(content: dict) -> list[str]:
     """This piece's shot queries. Pieces written before the shot list fall back to their two flat queries."""
     shots = [s["query"] for s in content["visual"].get("shots") or []]
@@ -149,7 +158,7 @@ async def _take(best: Candidate, meta: dict, piece: dict, providers: list[Visual
                 ever: dict, recent: list[dict]) -> dict | None:
     """Store one chosen candidate (downloading it only if it is new) and return its content entry. None when it
     looks like a shot this piece already has - checked before the full download, so a duplicate costs nothing."""
-    provider = next(p for p in providers if p.name == best.provider)
+    provider = next((p for p in providers if p.name == best.provider), None) or CommonsProvider()
     with connect() as conn:
         row = conn.execute("SELECT id, thumb_path, perceptual_hash, themes, quality_score FROM assets "
                            "WHERE provider = ? AND provider_asset_id = ?",
@@ -290,15 +299,21 @@ async def _propose_one(brief: dict, piece: dict, providers: list[VisualProvider]
                        weights: dict[str, float]) -> None:
     content = piece["content"]
     wanted = _wanted(brief, content)
-    want = SHOTS if wanted == "video" else 1
     queries = _queries(content)
+    archival = _archival(content)
+    # a video gets one visual per planned shot (one per sentence), never fewer than SHOTS
+    want = min(max(len(content["visual"].get("shots") or []), SHOTS), MAX_SHOTS) if wanted == "video" else 1
+    commons = [CommonsProvider()] if archival else []
     palette = brief.get("palette", "auto")
     palette, soft = (palette, "") if palette in visual.PALETTES else ("", visual.GENRE_PALETTE.get(brief["tone"], ""))
     options: list[dict] = []
     known: dict[str, dict] = {}  # one asset can answer two shot queries: offered once, fetched once
     searched: list[str] = []
     for q in queries:  # lazily: stop as soon as every needed shot has a fresh pick (an image usually needs one query)
-        options += await _options(providers, q, wanted, ever, recent, weights, known, palette, soft)
+        if q in archival:  # a real portrait / map / artefact: Commons stills, never stock
+            options += await _options(commons, q, "image", ever, recent, weights, known)
+        else:
+            options += await _options(providers, q, wanted, ever, recent, weights, known, palette, soft)
         searched.append(q)
         picks = _prepick(options, searched, want)
         if len(picks) >= want and all(o["note"] is None for o in options if o["key"] in picks):

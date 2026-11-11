@@ -109,8 +109,8 @@ export type ExportRun = { id: string; project_id: string; dir: string; path: str
   created_at: string; project: string; covers: string[] }
 export type BackendStatus = { state: 'starting' | 'ready' | 'crashed' | 'stopped'; message?: string; detail?: string }
 export type VoiceList = { value: string; label: string }[]
-/** Narration picker options: Gemini voices from tts.voices, empty = the studio default (Charon). */
-export const voiceOptions = (voices?: VoiceList) => [{ value: '', label: 'Default · Charon' }, ...(voices ?? [])]
+/** Narration picker options: narrator personas + Gemini voices from tts.voices, empty = the genre's narrator. */
+export const voiceOptions = (voices?: VoiceList) => [{ value: '', label: 'Default · the genre narrator' }, ...(voices ?? [])]
 export type SecretName = 'OPENROUTER_API_KEY' | 'PEXELS_API_KEY' | 'UNSPLASH_ACCESS_KEY'
 
 export const TOPICS = ['Motivation', 'Discipline', 'Personal growth', 'Mindset', 'Productivity', 'Relationships',

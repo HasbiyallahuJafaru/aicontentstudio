@@ -5,9 +5,9 @@ import uuid
 from difflib import SequenceMatcher
 from typing import Callable
 
-from app import assets, config, projects
+from app import assets, config, projects, research
 from app.creative.model import get_model
-from app.creative.prompts import quotes_only
+from app.creative.prompts import documentary, quotes_only
 from app.creative.schemas import BatchPlan, PlanItem
 from app.database import connect
 from app.errors import UserError
@@ -57,8 +57,11 @@ def split_author(line: str) -> tuple[str, str | None]:
     return line.strip(), None
 
 
-def _signed(piece) -> bool:
-    """Every AI-chosen quote names its real author (owner 2026-11-08); placeholders don't count."""
+def _signed(piece, brief: dict | None = None) -> bool:
+    """Every AI-chosen quote names its real author (owner 2026-11-08); placeholders don't count. A documentary's
+    quote may be its own closing line, which has no author (DOC_SYSTEM), so it is never "unsigned"."""
+    if brief and documentary(brief) and not piece.quote.author:
+        return True
     who = (piece.quote.author or "").strip().lower()
     return bool(who) and who not in {"unknown", "anonymous", "anon", "n/a", "none", "null", "author"}
 
@@ -84,6 +87,16 @@ def quote_plan(brief: dict, n: int) -> BatchPlan:
                                     narration_style="")
     return BatchPlan.model_construct(reading="", batch_theme=subject, pieces=[item] * n)
 
+def with_facts(brief: dict) -> dict:
+    """The brief plus its source article when the topic is a real subject on Wikipedia (research.py). Quote images
+    and the user's own quotes are never documentaries. The article grows with the batch so ten pieces have ten
+    chapters to tell."""
+    if quotes_only(brief) or brief.get("quotes"):
+        return brief
+    facts = research.lookup(brief.get("topic") or "", min(6000 + 1600 * (brief.get("quantity", 1) - 1), 24000))
+    return {**brief, "facts": facts} if facts else brief
+
+
 def generate(project_id: str, report: Callable[[str, float], None]) -> None:
     brief = projects.get(project_id)["brief"]
     n = brief["quantity"]
@@ -102,8 +115,18 @@ def generate(project_id: str, report: Callable[[str, float], None]) -> None:
         plan = BatchPlan.model_construct(reading=plans[0].reading, batch_theme=plans[0].batch_theme,
                                          pieces=[p for pl in plans for p in pl.pieces])
     else:
-        report(f"Planning {n} {'angle' if n == 1 else 'angles'}", 0.02)
-        plan = model.plan_batch(brief, history[:30] + openings)
+        report("Looking up the subject", 0.01)
+        brief = with_facts(brief)
+        if documentary(brief):
+            report(f"Planning {n} {'chapter' if n == 1 else 'chapters'} of {brief['facts']['title']}", 0.02)
+            plan = model.plan_batch(brief, history[:30] + openings)
+            if not plan.subject:  # a theme that only shares a word with an article: plan it as a theme
+                brief = {k: v for k, v in brief.items() if k != "facts"}
+                plan = None
+        if not documentary(brief):
+            report(f"Planning {n} {'angle' if n == 1 else 'angles'}", 0.02)
+            plan = model.plan_batch(brief, history[:30] + openings)
+    sources = ([{"title": brief["facts"]["title"], "url": brief["facts"]["url"]}] if documentary(brief) else None)
 
     with connect() as conn:  # the new plan replaces any earlier pieces of this project
         conn.execute("DELETE FROM content_pieces WHERE project_id = ?", (project_id,))
@@ -133,17 +156,19 @@ def generate(project_id: str, report: Callable[[str, float], None]) -> None:
         piece, repeat, unsigned = drafts[i], None, False
         if piece is not None:
             repeat = too_similar(piece.quote.text, batch + history)
-            unsigned = not _signed(piece)
+            unsigned = not _signed(piece, brief)
         tries = 0 if piece is not None and not repeat and not unsigned else PIECE_ATTEMPTS - (piece is not None)
         for _ in range(tries):  # unusable, a repeat or a quote with no author: write it alone
             if repeat:
                 avoid = [repeat] + avoid
             piece = model.write_piece(brief, plan, item, avoid)
             repeat = too_similar(piece.quote.text, batch + history)
-            unsigned = not _signed(piece)
+            unsigned = not _signed(piece, brief)
             if not repeat and not unsigned:
                 break
         content = {"plan": item.model_dump(), "reading": plan.reading, **piece.model_dump()}
+        if sources:  # a documentary keeps its source: shown with the piece, and regenerate stays factual
+            content["sources"] = sources
         if repeat or unsigned:
             why = (f'Every attempt repeated an earlier line: "{repeat}"' if repeat
                    else "Every attempt came back without a real author for the quote.")
@@ -166,7 +191,8 @@ FAKE = "This quote couldn't be confirmed as a real line by its author, so it was
 def _drop_fakes(model, written: list[dict], own: set[str]) -> list[dict]:
     """Q1 (2026-11-09): one check over the batch's "real" quotes; a line the checker calls invented or
     misattributed fails its piece rather than going out under a famous name. The user's own lines are never checked."""
-    check = [w for w in written if w["content"]["quote"]["text"] not in own]
+    check = [w for w in written if w["content"]["quote"]["text"] not in own
+             and not (w["content"].get("sources") and not w["content"]["quote"].get("author"))]
     verdicts = model.verify_quotes([(w["content"]["quote"]["text"], w["content"]["quote"].get("author") or "")
                                     for w in check])
     fakes = {w["id"] for w, v in zip(check, verdicts) if v == "no"}
@@ -228,6 +254,8 @@ def regenerate(piece_id: str, scope: str) -> dict:
     if piece["status"] == "failed" and not (unverified and scope == "quote"):
         raise UserError("A failed piece has no base to regenerate from. Generate the project again.")
     brief = projects.get(piece["project_id"])["brief"]
+    if content_data.get("sources"):  # a documentary piece: rewrite it from the same article
+        brief = with_facts(brief)
 
     if scope == "visual":  # fresh footage options for review; the current footage stays until the user confirms
         assets.propose(brief, [{"id": piece_id, "content": content_data}], lambda stage, p: None)

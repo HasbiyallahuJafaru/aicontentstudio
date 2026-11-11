@@ -10,7 +10,7 @@ import tempfile
 import uuid
 from pathlib import Path
 
-from app import config, content, design, edit, motion, projects, render, settings, tts
+from app import config, content, design, edit, motion, music, projects, render, settings, tts
 from app.database import connect
 from app.errors import Cancelled, UserError, explain
 
@@ -73,6 +73,8 @@ def _shots_for(assets: list[dict], duration: float, words: list[dict], tone: str
         still = a["asset_type"] == "image"
         shot = {"src": str(config.MEDIA_DIR / a["local_path"]), "seek": 0.0, "length": s["length"],
                 "still": still, "motion": "push" if still else s["motion"], "speed": s["speed"]}
+        if still and (a["width"] or 0) > (a["height"] or 1) * 0.75:
+            shot["blur"] = True  # an archival painting or map: shown whole over a blurred fill of itself
         if not still:
             avail = max(a["duration"] or duration, 0.5)
             shot["seek"] = round(avail * s["nth"] / max(s["of"], 1), 2)
@@ -100,7 +102,8 @@ def render_project(project_id: str, report, piece_ids: list[str] | None = None) 
     # the project's narration voice; briefs saved before Gemini hold "engine:voice" pairs (kokoro:af_heart),
     # which fall back to the default voice
     voice = (brief.get("voice") or "").rpartition(":")[2]
-    voice = voice if voice in tts.VOICES else tts.GENRE_VOICES.get(brief.get("tone"), tts.DEFAULT_VOICE)
+    voice = (voice if voice in tts.VOICES or voice in tts.NARRATORS
+             else tts.GENRE_VOICES.get(brief.get("tone"), tts.DEFAULT_VOICE))
 
     n = len(pieces)
     fail = getattr(report, "fail", None)  # jobs.py's report can mark one step failed and carry on
@@ -115,15 +118,22 @@ def render_project(project_id: str, report, piece_ids: list[str] | None = None) 
 
         # each piece's share of the bar: narration and word timings first, ffmpeg's encode is the long part
         enc = (0.45, 0.95 if "image" in kinds else 1.0) if "video" in kinds else None
+        if not s["music_path"]:  # the bundled library (owner 2026-11-10): a genre track, varied piece to piece
+            renderer.music = music.pick(brief.get("tone", ""), piece["idx"]) if s.get("bundled_music", True) else None
+            renderer.music_volume = music.VOLUME
         try:
             narration = None
             if "video" in kinds:  # a quote image has no voice: never pay for (or wait on) narration it won't use
                 at("Narrating", 0.0)
-                if voiced:  # the quote read aloud, then who said it
+                if voiced:  # the quote read aloud, who said it, then the lesson on that exact quote
                     q = content_data["quote"]
+                    lesson = content_data.get("lesson") or ""
+                    script = (q["text"] + (f"\n\n{q['author']}." if q.get("author") else "")
+                              + (f"\n\n{lesson}" if lesson else ""))
                     narration = asyncio.run(engine.generate(
-                        q["text"] + (f"\n\n{q['author']}." if q.get("author") else ""), voice,
-                        "slow and unhurried, letting each phrase land, a breath of silence before the name"))
+                        script, voice, "the quote read slowly so each phrase lands, a breath of silence before the name"
+                        + ("; then, after a pause, the lesson spoken warmly and personally to one listener, like "
+                           "advice from someone who has lived it" if lesson else "")))
                 else:
                     narration = asyncio.run(engine.generate(content_data["narration"]["text"], voice,
                                                             content_data["narration"].get("delivery", "")))

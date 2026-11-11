@@ -191,7 +191,7 @@ def find_clips(transcript: dict, n: int, min_len: float, max_len: float) -> list
     segments, words = transcript["segments"], transcript["words"]
     lines = "\n".join(f"[{s['start']:.1f}-{s['end']:.1f}] {s['text']}" for s in segments)
     s = settings.get()
-    moments = _ask(PASS1.format(min=min_len, max=max_len, n=min(2 * n, 40)), lines,  # the whole transcript: fast
+    moments = _ask(PASS1.format(min=min_len, max=max_len, n=2 * n), lines,  # the whole transcript: fast
                    lambda c: parse_moments(c, segments[-1]["end"], min_len, max_len), s["ai_model_fast"])
     said = lambda a, b: " ".join(w["word"] for w in words if a <= w["start"] < b)
     candidates = "\n\n".join(

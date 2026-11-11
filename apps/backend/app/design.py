@@ -46,7 +46,7 @@ GENRE_DESIGNS = {"hope": ["whisper", "notes", "polaroid", "paper", "riso", "clas
                  "books": ["highlight", "classic", "notes", "paper", "split"],
                  "cinema": ["subtitle", "whisper", "riso", "polaroid", "noir", "split"]}
 COMPOSITION = {"minimal": "whisper", "bold": "stack", "editorial": "split", "centered": "classic"}
-SHORT_ONLY = {"statement": 12, "stack": 14, "whisper": 20, "swiss": 16, "subtitle": 30, "riso": 22}  # words: past this the design stops reading well
+SHORT_ONLY = {"statement": 12, "stack": 14, "whisper": 20, "swiss": 16, "subtitle": 30, "riso": 22, "polaroid": 40}  # words: past this the design stops reading well
 INK, BONE = "#151413", "#F3F0EA"
 
 

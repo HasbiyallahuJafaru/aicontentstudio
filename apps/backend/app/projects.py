@@ -59,11 +59,11 @@ class ClipBrief(BaseModel):
     """A clip project cuts one long video into captioned shorts instead of writing content."""
     kind: Literal["clip"] = "clip"
     source: str = Field(min_length=1, max_length=500)  # http(s) URL or a local file path
-    n: int | None = Field(None, ge=1, le=30)  # None = about one clip per minute of source
-    # the floor is config.MIN_CLIP (20 s since 2026-11-09; 60 s was the owner rule of 2026-11-08). The Create form enforces it and clips.run floors any
+    n: int | None = Field(None, ge=1, le=200)  # None = as many as the source holds (clips.run)
+    # the floor is config.MIN_CLIP (60 s, owner 2026-11-10; it was 20 s for a day). The Create form enforces it and clips.run floors any
     # saved brief at clips.MIN_CLIP, so older projects and the CLI get it too (tests lower the floor to stay fast).
-    min_len: float = Field(20, ge=1, le=600)
-    max_len: float = Field(90, ge=1, le=900)
+    min_len: float = Field(60, ge=1, le=600)
+    max_len: float = Field(120, ge=1, le=900)
     orientation: Literal["9:16", "16:9", "1:1"] = "9:16"
     burn_captions: bool = True
     captions: CaptionStyle = Field(default_factory=CaptionStyle)

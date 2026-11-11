@@ -24,23 +24,25 @@ LOOKS = {
     "vivid": {"grade": "eq=saturation=1.32:contrast=1.05", "bloom": 0.0, "grain": 4, "vignette": 5.0,
               "unsharp": 0.0, "bars": 0.0},
     # genre grades: reached when the brief's Look is "auto"
-    "hope": {"grade": "curves=r='0/0.02 0.5/0.53 1/1':g='0/0.015 0.5/0.5 1/0.99':b='0/0.03 0.5/0.48 1/0.96',"
-                      "eq=saturation=1.02:contrast=1.02",
+    # 2026-11-10: split-toned (shadows and highlights pushed apart) and about twice as strong as the first cut,
+    # which nudged curves ~3% and read as ungraded; the per-shot match in render.NORMALIZE makes this safe to push
+    "hope": {"grade": "colorbalance=rs=.04:bs=.05:rh=.08:gh=.03:bh=-.08,"
+                      "curves=all='0/0.04 0.25/0.24 0.75/0.8 1/0.97',eq=saturation=1.05:contrast=1.04",
              "bloom": 0.30, "grain": 4, "vignette": 6.0, "unsharp": 0.0, "bars": 0.0},
-    "speech": {"grade": "curves=r='0/0 0.5/0.52 1/1':b='0/0.02 0.5/0.48 1/0.98',"
-                        "eq=saturation=0.75:contrast=1.22",
+    "speech": {"grade": "colorbalance=rs=-.05:bs=.07:rh=.05:bh=-.04,"
+                        "curves=all='0/0 0.25/0.19 0.75/0.82 1/1',eq=saturation=0.62:contrast=1.2",
                "bloom": 0.0, "grain": 5, "vignette": 3.5, "unsharp": 0.6, "bars": 0.0},
-    "stoic": {"grade": "curves=r='0/0 0.5/0.47 1/0.97':b='0/0.05 0.5/0.53 1/1',"
-                       "eq=saturation=0.85:contrast=1.06",
+    "stoic": {"grade": "colorbalance=rs=-.04:gs=.01:bs=.06:rh=.05:gh=.02:bh=-.03,"
+                       "curves=all='0/0.05 0.25/0.22 0.75/0.78 1/0.95',eq=saturation=0.6:contrast=1.08",
               "bloom": 0.0, "grain": 3, "vignette": 6.0, "unsharp": 0.0, "bars": 0.0},
-    "history": {"grade": "eq=saturation=0.35,colorbalance=rm=.12:gm=.04:bm=-.10,"
-                         "curves=all='0/0.06 0.5/0.5 1/0.96'",
+    "history": {"grade": "eq=saturation=0.42,colorbalance=rs=.03:bs=-.02:rm=.12:gm=.05:bm=-.10:rh=.06:bh=-.08,"
+                         "curves=all='0/0.07 0.25/0.24 0.75/0.79 1/0.95'",
                 "bloom": 0.20, "grain": 5, "vignette": 3.0, "unsharp": 0.0, "bars": 0.11},
-    "books": {"grade": "curves=r='0/0.01 0.5/0.51 1/0.99':b='0/0.03 0.5/0.5 1/0.97',"
-                       "eq=saturation=0.95:contrast=1.04",
+    "books": {"grade": "colorbalance=rs=.03:gs=.01:bs=-.02:rh=.07:gh=.03:bh=-.07,"
+                       "curves=all='0/0.05 0.25/0.24 0.75/0.79 1/0.96',eq=saturation=0.85:contrast=1.04",
               "bloom": 0.18, "grain": 5, "vignette": 5.0, "unsharp": 0.0, "bars": 0.0},
-    "cinema": {"grade": "curves=r='0/0 0.45/0.47 1/1':b='0/0.06 0.5/0.52 1/0.94',"
-                        "eq=saturation=1.1:contrast=1.08",
+    "cinema": {"grade": "colorbalance=rs=-.07:gs=-.01:bs=.09:rh=.08:gh=.02:bh=-.09,"
+                        "curves=all='0/0.03 0.25/0.21 0.75/0.8 1/0.97',eq=saturation=1.0:contrast=1.08",
                "bloom": 0.40, "grain": 4, "vignette": 5.0, "unsharp": 0.0, "bars": 0.11},
 }
 
@@ -66,7 +68,8 @@ CUTS = {
     "cinema": {"cadence": (3.5, 4.5), "transition": ("fadeblack", 0.4), "every": True,
                "motion": ("in", "pan"), "ramp": True, "duck": 4.0, "look": "cinema"},
 }
-MAX_SHOTS = 12     # past this the edit is strobing, not cutting
+MAX_SHOTS = 20     # a 60 s documentary cut every 3 s; past this the edit is strobing, not cutting
+STRETCH = 1.8      # a shot may hold up to this times the cadence's longest before footage is reused
 HARD = ("fade", 0.04)  # a hard cut, expressed as a one-frame blend so every join uses the same timeline maths
 TAIL = 0.6         # the last shot holds this long past the final word: the screenshot frame
 
@@ -119,7 +122,13 @@ def plan(assets: list[dict], duration: float, words: list[dict], tone: str) -> l
     """
     cut = cut_for(tone)
     mid = sum(cut["cadence"]) / 2
-    n = max(1, min(len(assets) * 3, MAX_SHOTS, round(duration / mid) or 1))
+    # one shot per asset when the pool can cover the voice at a held cadence; footage repeats only when the pool
+    # is too small for that (2026-11-10: four clips cycled three times each read as a loop, not an edit)
+    ideal = max(1, round(duration / mid))
+    n = min(ideal, len(assets))
+    if duration / n > cut["cadence"][1] * STRETCH:
+        n = min(MAX_SHOTS, len(assets) * 3, -(-int(duration * 1000) // int(cut["cadence"][1] * STRETCH * 1000)))
+    n = max(1, min(n, MAX_SHOTS))
     edges = cuts(duration, words, n, cut["cadence"])
     trans, tdur = cut["transition"] or (None, 0.0)
     moves = cut["motion"]

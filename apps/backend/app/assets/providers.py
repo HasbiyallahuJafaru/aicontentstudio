@@ -2,6 +2,7 @@
 import asyncio
 import logging
 import os
+import re
 import ssl
 import time
 from typing import Literal
@@ -18,7 +19,7 @@ MAX_BYTES = 300 * 1024 * 1024  # refuse absurd downloads before they fill the di
 
 class Candidate(BaseModel):
     """One search result, metadata only. `download_url` is fetched for the chosen asset, `thumb_url` for scoring."""
-    provider: Literal["pexels", "unsplash"]
+    provider: Literal["pexels", "unsplash", "commons"]
     provider_asset_id: str = Field(min_length=1)
     asset_type: Literal["image", "video"]
     creator: str = ""
@@ -160,6 +161,53 @@ class UnsplashProvider(VisualProvider):
 
     async def download(self, asset):
         # download_location with the auth header counts the attribution ping Unsplash asks for; it redirects to bytes.
+        return await self.h.fetch(asset.download_url)
+
+    async def download_thumb(self, asset):
+        return await self.h.fetch(asset.thumb_url)
+
+
+class CommonsProvider(VisualProvider):
+    """Archival stills for documentaries (owner 2026-11-10): real portraits, maps, manuscripts and artefacts from
+    Wikimedia Commons. No key. Only Public domain and CC0 files are offered, so nothing needs a credit line.
+    ponytail: licence read from Commons' LicenseShortName; CC BY / BY-SA files (most modern photos) are skipped
+    rather than carrying attribution through to every post."""
+    name = "commons"
+    URL = os.environ.get("ACS_COMMONS_URL", "https://commons.wikimedia.org/w/api.php")
+    LICENSE = "Public domain / CC0 (Wikimedia Commons)"
+    FREE = ("public domain", "cc0", "pd", "no restrictions")
+
+    def __init__(self, transport: httpx.AsyncBaseTransport | None = None):
+        # Wikimedia refuses clients without a descriptive User-Agent
+        self.h = _Http("Wikimedia Commons", {"User-Agent": "AiContentStudio/0.1 (https://ytclipper.xyz)"}, transport)
+
+    async def search_images(self, query, limit, color=None):
+        d = await self.h.get_json(self.URL, {
+            "action": "query", "format": "json", "formatversion": 2, "generator": "search", "gsrnamespace": 6,
+            "gsrsearch": f"{query} filetype:bitmap", "gsrlimit": limit * 2, "prop": "imageinfo",
+            "iiprop": "url|size|extmetadata", "iiurlwidth": 1600,
+            "iiextmetadatafilter": "LicenseShortName|Artist"})
+        out = []
+        for page in sorted(d.get("query", {}).get("pages", []), key=lambda p: p.get("index", 0)):
+            info = (page.get("imageinfo") or [{}])[0]
+            meta = info.get("extmetadata") or {}
+            lic = (meta.get("LicenseShortName") or {}).get("value", "").lower()
+            if not any(lic.startswith(f) or f in lic for f in self.FREE) or not info.get("thumburl"):
+                continue
+            big = info["thumburl"]
+            out.append(Candidate(provider=self.name, provider_asset_id=str(page["pageid"]), asset_type="image",
+                                 creator=re.sub(r"<[^>]+>", "", (meta.get("Artist") or {}).get("value", ""))[:120],
+                                 source_url=info.get("descriptionurl", ""), download_url=big,
+                                 thumb_url=big.replace("/1600px-", "/400px-"),
+                                 width=info.get("width", 0), height=info.get("height", 0)))
+            if len(out) == limit:
+                break
+        return out
+
+    async def search_videos(self, query, limit):
+        return []
+
+    async def download(self, asset):
         return await self.h.fetch(asset.download_url)
 
     async def download_thumb(self, asset):

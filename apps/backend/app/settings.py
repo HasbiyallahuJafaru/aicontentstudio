@@ -54,9 +54,11 @@ class Settings(BaseModel):
                                  "color": 0.10, "novelty": 0.05, "motion": 0.05})
     # Narration has no settings: Gemini TTS via OpenRouter (app/tts.py), voice picked per project on Create.
     # Rows saved with the old tts_* fields still load (pydantic ignores unknown keys).
-    # PRD §67 music: user-supplied licensed file only; never downloaded. Mixed quietly under the narration.
+    # PRD §67 music: the user's own licensed file, or the bundled public-domain library. Mixed quietly under the narration.
     music_path: str = Field("", max_length=500)
     music_volume: float = Field(0.15, ge=0, le=0.5)
+    # no file set: play a public-domain track from the bundled library (owner 2026-11-10); off = silent bed
+    bundled_music: bool = True
     # PRD §20: quality configurable under Advanced Settings. CRF 18-32 (lower = better, bigger files).
     render_crf: int = Field(18, ge=14, le=32)  # platforms re-encode on upload: give them a clean master
     render_audio_bitrate: str = Field("192k", pattern=r"^\d+k$")

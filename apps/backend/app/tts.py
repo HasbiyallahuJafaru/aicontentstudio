@@ -23,11 +23,41 @@ MODEL = "google/gemini-3.8-flash-tts"
 VOICES = {"Charon": "informative", "Kore": "firm", "Puck": "upbeat", "Fenrir": "excitable", "Orus": "firm",
           "Enceladus": "breathy", "Algenib": "gravelly", "Gacrux": "mature", "Sadaltager": "knowledgeable",
           "Iapetus": "clear", "Achird": "friendly", "Sulafat": "warm", "Aoede": "breezy", "Leda": "youthful",
-          "Zephyr": "bright", "Despina": "smooth", "Vindemiatrix": "gentle", "Achernar": "soft"}
+          "Zephyr": "bright", "Despina": "smooth", "Vindemiatrix": "gentle", "Achernar": "soft",
+          # deep male voices, verified on OpenRouter 2026-11-10
+          "Rasalgethi": "informative", "Schedar": "even", "Umbriel": "easy-going", "Alnilam": "firm"}
 DEFAULT_VOICE = "Charon"
-# a brief that picks no voice gets its genre's: one "informative" voice read every genre the same (2026-11-09)
-GENRE_VOICES = {"hope": "Sulafat", "speech": "Algenib", "stoic": "Gacrux", "cinema": "Enceladus",
-                "history": "Sadaltager", "books": "Sadaltager"}
+# Narrators (owner 2026-11-10: "the voice feels stale, soft, robotic"): a Gemini voice plus a full director's note.
+# Gemini TTS follows a persona, a scene and delivery notes; a one-line "Delivery: calm" read every piece flat.
+# The piece's own `delivery` (the writer's note on how the emotion moves) is added on top of the persona.
+PACE = ("Lean on the words that matter: names, numbers, the turn. Let a real silence fall after each sentence so "
+        "it lands. Real breath and real emotion; never sing-song, never an announcer, never a flat read.")
+NARRATORS = {
+    "elder": {"label": "Elder · wise grandfather", "voice": "Algenib",
+              "persona": "You are an elderly man in your seventies, a grandfather who has lived a long life and "
+                         "read every history book in his library. Deep, low, gravelly chest voice with warmth in it. "
+                         "You are telling a story you love to someone young, sitting close by a fire.",
+              "pace": "Unhurried and deliberate. Quiet awe on the surprising facts, gravity on the consequences, a "
+                      "faint knowing smile in the voice on the irony."},
+    "stoic": {"label": "Stoic · calm authority", "voice": "Charon",
+              "persona": "You are a weathered old philosopher, deep-voiced and steady, speaking to one student. "
+                         "Nothing rattles you; every word is chosen.",
+              "pace": "Slow, grounded, low in the chest. Calm certainty, never preachy; a hard line said softly."},
+    "coach": {"label": "Hard truth · intense", "voice": "Alnilam",
+              "persona": "You are a hardened mentor speaking to one person who is about to quit. Low, firm, close "
+                         "to the microphone.",
+              "pace": "Controlled intensity that builds sentence by sentence; short punches, then a held breath "
+                      "before the line that matters. Never shouting."},
+    "warm": {"label": "Warm · spoken word", "voice": "Sulafat",
+             "persona": "You are a gentle spoken-word poet reading a letter to one listener late at night.",
+             "pace": "Soft but present, unhurried; hope rising slowly through the piece, never saccharine."},
+    "storyteller": {"label": "Storyteller · documentary", "voice": "Rasalgethi",
+                    "persona": "You are a documentary narrator with a rich, mature voice who loves this story.",
+                    "pace": "Measured and vivid, curiosity in the voice; clear on names and dates."},
+}
+# a brief that picks no voice gets its genre's (2026-11-10: stoic used to fall to Gacrux, a female voice)
+GENRE_VOICES = {"hope": "warm", "speech": "coach", "stoic": "elder", "cinema": "storyteller",
+                "history": "elder", "books": "elder"}
 RETRIES = 3
 
 
@@ -51,10 +81,10 @@ def spoken(text: str) -> str:
 
 class GeminiTTS(TTSProvider):
     async def generate(self, text, voice, delivery=""):
-        body = {"model": MODEL, "input": spoken(text), "voice": voice if voice in VOICES else DEFAULT_VOICE,
+        gemini, instructions = direction(voice, delivery)
+        body = {"model": MODEL, "input": spoken(text), "voice": gemini,
                 "response_format": "pcm",  # the only format Gemini TTS accepts
-                "instructions": f"Short-form video narration. Delivery: {delivery.replace('_', ' ') or 'natural'}. "
-                                "Human pacing with real pauses, never an announcer voice."}
+                "instructions": instructions}
         headers = {"Authorization": f"Bearer {api_key('narrate pieces')}"}
         detail = ""
         for attempt in range(RETRIES + 1):
@@ -78,6 +108,17 @@ class GeminiTTS(TTSProvider):
         raise UserError("The narration voice couldn't be generated right now. Try again in a few minutes.", detail)
 
 
+def direction(voice: str, delivery: str = "") -> tuple[str, str]:
+    """(Gemini voice, director's note) for a narrator key or a bare Gemini voice name."""
+    note = delivery.replace("_", " ").strip()
+    n = NARRATORS.get(voice)
+    if n is None:
+        return (voice if voice in VOICES else DEFAULT_VOICE,
+                f"Short-form video narration. Delivery: {note or 'natural'}. {PACE}")
+    return n["voice"], (f"{n['persona']}\nDelivery: {n['pace']}" + (f" For this piece: {note}." if note else "")
+                        + f"\n{PACE}")
+
+
 def _wav(pcm: bytes, content_type: str) -> AudioResult:
     """audio/pcm;rate=24000;channels=1 (16-bit) -> narration-<id>.wav."""
     rate = int((re.search(r"rate=(\d+)", content_type) or [0, 24000])[1])
@@ -98,4 +139,5 @@ def get_tts() -> TTSProvider:
 
 def voices() -> list[dict]:
     """The Create/Preview narration picker."""
-    return [{"value": name, "label": f"{name} · {kind}"} for name, kind in VOICES.items()]
+    return ([{"value": k, "label": n["label"]} for k, n in NARRATORS.items()]
+            + [{"value": name, "label": f"{name} · {kind}"} for name, kind in VOICES.items()])

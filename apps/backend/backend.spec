@@ -35,6 +35,7 @@ version = VSVersionInfo(
 
 datas = [
     ("assets/fonts", "assets/fonts"),                  # Sora for drawtext (OFL)
+    ("assets/music", "assets/music"),                  # bundled public-domain / CC0 music beds
     ("app/clipper/assets", "app/clipper/assets"),      # YuNet face model
     ("app/migrations", "app/migrations"),              # schema: without these the first run has no tables
     ("app/motion_assets", "app/motion_assets"),        # HyperFrames templates + GSAP for motion layers

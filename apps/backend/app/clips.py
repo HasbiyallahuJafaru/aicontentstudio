@@ -7,7 +7,7 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
-from app import config, motion, projects, settings
+from app import config, motion, music, projects, settings
 from app.clipper import acquire, select, tighten, transcribe
 from app.clipper.ff import silences
 from app.clipper.render_clip import ORIENTATIONS, render as render_clip
@@ -16,13 +16,15 @@ from app.database import connect
 from app.errors import UserError
 
 WORK = "clipwork"  # under media/: downloaded sources + cached transcripts
-MIN_CLIP = config.MIN_CLIP  # seconds, of the FINISHED clip (the floor; 2026-11-09: 20 s, was 60)
+MIN_CLIP = config.MIN_CLIP  # seconds, of the FINISHED clip (the floor: 60 s, owner 2026-11-10)
+PER_CLIP = 150  # seconds of speech per auto clip: a 60 min talk gives ~24 (owner: as many as the source holds)
 
 
 def _at_least(video, words, start, end, cold, min_len, spoken):
     """Plan the cut, then make sure what's left after dead air and fillers come out still runs min_len: grow the
     clip EARLIER, into its setup, snapped to sentences. Never later: the end is the payoff, and talk added after it
-    killed the ending and the loop (2026-11-09). A clip that can't reach min_len runs a little short."""
+    killed the ending and the loop (2026-11-09). Only when nothing earlier is left does it run on, sentence by
+    sentence, past the end: the minute is a hard floor (owner 2026-11-10)."""
     ranges, zooms = tighten.plan(words, start, end, cold, silences(video, start, end))
     for attempt in range(8):
         short = min_len - sum(b - a for a, b in ranges)
@@ -32,6 +34,16 @@ def _at_least(video, words, start, end, cold, min_len, spoken):
         if new_start >= start:
             break  # no earlier sentence to take in
         start = max(0.0, new_start - 0.1)
+        ranges, zooms = tighten.plan(words, start, end, cold, silences(video, start, end))
+    last = words[-1]["end"] if words else end
+    for attempt in range(8):  # still short: take in the following sentences
+        short = min_len - sum(b - a for a, b in ranges)
+        if short <= 0 or end >= last:
+            break
+        _, new_end = snap(start, min(last, end + short + 2.0 + 2.0 * attempt), words)
+        if new_end <= end:
+            break
+        end = new_end
         ranges, zooms = tighten.plan(words, start, end, cold, silences(video, start, end))
     return start, end, ranges, zooms
 
@@ -79,13 +91,15 @@ def run(project_id: str, report) -> None:
         raise UserError("No speech found in this video, so there is nothing to clip.")
 
     report("Finding the best moments", 0.5)
-    # about one clip per 6 minutes of source, at most 10: one per minute (up to 30) made the model tile the whole
-    # transcript, so most clips were filler by design (2026-11-09)
-    n = b["n"] or max(3, min(10, round(transcript["segments"][-1]["end"] / 360)))
     # projects saved before the one-minute floor may hold shorter lengths: the floor wins
     min_len = max(float(b["min_len"]), MIN_CLIP)
     max_len = max(float(b["max_len"]), min_len + 15)
     spoken = transcript["words"][-1]["end"] if transcript["words"] else transcript["segments"][-1]["end"]
+    # as many as the source holds (owner 2026-11-10: an hour-long talk is not 10 clips): one per PER_CLIP seconds
+    # of speech, never more than fit without overlapping. One per minute (2026-11-09) tiled the whole transcript
+    # into filler; one per 2.5 min leaves the model room to choose.
+    fits = max(1, int(spoken // (min_len * 1.1)))
+    n = min(b["n"] or max(3, round(spoken / PER_CLIP)), fits)
     if spoken < min_len:
         raise UserError(f"This video has about {round(spoken)} seconds of speech, and every clip runs at least "
                         f"{round(min_len)} seconds. Try a longer video.")
@@ -107,7 +121,8 @@ def run(project_id: str, report) -> None:
         clip.start, clip.end = start, end
         render_clip(video, start, end, path, words, b["burn_captions"], b["orientation"], fps=b["fps"],
                     ranges=ranges, zooms=zooms, emphasis=clip.emphasis, layers=layers,
-                    caption_style=b.get("captions"))
+                    caption_style=b.get("captions"),
+                    music=music.for_clip(i) if settings.get().get("bundled_music", True) else None)
         clip.hook = clip.hook.replace("*", "")  # the keyword marks are for the animation, not the stored copy
         landed = final / path.name  # where the file lives once the take is swapped in
         rows.append((uuid.uuid4().hex[:12], project_id, i, clip.start, clip.end, clip.score, clip.reason,

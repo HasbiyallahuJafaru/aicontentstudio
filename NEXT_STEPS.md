@@ -5,6 +5,38 @@ the older milestone log (M1-M8) and is superseded where they disagree. Read this
 
 ## Start here
 
+- **Session 2026-11-10 (uncommitted): videos that tell real stories.** Owner: "Mansa Musa" gave a desert poem on
+  four looping clips, ungraded, silent, in a soft robotic voice. Fixed:
+  - **Documentaries:** `research.py` looks the topic up on Wikipedia (no key); the planner (`DOC_SYSTEM`) confirms
+    it IS the subject (`BatchPlan.subject`, else a themed plan as before) and gives each piece its own facts
+    (`PlanItem.facts`, none shared: 10 pieces = 10 chapters; the article grows with the batch, up to 24k chars).
+    Narration states only sourced facts; the quote is optional (author null = the closing line, never fact-checked).
+    Pieces keep `content.sources`, so regenerate stays factual. Live-tested on "Musa Mansa" (3 distinct chapters).
+  - **No looping footage:** one shot per narration sentence (`assets.MAX_SHOTS` 14, `Visual.shots` up to 16);
+    `edit.plan` uses each asset once unless the pool can't cover the voice at 1.8x cadence.
+  - **Archival stills:** `CommonsProvider` (Public domain / CC0 only) for `role: "archival"` shots; landscape
+    stills are shown whole over a blurred fill and pushed in (`renders._shots_for`, render.py blur branch).
+  - **Matched grade:** `render.NORMALIZE` per shot, then stronger split-tone genre grades (`edit.LOOKS`).
+  - **Music:** bundled public-domain/CC0 library `assets/music` (12 x 75 s, `scripts/make_music.py`, CREDITS.md),
+    per genre, varied per piece (`music.py`), looped, ducked. Settings music file still wins; `bundled_music`
+    setting (no UI toggle yet). FreePD is closed; Commons/Musopen used instead.
+  - **Directed narrators:** `tts.NARRATORS` (persona + pacing note + the writer's per-piece `delivery` arc);
+    "elder" = Algenib, wise grandfather (stoic/history/books default). Stoic used to default to Gacrux (female).
+  - **Quote images** = the quote (now up to ~60 words, `Quote.text` 420 chars) + author, nothing else; long quotes
+    skip Polaroid (`design.SHORT_ONLY`). **Voiced quote video** reads quote, author, then `lesson`: 2-4 sentences
+    on THAT quote (`prompts.LESSON`, only for `image_voiced`).
+  - **Clips:** floor back to **60 s** (`config.MIN_CLIP`, brief + Create form defaults 60/120); a pick that can't
+    grow earlier now runs on past its end until the minute is met (`clips._at_least`). Count uncapped: one per
+    2.5 min of speech (`clips.PER_CLIP`), limited only by what fits (an hour ~ 24); brief `n` up to 200.
+    **Every clip gets a quiet bundled bed** (`music.for_clip`, calm moods only, ~22 dB under speech, gently ducked).
+  - Music build hit Wikimedia's 429 rate limit; `make_music.py` now resumes, paces 15 s, uses cached .ogg originals.
+  Checked: 245 backend tests, typecheck, a small mixed-shot render with music, 13 designs with a 58-word quote.
+  **2026-11-11:** `npm test` passed in full (smoke included); installer built (268 MiB, 0.1.0, unsigned) to the
+  session scratchpad, packaged smoke ok (second run; the first timed out as usual). **Not uploaded to R2.**
+  Clip mix measured on a real clip render: speech -15.8 LUFS, bed -48 LUFS under speech (ducked ~13 dB, so ~32 dB
+  below the voice) and -35 LUFS in pauses. It can't mask speech; it may be too faint (raise `music.CLIP_VOLUME`). **Not run:** `npm test` smoke, a full
+  generate+render in the app, an installer build (music adds ~12 MB).
+
 - **Session 2026-11-08 evening (uncommitted, installer uploaded 2026-11-09):** author line on the statement and stack
   designs; detailed job progress (step log per job, migration 013, ffmpeg progress, per-piece failures logged and
   shown on the piece, `components/JobProgress.tsx`); a lime halo on every selected option (`.halo`, `.halo-sm`);
