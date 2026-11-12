@@ -27,7 +27,7 @@ export type CaptionStyle = {
 }
 export const DEFAULT_CAPTIONS: CaptionStyle = { style: 'karaoke', font: 'auto', position: 'lower', size: 'medium', highlight: 'auto', case: 'auto' }
 export type TextPosition = 'auto' | 'top' | 'center' | 'bottom'
-export type Brief = { kind?: never; topic: string; tone: string; mood: string; audience: string; format: Format; quantity: number; platforms: Platform[]; voice: string; fps: number; target_seconds: number | null; subtitles: boolean; look_filter: Look; blur_background: boolean; parallax: boolean
+export type Brief = { kind?: never; topic: string; tone: string; mood: string; audience: string; format: Format; quantity: number; platforms: Platform[]; voice: string; fps: number; target_seconds: number | null; subtitles: boolean; look_filter: Look; blur_background: boolean; parallax: boolean; ken_burns?: boolean; backdrop?: 'photo' | 'clips'
   captions: CaptionStyle; image_design: string; image_font: string; image_position: TextPosition; quotes?: string[]; palette: string }
 export type ClipBrief = {
   kind: 'clip'; source: string; n: number | null; min_len: number; max_len: number

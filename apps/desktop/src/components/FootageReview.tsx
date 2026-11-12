@@ -1,11 +1,13 @@
 // Footage review (owner decision 2026-11-07): nothing full-size downloads until the user has seen the options.
 // Each piece shows its candidates as thumbnails with the AI's picks pre-selected and numbered in play order; a click
 // swaps a shot (saved at once, so a restart keeps it), and one button under the shots downloads exactly the picked
-// footage and then renders every piece (the "visuals_render" job).
+// footage and then renders every piece (the "visuals_render" job). Pasted Pexels or Unsplash links (several at once,
+// separated by commas, spaces or new lines) add those exact photos and clips, played first in the order pasted; the
+// piece grows to hold them all (owner 2026-11-12).
 import { useRef, useState, type CSSProperties } from 'react'
-import { DownloadSimple, Play } from '@phosphor-icons/react'
-import { call, mediaUrl, BackendError, type Piece } from '../lib/studio'
-import { Button, ErrorNote, cx } from './ui'
+import { DownloadSimple, LinkSimple, Play } from '@phosphor-icons/react'
+import { call, mediaUrl, BackendError, type FootageOption, type Piece } from '../lib/studio'
+import { Button, ErrorNote, Textarea, cx } from './ui'
 
 export function FootageReview({ pieces, onStarted, disabled }: {
   pieces: Piece[]; onStarted: () => void; disabled?: boolean
@@ -14,6 +16,11 @@ export function FootageReview({ pieces, onStarted, disabled }: {
     () => Object.fromEntries(pieces.map((p) => [p.id, p.content.review!.picked])))
   const [error, setError] = useState<BackendError>()
   const [starting, setStarting] = useState(false)
+  const [added, setAdded] = useState<Record<string, FootageOption[]>>({})  // linked shots, shown before the backend reload
+  const [links, setLinks] = useState<Record<string, string>>({})
+  const [adding, setAdding] = useState<string>()
+  const [wants, setWants] = useState<Record<string, number>>({})  // a piece grows when links outnumber its shots
+  const [skipped, setSkipped] = useState<Record<string, { url: string; reason: string }[]>>({})
   // each piece's saves run in order (a later click never lands before an earlier one), and "Download and render"
   // waits for all of them, so the job downloads exactly what is on screen
   const saving = useRef<Record<string, Promise<void>>>({})
@@ -21,7 +28,7 @@ export function FootageReview({ pieces, onStarted, disabled }: {
   const missing = pieces.filter((p) => !picks[p.id]?.length)
 
   async function toggle(piece: Piece, key: string) {
-    const want = piece.content.review!.want
+    const want = wants[piece.id] ?? piece.content.review!.want
     const now = picks[piece.id] ?? []
     // a full set swaps its last shot for the new one, so a click always does something visible
     const next = now.includes(key) ? now.filter((k) => k !== key) : now.length < want ? [...now, key] : [...now.slice(0, -1), key]
@@ -37,6 +44,24 @@ export function FootageReview({ pieces, onStarted, disabled }: {
     }
   }
 
+  async function addLink(piece: Piece) {
+    const urls = (links[piece.id] ?? '').trim()
+    if (!urls) return
+    setAdding(piece.id)
+    setError(undefined)
+    try {
+      await (saving.current[piece.id] ?? Promise.resolve())  // a pick still saving lands first
+      const r = await call<{ added: FootageOption[]; picked: string[]; want: number; skipped: { url: string; reason: string }[] }>(
+        'visuals.add_links', { piece_id: piece.id, urls })
+      setAdded((a) => ({ ...a, [piece.id]: [...r.added, ...(a[piece.id] ?? []).filter((o) => !r.added.some((x) => x.key === o.key))] }))
+      setPicks((p) => ({ ...p, [piece.id]: r.picked }))
+      setWants((w) => ({ ...w, [piece.id]: r.want }))
+      setSkipped((k) => ({ ...k, [piece.id]: r.skipped }))
+      // keep only the links that didn't land, so they can be fixed and added again
+      setLinks((l) => ({ ...l, [piece.id]: r.skipped.map((x) => x.url).join(', ') }))
+    } catch (e) { setError(e as BackendError) } finally { setAdding(undefined) }
+  }
+
   async function confirm() {
     setStarting(true)
     setError(undefined)
@@ -48,7 +73,7 @@ export function FootageReview({ pieces, onStarted, disabled }: {
   }
 
   return (
-    <section aria-label="Choose the footage" className="glass anim-drift mb-8 grid gap-7 p-8">
+    <section aria-label="Choose the footage" className="glass anim-drift mb-8 grid grid-cols-1 gap-7 p-8">
       <div className="grid gap-1.5">
         <h2 className="font-display text-[22px] font-semibold tracking-[-0.02em]">Choose the footage</h2>
         <p className="max-w-[62ch] text-[13px] leading-relaxed text-ink-2">
@@ -60,16 +85,19 @@ export function FootageReview({ pieces, onStarted, disabled }: {
       {pieces.map((p) => {
         const review = p.content.review!
         const mine = picks[p.id] ?? []
+        const want = wants[p.id] ?? review.want
+        const extra = added[p.id] ?? []
+        const options = [...extra, ...review.options.filter((o) => !extra.some((x) => x.key === o.key))]
         return (
           <div key={p.id} className="grid gap-3 border-t border-line pt-6">
             <div className="flex items-baseline justify-between gap-4">
-              <p className="min-w-0 truncate text-[14px] font-medium text-ink">
+              <p className="min-w-0 max-w-[80ch] text-[14px] font-medium leading-snug text-ink">
                 <span className="tnum mr-3 font-display text-xs text-accent-ink">{String(p.idx).padStart(3, '0')}</span>{p.content.quote.text}
               </p>
-              <span className="tnum shrink-0 text-xs text-ink-3">{mine.length} of {review.want} {review.want === 1 ? 'shot' : 'shots'}</span>
+              <span className="tnum shrink-0 text-xs text-ink-3">{mine.length} of {want} {want === 1 ? 'shot' : 'shots'}</span>
             </div>
             <ul className="grid grid-cols-[repeat(auto-fill,minmax(104px,1fr))] gap-4 p-2">
-              {review.options.map((o, i) => {
+              {options.map((o, i) => {
                 const order = mine.indexOf(o.key)
                 const on = order >= 0
                 return (
@@ -101,6 +129,28 @@ export function FootageReview({ pieces, onStarted, disabled }: {
                 )
               })}
             </ul>
+            <form className="grid max-w-[640px] gap-2" onSubmit={(e) => { e.preventDefault(); void addLink(p) }}>
+              <Textarea rows={2} aria-label={`Add your own ${review.type === 'video' ? 'clips and photos' : 'photos'} for piece ${p.idx}`}
+                placeholder={review.type === 'video'
+                  ? 'Paste Pexels video or photo links, or Unsplash photo links, separated by commas'
+                  : 'Paste Pexels or Unsplash photo links, separated by commas'}
+                value={links[p.id] ?? ''} onChange={(e) => setLinks({ ...links, [p.id]: e.target.value })}
+                onKeyDown={(e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); void addLink(p) } }}
+                disabled={disabled || adding === p.id} />
+              <div className="flex flex-wrap items-center gap-3">
+                <Button type="submit" disabled={disabled || adding === p.id || !(links[p.id] ?? '').trim()}>
+                  <LinkSimple size={14} weight="bold" />{adding === p.id ? 'Adding…' : 'Add links'}
+                </Button>
+                {review.type === 'video' && (
+                  <span className="text-xs text-ink-3">Each clip lends a short slice, never its full length.</span>
+                )}
+              </div>
+              {!!skipped[p.id]?.length && (
+                <ul className="grid gap-1 text-xs text-danger">
+                  {skipped[p.id].map((x) => <li key={x.url} className="break-all">{x.reason} <span className="text-ink-3">{x.url}</span></li>)}
+                </ul>
+              )}
+            </form>
           </div>
         )
       })}

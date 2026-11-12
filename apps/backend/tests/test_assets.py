@@ -445,8 +445,13 @@ class Providers(unittest.TestCase):
         self.assertEqual(asyncio.run(p.search_videos("calm", 8)), [])
 
     def test_unsplash_download_goes_through_download_location(self):
+        # the documented shape: the ping answers JSON {"url"}, the photo comes from that url (2026-11-12)
+        seen = []
+
         def handler(request: httpx.Request):
-            self.assertIn("/download", str(request.url))
+            seen.append(str(request.url))
+            if "/download" in str(request.url):
+                return httpx.Response(200, json={"url": "https://images.unsplash.com/photo-1?ixid=abc"})
             return httpx.Response(200, content=b"jpeg-bytes")
 
         p = UnsplashProvider("k", transport=httpx.MockTransport(handler))
@@ -454,6 +459,7 @@ class Providers(unittest.TestCase):
                       download_url="https://unsplash.com/p/u1/download", thumb_url="https://img/u1s",
                       width=3000, height=4500)
         self.assertEqual(asyncio.run(p.download(c)), b"jpeg-bytes")
+        self.assertEqual(seen[1], "https://images.unsplash.com/photo-1?ixid=abc&w=1440&fm=jpg&q=85")  # ixid kept
 
     def test_auth_errors_are_human(self):
         for cls, label in ((PexelsProvider, "Pexels"), (UnsplashProvider, "Unsplash")):

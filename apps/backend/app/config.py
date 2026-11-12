@@ -1,7 +1,7 @@
 import os
 from pathlib import Path
 
-VERSION = "0.1.0"
+VERSION = "0.1.1"
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
 # Electron passes ACS_DATA_DIR (userData/data when packaged); dev default is <repo>/data.

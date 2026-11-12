@@ -1,4 +1,5 @@
-"""Narration (PRD §29): Google Gemini TTS through OpenRouter, on the same key as every other AI call.
+"""Narration (PRD §29): Google Gemini TTS through OpenRouter, on the same key as every other AI call, plus
+ElevenLabs voices through the same key (owner 2026-11-12: "a deeper and raspier voice").
 
 Gemini returns raw 16-bit PCM (it rejects mp3); the response's content type names the rate and channels, and the
 stdlib wraps it as a WAV for the renderer. The piece's `delivery` note ("calm_reflective") becomes the read
@@ -55,9 +56,19 @@ NARRATORS = {
                     "persona": "You are a documentary narrator with a rich, mature voice who loves this story.",
                     "pace": "Measured and vivid, curiosity in the voice; clear on names and dates."},
 }
+# ElevenLabs stock voices on OpenRouter (owner 2026-11-12: deeper and raspier). Eleven v4 takes no director's note:
+# the voice itself carries the character, and pauses come from the text ("..." and line breaks). ~$0.08 per 1000
+# characters against Gemini's ~$0.01, so a voiced quote (~500 characters) costs about 4 cents to read.
+ELEVEN = "elevenlabs/eleven-v4"
+NARRATORS.update({
+    "raspy": {"label": "Raspy · weathered storyteller (ElevenLabs)", "voice": "JBFqnCBsd6RMkjVDRZzb", "model": ELEVEN},
+    "gravel": {"label": "Gravel · hard truth (ElevenLabs)", "voice": "2EiwWnXFnvU5JabPnv8n", "model": ELEVEN},
+    "deep": {"label": "Deep · resonant (ElevenLabs)", "voice": "nPczCjzI2devNBz1zQrb", "model": ELEVEN},
+    "sage": {"label": "Sage · old and wise (ElevenLabs)", "voice": "pqHfZKP75CvOlQylNhV4", "model": ELEVEN},
+})
 # a brief that picks no voice gets its genre's (2026-11-10: stoic used to fall to Gacrux, a female voice)
-GENRE_VOICES = {"hope": "warm", "speech": "coach", "stoic": "elder", "cinema": "storyteller",
-                "history": "elder", "books": "elder"}
+GENRE_VOICES = {"hope": "warm", "speech": "gravel", "stoic": "raspy", "cinema": "deep",
+                "history": "raspy", "books": "raspy"}
 RETRIES = 3
 
 
@@ -81,10 +92,14 @@ def spoken(text: str) -> str:
 
 class GeminiTTS(TTSProvider):
     async def generate(self, text, voice, delivery=""):
-        gemini, instructions = direction(voice, delivery)
-        body = {"model": MODEL, "input": spoken(text), "voice": gemini,
-                "response_format": "pcm",  # the only format Gemini TTS accepts
-                "instructions": instructions}
+        n = NARRATORS.get(voice) or {}
+        if n.get("model"):  # ElevenLabs: same endpoint and PCM shape, no director's note
+            body = {"model": n["model"], "input": spoken(text), "voice": n["voice"], "response_format": "pcm"}
+        else:
+            gemini, instructions = direction(voice, delivery)
+            body = {"model": MODEL, "input": spoken(text), "voice": gemini,
+                    "response_format": "pcm",  # the only format Gemini TTS accepts
+                    "instructions": instructions}
         headers = {"Authorization": f"Bearer {api_key('narrate pieces')}"}
         detail = ""
         for attempt in range(RETRIES + 1):
@@ -112,7 +127,7 @@ def direction(voice: str, delivery: str = "") -> tuple[str, str]:
     """(Gemini voice, director's note) for a narrator key or a bare Gemini voice name."""
     note = delivery.replace("_", " ").strip()
     n = NARRATORS.get(voice)
-    if n is None:
+    if n is None or "persona" not in n:  # a bare Gemini name (an ElevenLabs narrator never reaches Gemini)
         return (voice if voice in VOICES else DEFAULT_VOICE,
                 f"Short-form video narration. Delivery: {note or 'natural'}. {PACE}")
     return n["voice"], (f"{n['persona']}\nDelivery: {n['pace']}" + (f" For this piece: {note}." if note else "")

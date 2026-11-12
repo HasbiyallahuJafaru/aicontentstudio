@@ -8,6 +8,8 @@ import hashlib
 import time
 import io
 import json
+import logging
+import re
 import uuid
 from datetime import datetime, timedelta, timezone
 from itertools import groupby
@@ -19,6 +21,8 @@ from app.assets.providers import Candidate, CommonsProvider, VisualProvider, get
 from app.database import connect
 from app.errors import UserError
 
+log = logging.getLogger(__name__)
+
 SIMILAR_BITS = 10       # dHash bits that may differ before two assets count as "visually similar"
 MIN_HEIGHT = 720        # usable portrait footage/photos for 1080x1920 output
 VIDEO_MIN_S, VIDEO_MAX_S = 4, 90
@@ -26,6 +30,14 @@ SEARCH_LIMIT = 6        # candidates per provider per query (one request); thumb
 ENOUGH = 3              # usable candidates from one query that make asking the next provider unnecessary
 CACHE_SECS = 6 * 3600   # a repeated search (re-roll, "find another visual") is answered from memory, not the API
 PALETTE_WEIGHT = 0.35   # how much a chosen palette counts in the ranking (soft genre default: a third of that)
+VOICED_CLIPS = 5        # voiced quote videos with clips behind the words (owner 2026-11-12): cut every ~2.5 s
+# what each genre's clips look like when the quote's own searches run dry: slow, atmospheric, nothing literal
+MOOD_CLIPS = {"hope": ["sunrise through window slow motion", "light rays forest morning", "candle flame dark"],
+              "speech": ["storm clouds timelapse dark", "boxer training dark gym", "rain on window night"],
+              "stoic": ["fog over mountains", "rain on stone statue", "ocean waves dark slow motion"],
+              "history": ["ancient ruins fog", "old library candle", "desert dunes wind"],
+              "books": ["turning pages book candle", "rain window reading", "fireplace slow"],
+              "cinema": ["city lights night rain", "empty road fog", "silhouette walking sunset"]}
 SHOTS = 4               # the fewest distinct visuals a video piece is cut from (one clip alone reads as a slideshow)
 MAX_SHOTS = 14          # the most: one per narration sentence (2026-11-10), each a search, so it stays bounded
 ARCHIVE_MIN_HEIGHT = 500  # old paintings and maps are smaller than stock and are shown whole, not cropped
@@ -221,8 +233,8 @@ def _store(rel: str, data: bytes) -> None:
 
 def _wanted(brief: dict, content: dict) -> str:
     wanted = content["plan"]["visual_type"]  # ponytail: video_image forces per-type asset pairs at export (M6)
-    if brief["format"] == "image_voiced":  # the video is the picture itself, read aloud: photos, not footage
-        return "image"
+    if brief["format"] == "image_voiced":  # the picture read aloud: a photo, or clips behind the words (2026-11-12)
+        return "video" if brief.get("backdrop") == "clips" else "image"
     return brief["format"] if brief["format"] in ("video", "image") else wanted
 
 
@@ -276,11 +288,12 @@ async def _options(providers: list[VisualProvider], query: str, wanted: str, eve
     return out
 
 
-def _prepick(options: list[dict], queries: list[str], want: int) -> list[str]:
+def _prepick(options: list[dict], queries: list[str], want: int, rounds: int = 1) -> list[str]:
     """The AI's choice, the same rules as before review existed: per planned shot the best fresh candidate, never
     a near-duplicate of one already picked; a query with no fresh candidate falls back to its least-used one."""
     picked: list[dict] = []
-    for q in queries:
+    # `rounds` > 1 goes over the queries again (voiced quote clips: two searches can still fill five clips)
+    for q in [q for _ in range(rounds) for q in queries]:
         if len(picked) >= want:
             break
         pool = [o for o in options if q in o["queries"] and o not in picked
@@ -303,6 +316,10 @@ async def _propose_one(brief: dict, piece: dict, providers: list[VisualProvider]
     archival = _archival(content)
     # a video gets one visual per planned shot (one per sentence), never fewer than SHOTS
     want = min(max(len(content["visual"].get("shots") or []), SHOTS), MAX_SHOTS) if wanted == "video" else 1
+    if brief["format"] == "image_voiced" and wanted == "video":  # clips behind a quote: its searches, then the mood's
+        want = VOICED_CLIPS
+        queries += [q for q in MOOD_CLIPS.get(brief.get("tone", ""), []) if q not in queries]
+    rounds = want if brief["format"] == "image_voiced" else 1
     commons = [CommonsProvider()] if archival else []
     palette = brief.get("palette", "auto")
     palette, soft = (palette, "") if palette in visual.PALETTES else ("", visual.GENRE_PALETTE.get(brief["tone"], ""))
@@ -315,12 +332,12 @@ async def _propose_one(brief: dict, piece: dict, providers: list[VisualProvider]
         else:
             options += await _options(providers, q, wanted, ever, recent, weights, known, palette, soft)
         searched.append(q)
-        picks = _prepick(options, searched, want)
+        picks = _prepick(options, searched, want, rounds)
         if len(picks) >= want and all(o["note"] is None for o in options if o["key"] in picks):
             break
     if not options:
         raise UserError(f'No usable {wanted} turned up for the visual search "{content["visual"]["search_query"]}".')
-    picked = _prepick(options, queries, want)
+    picked = _prepick(options, queries, want, rounds)
     for o in options:  # later pieces of this batch see these pre-picks as taken, as if already downloaded (PRD §18)
         if o["key"] in picked:
             c = o["candidate"]
@@ -380,6 +397,84 @@ def pick(piece_id: str, keys: list[str]) -> dict:
     with connect() as conn:
         conn.execute("UPDATE content_pieces SET content = ? WHERE id = ?", (json.dumps(content, ensure_ascii=False), piece_id))
     return {"picked": keys}
+
+
+LINK = re.compile(r"https?://(?:www\.)?(pexels|unsplash)\.com/(?:[a-z]{2}(?:-[a-z]{2})?/)?(photo|photos|video)/([^/?#]+)",
+                  re.I)
+
+
+def add_links(piece_id: str, urls: str) -> dict:
+    """The user's own picks (owner 2026-11-12): Pexels photo or video pages and Unsplash photo pages, several at
+    once (commas, spaces or new lines between them), added to the piece's options and picked in the order pasted,
+    ahead of the studio's own picks. A piece that can show several visuals grows to hold them all (up to
+    MAX_SHOTS); a single picture post keeps one. Only thumbnails are fetched now; full files download with the other
+    picks. A link that can't be used is skipped with a reason, the rest still land."""
+    from app import jobs, projects
+    found = [u for u in re.split(r"[\s,]+", urls.strip()) if u]
+    if not found:
+        raise UserError("Paste one or more Pexels or Unsplash links.")
+    with connect() as conn:
+        row = conn.execute("SELECT project_id, content FROM content_pieces WHERE id = ?", (piece_id,)).fetchone()
+    if row is None:
+        raise UserError("This piece no longer exists.", f"piece id {piece_id}")
+    jobs.ensure_idle(row["project_id"], "changing its footage")
+    brief = projects.get(row["project_id"])["brief"]
+    content = json.loads(row["content"])
+    review = content.get("review")
+    if not review:
+        raise UserError("This piece has no footage waiting to be picked.")
+    providers = {p.name: p for p in get_providers()}
+
+    async def one(url: str) -> dict:
+        m = LINK.match(url)
+        if not m:
+            raise UserError("Not a Pexels photo or video link, or an Unsplash photo link.")
+        site, kind, slug = m[1].lower(), m[2].lower(), m[3]
+        provider = providers.get(site)
+        if provider is None:
+            raise UserError(f"Add your {site.title()} key in Settings to use {site.title()} links.")
+        c = await provider.by_id(slug, "video" if kind == "video" else "image")
+        if c.asset_type == "video" and review["type"] == "image":
+            raise UserError("A video can't go behind a photo post. Choose Moving clips when you create the project.")
+        key = f"{c.provider}:{c.provider_asset_id}"
+        known = next((o for o in review["options"] if o["key"] == key), None)
+        if known:
+            return known
+        thumb = await provider.download_thumb(c)
+        thumb_rel = f"candidates/{c.provider}-{c.provider_asset_id}.{Image.open(io.BytesIO(thumb)).format.lower()}"
+        _store(thumb_rel, thumb)
+        return {"key": key, "candidate": c.model_dump(), "thumb": thumb_rel, "phash": dhash(thumb),
+                "themes": json.dumps([]), "queries": ["your link"], "score": 1.0, "note": None, "used": 0,
+                "analysis": visual.analyze(thumb)}
+
+    async def everything():
+        return await asyncio.gather(*(one(u) for u in found), return_exceptions=True)
+
+    added, skipped = [], []
+    for url, got in zip(found, asyncio.run(everything())):
+        if isinstance(got, UserError):
+            skipped.append({"url": url, "reason": str(got)})
+        elif isinstance(got, Exception):
+            log.warning("link %s failed: %r", url, got)
+            skipped.append({"url": url, "reason": "Couldn't fetch this one. Check the link and try again."})
+        elif got["key"] not in [o["key"] for o in added]:
+            added.append(got)
+    if added:
+        keys = [o["key"] for o in added]
+        review["options"] = added + [o for o in review["options"] if o["key"] not in keys]
+        linked = list(dict.fromkeys(keys + review.get("linked", [])))  # this paste first, earlier links after
+        review["linked"] = linked
+        review.setdefault("base_want", review["want"])
+        single = brief["format"] == "image"  # a picture post shows one photo; everything else can cut between many
+        review["want"] = 1 if single else min(max(review["base_want"], len(linked)), MAX_SHOTS)
+        rest = [k for k in review["picked"] if k not in linked]
+        review["picked"] = (linked + rest)[: review["want"]]
+        with connect() as conn:
+            conn.execute("UPDATE content_pieces SET content = ? WHERE id = ?",
+                         (json.dumps(content, ensure_ascii=False), piece_id))
+    elif len(skipped) == 1:
+        raise UserError(skipped[0]["reason"], skipped[0]["url"])
+    return {"added": added, "picked": review["picked"], "want": review["want"], "skipped": skipped}
 
 
 def _drop_previews(thumbs: set[str]) -> None:

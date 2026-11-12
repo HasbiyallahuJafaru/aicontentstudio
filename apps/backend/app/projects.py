@@ -53,6 +53,8 @@ class CreativeBrief(BaseModel):
     look_filter: Literal["auto", "none", "warm", "cool", "mono", "vivid"] = "auto"  # auto = the genre's grade
     blur_background: bool = False             # blurred full-bleed background, sharp centred footage
     parallax: bool = False                    # slow push-in on video pieces (stills always push in)
+    backdrop: Literal["photo", "clips"] = "photo"  # voiced quote videos: one photo, or footage clips cut together
+    ken_burns: bool = True                    # voiced quote videos: slow drifting push on the photo and post
 
 
 class ClipBrief(BaseModel):

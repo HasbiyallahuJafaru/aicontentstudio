@@ -31,7 +31,9 @@ class Documentary(unittest.TestCase):
         self.assertIn("grandfather", note)
         self.assertIn("grave on the cost", note)
         self.assertEqual(tts.direction("Charon")[0], "Charon")
-        self.assertEqual(tts.GENRE_VOICES["stoic"], "elder")
+        self.assertEqual(tts.GENRE_VOICES["stoic"], "raspy")  # ElevenLabs since 2026-11-12
+        self.assertEqual(tts.NARRATORS["raspy"]["model"], tts.ELEVEN)
+        self.assertEqual(tts.direction("raspy")[0], tts.DEFAULT_VOICE)  # never sent to Gemini; no crash if it is
 
     def test_music_varies_piece_to_piece(self):
         if len(music.tracks("history")) < 2:

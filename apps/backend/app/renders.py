@@ -10,7 +10,7 @@ import tempfile
 import uuid
 from pathlib import Path
 
-from app import config, content, design, edit, motion, music, projects, render, settings, tts
+from app import config, content, design, edit, motion, music, projects, render, reveal, settings, tts
 from app.database import connect
 from app.errors import Cancelled, UserError, explain
 
@@ -125,13 +125,12 @@ def render_project(project_id: str, report, piece_ids: list[str] | None = None) 
             narration = None
             if "video" in kinds:  # a quote image has no voice: never pay for (or wait on) narration it won't use
                 at("Narrating", 0.0)
-                if voiced:  # the quote read aloud, who said it, then the lesson on that exact quote
-                    q = content_data["quote"]
+                if voiced:  # "Seneca once wrote", the quote, the book, then the lesson on that exact quote
                     lesson = content_data.get("lesson") or ""
-                    script = (q["text"] + (f"\n\n{q['author']}." if q.get("author") else "")
-                              + (f"\n\n{lesson}" if lesson else ""))
+                    script, parts = reveal.script(content_data["quote"], lesson)
                     narration = asyncio.run(engine.generate(
-                        script, voice, "the quote read slowly so each phrase lands, a breath of silence before the name"
+                        script, voice, "the opening words said quietly, then the quote read slowly so each phrase "
+                        "lands, a breath of silence between its sentences and before the book's name"
                         + ("; then, after a pause, the lesson spoken warmly and personally to one listener, like "
                            "advice from someone who has lived it" if lesson else "")))
                 else:
@@ -148,14 +147,38 @@ def render_project(project_id: str, report, piece_ids: list[str] | None = None) 
                 full_out = config.MEDIA_DIR / out
                 try:
                     if kind == "video" and voiced:
-                        # the quote picture just rendered, fitted over a blurred fill of itself, read aloud: at least
-                        # VOICED_HOLD seconds so a short quote still gets a moment on screen
+                        # the photo, dimmed, with the quote revealed 2-3 words at a time as it is read (reveal.py);
+                        # then the quote picture just rendered, over a blurred fill of itself, for the book and the
+                        # lesson. At least VOICED_HOLD seconds so a short quote still gets a moment on screen.
+                        at("Timing the words", 0.25)
+                        words = _words(script, narration.path, narration.duration)
+                        times = reveal.timeline(script, words, narration.duration)
+                        times = reveal.stretch(narration.path, parts, times)  # pauses for the reveal
+                        narration = tts.AudioResult(narration.path)
+                        ass_text, post_at = reveal.ass(parts, times, renderer.w, renderer.h)
+                        subs = config.MEDIA_DIR / "tmp" / f"{piece['id']}-subs.ass"
+                        subs.parent.mkdir(parents=True, exist_ok=True)
+                        subs.write_text(ass_text, encoding="utf-8")
+                        total = round(max(narration.duration + 0.6, VOICED_HOLD), 3)  # render_video's own length
+                        kb = brief.get("ken_burns", True)  # briefs saved before the toggle keep the move
+                        fade = 0.8
+                        first = min(post_at + fade / 2, total - 1.0)
+                        if len(pool) > 1 or asset["asset_type"] == "video":  # clips behind the words
+                            shots = _behind_words(pool, first, kb, piece["idx"])
+                            dim = Path(shots[0]["src"])
+                        else:
+                            dim = _dimmed(asset, config.MEDIA_DIR / "tmp" / f"{piece['id']}-dim.jpg")
+                            shots = [{"src": str(dim), "length": first, "still": True,
+                                      "motion": "drift" if kb else "none"}]
+                        shots += [{"src": str(full_out.with_name(f"{piece['idx']:03d}-image.jpg")), "still": True,
+                                  "length": total - first + fade, "blur": True, "motion": "push" if kb else "none",
+                                  "transition": "fade", "tdur": fade}]
                         at("Encoding video", enc[0])
-                        info = renderer.render_video(src=full_out.with_name(f"{piece['idx']:03d}-image.jpg"),
-                                                     narration=narration.path, out=full_out, subject_position="center",
-                                                     src_fps=0, src_duration=0, still=True, blur_background=True,
+                        info = renderer.render_video(src=dim, narration=narration.path, out=full_out,
+                                                     subject_position="center", src_fps=0, src_duration=0, still=True,
                                                      progress=lambda f: at("Encoding video", enc[0] + f * (enc[1] - enc[0])),
-                                                     out_fps=brief["fps"], hold=VOICED_HOLD)
+                                                     out_fps=brief["fps"], hold=VOICED_HOLD, shots=shots,
+                                                     subtitles=subs)
                         duration, fps, w, h = info["duration"], info["fps"], renderer.w, renderer.h
                     elif kind == "video":
                         # clean video: no scrim, no quote text burned in (user decision 2026-09-20)
@@ -237,9 +260,74 @@ def render_project(project_id: str, report, piece_ids: list[str] | None = None) 
         finally:  # the voice track and the frame/subtitle scratch are baked into the render now: never kept
             if narration is not None:
                 Path(narration.path).unlink(missing_ok=True)
-            for scratch in (f"{piece['id']}-frame.jpg", f"{piece['id']}-subs.ass"):
+            for scratch in (f"{piece['id']}-frame.jpg", f"{piece['id']}-subs.ass", f"{piece['id']}-dim.jpg"):
                 (config.MEDIA_DIR / "tmp" / scratch).unlink(missing_ok=True)
     report("Done", 1.0)
+
+
+# seconds per clip behind a voiced quote (owner 2026-11-12: "a range, not a static amount"): each slot is drawn
+# from this range, so one runs 2.5 s, the next 3.2, then 3.8, then 2.0; ~2.9 s on average, calm but never metronomic
+CLIP_RANGE = (2.0, 3.8)
+CLIP_JOIN = 0.5   # cross-dissolve between those clips
+CLIP_MIN = 1.2    # the shortest slot: more picked clips than ~2.5 s slots means quicker cuts, never a dropped clip
+
+
+def _slots(n: int, total: float, seed: int) -> list[float]:
+    """n slot lengths drawn from CLIP_RANGE, scaled to sum to `total`. Seeded (the piece number), so a re-render
+    keeps its cut; a slot squeezed under CLIP_MIN by the scaling evens the set out until none is."""
+    import random
+    rng = random.Random(seed)
+    raw = [rng.uniform(*CLIP_RANGE) for _ in range(n)]
+    even = total / n
+    lengths = [r * total / sum(raw) for r in raw]
+    while min(lengths) < CLIP_MIN and even >= CLIP_MIN:
+        lengths = [(x + even) / 2 for x in lengths]
+    return lengths
+
+
+def _behind_words(pool: list[dict], span: float, ken_burns: bool, seed: int = 0) -> list[dict]:
+    """The voiced quote's reveal over footage (owner 2026-11-12): the picked clips (and any photos) cut together
+    across `span` seconds, a cut every 2-3.8 s (CLIP_RANGE, varied slot to slot), dissolved, dimmed for the words. A clip enters at its middle
+    and loops only if it is shorter than its slot; a set too small for the span comes round again. Every clip only
+    lends a slice (owner 2026-11-12: "not the entire length"), so a long video never plays out and the cuts keep the
+    hook; a set larger than the slots shortens them (down to CLIP_MIN) so every picked clip is seen."""
+    n = max(1, round(span / (sum(CLIP_RANGE) / 2)), min(len(pool), int(span // CLIP_MIN)))
+    # every dissolve eats CLIP_JOIN from the running total, so the slots together run that much longer
+    lengths = _slots(n, span + (n - 1) * CLIP_JOIN, seed)
+    moves = ["in", "out", "pan"] if ken_burns else [None]
+    shots = []
+    for i, each in enumerate(lengths):
+        a = pool[i % len(pool)]
+        src = str(config.MEDIA_DIR / a["local_path"])
+        if a["asset_type"] == "image":
+            shot = {"src": src, "length": each, "still": True, "motion": "drift" if ken_burns else "none"}
+        else:
+            avail = max(a["duration"] or each, 0.5)
+            lap = i // len(pool)  # a second time round enters further in, so a repeat is a new moment
+            seek = max((avail - each) * (0.5 + 0.25 * (lap % 2)), 0.0) if avail > each else 0.0
+            shot = {"src": src, "length": each, "still": False, "seek": round(seek, 2), "loop": avail < each + seek,
+                    "motion": moves[i % len(moves)]}
+        shot["dim"] = True
+        if i:
+            shot["transition"], shot["tdur"] = "fade", CLIP_JOIN
+        shots.append(shot)
+    return shots
+
+
+def _dimmed(asset: dict, out: Path) -> Path:
+    """The piece's photo, darkened and softened so white words read on it anywhere, a busy texture included (a
+    video asset gives its middle frame)."""
+    from PIL import Image, ImageEnhance, ImageFilter
+    src = config.MEDIA_DIR / asset["local_path"]
+    out.parent.mkdir(parents=True, exist_ok=True)
+    if asset["asset_type"] == "video":
+        render.thumbnail(src, out, at=max((asset["duration"] or 0) / 2, 0.5))
+        src = out
+    with Image.open(src) as im:
+        rgb = im.convert("RGB")
+        dark = ImageEnhance.Brightness(rgb.filter(ImageFilter.GaussianBlur(rgb.width / 300))).enhance(0.4)
+    dark.save(out, quality=92)
+    return out
 
 
 def _subtitles_ass(piece: dict, words: list[dict], duration: float, w: int, h: int,

@@ -44,6 +44,7 @@ METHODS = {
     "pieces.regenerate": content.regenerate,
     "assets.list": assets.list_assets,
     "visuals.pick": assets.pick,
+    "visuals.add_links": assets.add_links,
     "assets.delete": assets.delete_asset,
     "pieces.delete": content.delete_piece,
     "renders.delete": renders.delete,

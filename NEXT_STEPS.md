@@ -5,6 +5,39 @@ the older milestone log (M1-M8) and is superseded where they disagree. Read this
 
 ## Start here
 
+- **Session 2026-11-12 (uncommitted): voiced quote videos rebuilt, music, voices, links.**
+  - **Music:** the bundled library is now Lyria 3 Pro (OpenRouter, streamed audio) written to the owner's brief: slow felt
+    piano, a little soft strings, a low cello/bass anchor, no drums/vocals (`scripts/make_music.py`, 12 x ~2 min,
+    96k AAC, -20 LUFS). Old Commons tracks (Mountain King, Egmont...) removed. Owner should listen to `assets/music/`.
+  - **Voices:** ElevenLabs eleven-v4 on the same OpenRouter key (`tts.NARRATORS` raspy=George, gravel=Clyde,
+    deep=Brian, sage=Bill; PCM like Gemini). Genre defaults now raspy (stoic/history/books), gravel (speech), deep
+    (cinema); hope keeps Gemini "warm". ~4 cents per voiced quote vs ~0.5 for Gemini.
+  - **Voiced quote video** (`app/reveal.py`): "<Author> once wrote...", the quote, the book (`Quote.source`, new
+    optional field the writer fills), then the lesson. Words appear 2-3 at a time centred (Instrument Serif), each
+    finished section shows whole for 1.6 s (silence is inserted into the narration WAV where the voice ran on; the
+    real speech end is found in the audio because STT stretches word ends), then the designed post cross-fades in for
+    book + lesson. Brief `ken_burns` (default on: drift on the photo, push on the post) and `backdrop`
+    photo|clips: clips = 5 Pexels videos per quote (quote searches + `assets.MOOD_CLIPS[genre]`), cut every ~2.5 s,
+    dimmed in ffmpeg (`shot["dim"]`); the post is designed from the first clip's frame.
+  - **Your own footage:** footage review has a per-piece links box: several Pexels photo/video or Unsplash photo
+    links at once (commas, spaces or new lines; Ctrl+Enter adds), `visuals.add_links` -> `provider.by_id`, fetched
+    concurrently. Yours play first in paste order; the piece grows to hold them all (`review.linked`, `base_want`,
+    up to `MAX_SHOTS` 14; a plain picture post keeps 1); bad links are listed with a reason and left in the box.
+    Each clip lends only a slice from its middle (`renders._behind_words`: ~2.5 s slots, down to `CLIP_MIN` 1.2 s
+    so every pick is seen when the reveal is long enough). Live-checked Pexels lookup; the add flow is unit-tested.
+  - **Unsplash fix:** `download_location` answers JSON `{url}`, not bytes; we stored the JSON as the photo. Fixed
+    (ping, then fetch the url at w=1440, ixid kept). Only the Access Key is needed (Client-ID header); Secret Key
+    and App ID are OAuth-only. Settings/Setup copy says so. Not live-tested: no Unsplash key on this machine.
+  - Clip slots behind a voiced quote vary (owner): drawn from `renders.CLIP_RANGE` (2.0-3.8 s), seeded by the
+    piece number so a re-render keeps its cut, scaled to fill the reveal (`renders._slots`).
+  - **Checked 2026-11-12:** `npm test` passed in full (256 backend tests, typecheck, build, smoke; screenshots looked
+    at, the links box renders under each piece). Real e2e renders at 540x960 (photo and clips), frames reviewed.
+    **Installer 0.1.1 built** (`config.VERSION` and `apps/desktop/package.json` both bumped; 285,974,023 bytes,
+    essentials ffmpeg, unsigned) to the session scratchpad `release/`; packaged smoke ok on the second run (first timed
+    out as usual), reports 0.1.1. electron-builder needed `NODE_OPTIONS=--use-system-ca`. **Not uploaded to R2.**
+    Not verified: the voiced-video toggles in a screenshot (smoke uses plain pictures), a full generate+render in the
+    app with the new voices, music and clips.
+
 - **Session 2026-11-10 (uncommitted): videos that tell real stories.** Owner: "Mansa Musa" gave a desert poem on
   four looping clips, ungraded, silent, in a soft robotic voice. Fixed:
   - **Documentaries:** `research.py` looks the topic up on Wikipedia (no key); the planner (`DOC_SYSTEM`) confirms

@@ -43,6 +43,10 @@ class VisualProvider:
     async def download(self, asset: Candidate) -> bytes: ...
     async def download_thumb(self, asset: Candidate) -> bytes: ...
 
+    async def by_id(self, slug: str, kind: str) -> Candidate:
+        """One asset from its page link's last path part (assets.add_link)."""
+        raise UserError(f"{self.name.title()} links aren't supported.")
+
 
 class _Http:
     """Shared plumbing: Windows cert store (see OpenRouterModel), bounded retries, human errors (PRD §79)."""
@@ -64,6 +68,8 @@ class _Http:
             else:
                 if r.status_code in (401, 403):
                     raise UserError(f"{self.label} authentication failed. Check the API key in Settings.", r.text[:500])
+                if r.status_code == 404:  # a pasted link to something removed or mistyped: retrying won't help
+                    raise UserError(f"{self.label} couldn't find that photo or video. Check the link.", r.text[:300])
                 if r.status_code == 429:
                     raise UserError(f"{self.label} is rate limiting us. Try again in a few minutes.", r.text[:500])
                 if r.is_success:
@@ -100,24 +106,38 @@ class PexelsProvider(VisualProvider):
         if color:
             params["color"] = color  # Pexels filters photos by colour at the source (videos have no such filter)
         d = await self.h.get_json(f"{self.URL}/v1/search", params)
-        return [Candidate(provider=self.name, provider_asset_id=str(p["id"]), asset_type="image",
-                          creator=p.get("photographer", ""), source_url=p.get("url", ""),
-                          download_url=p["src"]["large2x"], thumb_url=p["src"]["medium"],
-                          width=p.get("width", 0), height=p.get("height", 0))
-                for p in d.get("photos", [])]
+        return [self._photo(p) for p in d.get("photos", [])]
+
+    def _photo(self, p: dict) -> Candidate:
+        return Candidate(provider=self.name, provider_asset_id=str(p["id"]), asset_type="image",
+                         creator=p.get("photographer", ""), source_url=p.get("url", ""),
+                         download_url=p["src"]["large2x"], thumb_url=p["src"]["medium"],
+                         width=p.get("width", 0), height=p.get("height", 0))
+
+    def _video(self, v: dict) -> Candidate | None:
+        file = _best_video_file(v.get("video_files", []))
+        if not file:
+            return None
+        return Candidate(provider=self.name, provider_asset_id=str(v["id"]), asset_type="video",
+                         creator=v.get("user", {}).get("name", ""), source_url=v.get("url", ""),
+                         download_url=file["link"], thumb_url=v.get("image", ""),
+                         width=v.get("width", 0), height=v.get("height", 0),
+                         fps=float(file.get("fps") or 0), duration=float(v.get("duration") or 0))
+
+    async def by_id(self, slug, kind):
+        m = re.search(r"(\d+)$", slug)  # pexels.com/photo/calm-sea-at-dusk-1234567/
+        if not m:
+            raise UserError("That Pexels link has no photo or video number in it.", slug)
+        if kind == "video":
+            c = self._video(await self.h.get_json(f"{self.URL}/videos/videos/{m[1]}", {}))
+            if c is None:
+                raise UserError("That Pexels video has no portrait or square file the studio can use.", slug)
+            return c
+        return self._photo(await self.h.get_json(f"{self.URL}/v1/photos/{m[1]}", {}))
 
     async def search_videos(self, query, limit):
         d = await self.h.get_json(f"{self.URL}/videos/search", {"query": query, "per_page": limit, "orientation": "portrait"})
-        out = []
-        for v in d.get("videos", []):
-            file = _best_video_file(v.get("video_files", []))
-            if file:
-                out.append(Candidate(provider=self.name, provider_asset_id=str(v["id"]), asset_type="video",
-                                     creator=v.get("user", {}).get("name", ""), source_url=v.get("url", ""),
-                                     download_url=file["link"], thumb_url=v.get("image", ""),
-                                     width=v.get("width", 0), height=v.get("height", 0),
-                                     fps=float(file.get("fps") or 0), duration=float(v.get("duration") or 0)))
-        return out
+        return [c for v in d.get("videos", []) if (c := self._video(v))]
 
     async def download(self, asset):
         return await self.h.fetch(asset.download_url)
@@ -150,18 +170,35 @@ class UnsplashProvider(VisualProvider):
         if color:
             params["color"] = color
         d = await self.h.get_json(f"{self.URL}/search/photos", params)
-        return [Candidate(provider=self.name, provider_asset_id=str(p["id"]), asset_type="image",
-                          creator=p.get("user", {}).get("name", ""), source_url=p.get("links", {}).get("html", ""),
-                          download_url=p["links"]["download_location"], thumb_url=p["urls"]["small"],
-                          width=p.get("width", 0), height=p.get("height", 0))
-                for p in d.get("results", [])]
+        return [self._photo(p) for p in d.get("results", [])]
+
+    def _photo(self, p: dict) -> Candidate:
+        return Candidate(provider=self.name, provider_asset_id=str(p["id"]), asset_type="image",
+                         creator=p.get("user", {}).get("name", ""), source_url=p.get("links", {}).get("html", ""),
+                         download_url=p["links"]["download_location"], thumb_url=p["urls"]["small"],
+                         width=p.get("width", 0), height=p.get("height", 0))
+
+    async def by_id(self, slug, kind):
+        if kind == "video":
+            raise UserError("Unsplash has photos only. Use a Pexels link for a video clip.")
+        # unsplash.com/photos/a-man-on-a-cliff-XyZ12abCDeF: the id is the slug's last part (older links are the id)
+        tried = list(dict.fromkeys([slug.rsplit("-", 1)[-1], slug[-11:], slug]))
+        for i, pid in enumerate(tried):
+            try:
+                return self._photo(await self.h.get_json(f"{self.URL}/photos/{pid}", {}))
+            except UserError:
+                if i == len(tried) - 1:
+                    raise
 
     async def search_videos(self, query, limit):
         return []
 
     async def download(self, asset):
-        # download_location with the auth header counts the attribution ping Unsplash asks for; it redirects to bytes.
-        return await self.h.fetch(asset.download_url)
+        # download_location is Unsplash's required download ping: it counts the download and answers JSON
+        # {"url": <the photo>}, never image bytes (checked against unsplash.com/documentation 2026-11-12; this used
+        # to store that JSON as the photo). The photo URL is imgix: sized to 1440 wide here, its ixid kept.
+        url = (await self.h.get_json(asset.download_url, {}))["url"]
+        return await self.h.fetch(url + ("&" if "?" in url else "?") + "w=1440&fm=jpg&q=85")
 
     async def download_thumb(self, asset):
         return await self.h.fetch(asset.thumb_url)

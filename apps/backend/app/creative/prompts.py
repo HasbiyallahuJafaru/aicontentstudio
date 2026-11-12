@@ -201,7 +201,9 @@ VIDEO_PLAN_SHAPE = {
                 "narration_style": "e.g. calm reflective, quiet urgent, warm conversational"}],
 }
 
-QUOTE_FIELD = {"text": "the real documented line", "author": "the real person who said or wrote it"}
+QUOTE_FIELD = {"text": "the real documented line", "author": "the real person who said or wrote it",
+               "source": "the title of the book, speech, poem or letter it comes from, e.g. 'Meditations' or "
+                         "'Letters from a Stoic'; null unless you are certain of the work"}
 DESIGN_FIELD = {"text_density": "low|medium|high", "animation": "still|slow|medium",
                 "composition": "editorial|centered|minimal|bold"}
 METADATA_FIELD = {"title": "what someone would type to find this, max 60 characters, no hashtags, e.g. "

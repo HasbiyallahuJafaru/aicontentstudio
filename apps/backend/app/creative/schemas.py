@@ -54,6 +54,9 @@ class BatchPlan(BaseModel):
 class Quote(BaseModel):
     text: Text = Field(min_length=8, max_length=420)  # ~60 words: long passages welcome (owner 2026-11-10)
     author: str | None = None  # null for original lines; the real public-domain source for attributed genres
+    # the book, speech or letter the line comes from (owner 2026-11-12: the voiced video says "Seneca once wrote", the
+    # quote, then the book's name); null when the writer can't name the work for certain
+    source: Annotated[str, capped(90)] | None = None
 
 
 class Narration(BaseModel):

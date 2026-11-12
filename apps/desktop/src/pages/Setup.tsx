@@ -15,7 +15,7 @@ const KEYS: { name: SecretName; title: string; why: string; where: string; url: 
     where: 'Sign in at pexels.com, open Image & Video API, and copy your key.' },
   { name: 'UNSPLASH_ACCESS_KEY', title: 'More photos', url: 'https://unsplash.com/oauth/applications', optional: true,
     why: 'Optional. An Unsplash access key adds a second photo library to choose from.',
-    where: 'Create an app at unsplash.com/developers and copy its Access Key.' },
+    where: 'Create an app at unsplash.com/oauth/applications and copy its Access Key. The Secret Key and Application ID are only for signing in Unsplash users, which the studio never does.' },
 ]
 const STEPS = KEYS.length + 2  // the keys, posting, the summary
 

@@ -294,7 +294,10 @@ class RenderJob(unittest.TestCase):
         self.assertEqual(job["status"], "completed", job["log"])
         rows = {r["kind"]: r for r in renders.list_(p["id"])}
         self.assertEqual(set(rows), {"image", "video"})
-        self.assertTrue(said[0].startswith("Begin again, and mean it this time."))
+        # 2026-11-12: "<author> once said...", then the quote (no author: the quote itself opens)
+        self.assertIn("Begin again, and mean it this time.", said[0])
+        author = piece["content"]["quote"].get("author")
+        self.assertTrue(said[0].startswith(f"{author} once" if author else "Begin again"), said[0])
         self.assertGreaterEqual(rows["video"]["duration"], renders.VOICED_HOLD - 0.1)  # 2 s of voice, 10 s on screen
 
     def test_full_render_job(self):

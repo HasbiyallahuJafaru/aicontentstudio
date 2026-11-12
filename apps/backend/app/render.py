@@ -261,7 +261,7 @@ class FFmpegRenderer:
                 k = 2 if shot.get("still") else 1
                 bw, bh = k * self.w, k * self.h
                 push = (f",zoompan=z='min(1+0.05*on/{frames:g},1.05)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'"
-                        f":d=1:s={self.w}x{self.h}:fps={fps:g}") if k == 2 else ""
+                        f":d=1:s={self.w}x{self.h}:fps={fps:g}") if k == 2 and shot.get("motion") != "none" else ""
                 chain.append(f"[{i}:v]{NORMALIZE},split=2[bg{i}][fg{i}];"
                              f"[bg{i}]scale={bw // 4}:{bh // 4}:force_original_aspect_ratio=increase,"
                              f"crop={bw // 4}:{bh // 4},boxblur=12:2,scale={bw}:{bh}[bgb{i}];"
@@ -280,7 +280,10 @@ class FFmpegRenderer:
                     "out": f",zoompan=z='max(1.08-0.08*on/{frames:g},1.0)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'"
                            f":d=1:s={self.w}x{self.h}:fps={fps:g}",
                     "pan": f",zoompan=z='1.1':x='(iw-iw/zoom)*on/{frames:g}':y='ih/2-(ih/zoom/2)'"
-                           f":d=1:s={self.w}x{self.h}:fps={fps:g}"}.get(move, "")
+                           f":d=1:s={self.w}x{self.h}:fps={fps:g}",
+                    # Ken Burns (voiced quote videos, 2026-11-12): a slow push that also drifts sideways
+                    "drift": f",zoompan=z='min(1+0.12*on/{frames:g},1.12)':x='(iw-iw/zoom)*(0.3+0.4*on/{frames:g})'"
+                             f":y='(ih-ih/zoom)*0.45':d=1:s={self.w}x{self.h}:fps={fps:g}"}.get(move, "")
             if not zoom:  # a locked-off shot still has to land on the canvas at the timeline's frame rate
                 zoom = f",scale={self.w}:{self.h},fps={fps:g}"
             # conform to the timeline rate BEFORE zoompan: zoompan (d=1) stamps one output frame per input frame
@@ -290,7 +293,10 @@ class FFmpegRenderer:
             # before the shared grade, so clips from different cameras and a scanned painting cut as one film
             # (a still is matched on its source frame, before the 2x supersample, to keep the cost down)
             order = f"{NORMALIZE},{geom}" if shot.get("still") else f"{geom},{NORMALIZE}"
-            chain.append(f"[{i}:v]{order}{ramp},fps={fps:g}{zoom},setsar=1[v{i}]")
+            # dim: footage under words (voiced quote clips, 2026-11-12), darkened and softened so white type reads
+            dim = (f",colorchannelmixer=rr=0.42:gg=0.42:bb=0.42,gblur=sigma={self.w / 400:.2f}"
+                   if shot.get("dim") else "")
+            chain.append(f"[{i}:v]{order}{ramp},fps={fps:g}{zoom}{dim},setsar=1[v{i}]")
 
         # every join is an xfade, a hard cut included (one frame): one timeline, one set of offset maths.
         # xfade eats `duration` seconds at each join, which the planned shot lengths already carry back.

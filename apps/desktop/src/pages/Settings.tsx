@@ -7,7 +7,7 @@ import { ZernioSetup } from '../components/Posting'
 const KEYS: { name: SecretName; label: string }[] = [
   { name: 'OPENROUTER_API_KEY', label: 'OpenRouter API key' },
   { name: 'PEXELS_API_KEY', label: 'Pexels API key' },
-  { name: 'UNSPLASH_ACCESS_KEY', label: 'Unsplash access key (optional)' },
+  { name: 'UNSPLASH_ACCESS_KEY', label: 'Unsplash Access Key (optional; not the Secret Key)' },
 ]
 
 // OpenRouter model ids (checked against openrouter.ai/api/v1/models 2026-11-07), labelled by cost, not by claims.
