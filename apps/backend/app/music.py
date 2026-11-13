@@ -4,7 +4,8 @@ Settings file always wins; this only fills the silence when none is set."""
 from pathlib import Path
 
 DIR = Path(__file__).resolve().parents[1] / "assets" / "music"
-VOLUME = 0.32  # tracks are mastered to -20 LUFS; this sits them ~10 dB under the -16 LUFS voice before ducking
+VOLUME = 0.7  # tracks are mastered to -20 LUFS; ducked, the bed sits ~9 dB under the -16 LUFS voice (2026-11-12:
+               # 0.32 plus a hard duck left the music inaudible under speech)
 FALLBACK = {"": "history"}
 
 

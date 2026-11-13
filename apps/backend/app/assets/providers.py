@@ -111,7 +111,7 @@ class PexelsProvider(VisualProvider):
     def _photo(self, p: dict) -> Candidate:
         return Candidate(provider=self.name, provider_asset_id=str(p["id"]), asset_type="image",
                          creator=p.get("photographer", ""), source_url=p.get("url", ""),
-                         download_url=p["src"]["large2x"], thumb_url=p["src"]["medium"],
+                         download_url=_pexels_full(p), thumb_url=p["src"]["medium"],
                          width=p.get("width", 0), height=p.get("height", 0))
 
     def _video(self, v: dict) -> Candidate | None:
@@ -144,6 +144,13 @@ class PexelsProvider(VisualProvider):
 
     async def download_thumb(self, asset):
         return await self.h.fetch(asset.thumb_url)
+
+
+def _pexels_full(p: dict) -> str:
+    """The photo at full quality, its long edge capped at 2560 px (2026-11-12: "large2x" is only 1300 px tall, so a
+    1920-tall video stretched it ~1.5x and every photo render came out soft). Pexels serves the original resized."""
+    w, h = p.get("width") or 0, p.get("height") or 0
+    return p["src"]["original"] + ("?w=2560" if w > h else "?h=2560")
 
 
 def _best_video_file(files: list[dict]) -> dict | None:

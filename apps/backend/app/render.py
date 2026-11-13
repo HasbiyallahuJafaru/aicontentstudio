@@ -28,6 +28,7 @@ SUBTITLES_FONTS = design.FONTS_DIR
 # strength and temporally smoothed, so each source reaches a common exposure and a near-neutral white balance before
 # the genre grade. ponytail: levels only, not a learned colour transfer; enough to stop one clip reading orange and
 # the next blue under the same grade.
+SHARPEN = 0.45  # unsharp luma amount for every finished render (0.6+ starts to halo around type)
 NORMALIZE = "normalize=smoothing=24:independence=0.6:strength=0.45"  # every bundled face, so any caption font resolves
 
 
@@ -265,12 +266,13 @@ class FFmpegRenderer:
                 chain.append(f"[{i}:v]{NORMALIZE},split=2[bg{i}][fg{i}];"
                              f"[bg{i}]scale={bw // 4}:{bh // 4}:force_original_aspect_ratio=increase,"
                              f"crop={bw // 4}:{bh // 4},boxblur=12:2,scale={bw}:{bh}[bgb{i}];"
-                             f"[fg{i}]scale={bw}:{bh}:force_original_aspect_ratio=decrease[fgp{i}];"
+                             f"[fg{i}]scale={bw}:{bh}:force_original_aspect_ratio=decrease:flags=lanczos[fgp{i}];"
                              f"[bgb{i}][fgp{i}]overlay=(W-w)/2:(H-h)/2,fps={fps:g}{push},setsar=1[v{i}]")
                 continue
             # zoompan quantises its zoom in source pixels, which stair-steps on a still: supersample first
             box = (2 * self.w, 2 * self.h) if shot.get("still") else (self.w, self.h)
-            geom = f"scale={box[0]}:{box[1]}:force_original_aspect_ratio=increase,crop={box[0]}:{box[1]}"
+            # lanczos: the sharpest of ffmpeg's resamplers (the default bicubic softens every upscale)
+            geom = f"scale={box[0]}:{box[1]}:force_original_aspect_ratio=increase:flags=lanczos,crop={box[0]}:{box[1]}"
             zoom = {"push": f",zoompan=z='min(1+0.06*on/{frames:g},1.06)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'"
                             f":d=1:s={self.w}x{self.h}:fps={fps:g}",
                     "slow": f",zoompan=z='min(1+0.03*on/{frames:g},1.03)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'"
@@ -293,9 +295,11 @@ class FFmpegRenderer:
             # before the shared grade, so clips from different cameras and a scanned painting cut as one film
             # (a still is matched on its source frame, before the 2x supersample, to keep the cost down)
             order = f"{NORMALIZE},{geom}" if shot.get("still") else f"{geom},{NORMALIZE}"
-            # dim: footage under words (voiced quote clips, 2026-11-12), darkened and softened so white type reads
-            dim = (f",colorchannelmixer=rr=0.42:gg=0.42:bb=0.42,gblur=sigma={self.w / 400:.2f}"
-                   if shot.get("dim") else "")
+            # dim: footage under words (voiced quote clips, 2026-11-12), a touch darker so small white type reads;
+            # never blurred (the owner's references keep the footage natural and sharp)
+            # `dim` is the brightness kept (renders.DIM for a darker clip, 1.0 for a bright one; True = 0.8)
+            k = 0.8 if shot.get("dim") is True else float(shot.get("dim") or 1.0)
+            dim = f",colorchannelmixer=rr={k:g}:gg={k:g}:bb={k:g}" if k < 1.0 else ""
             chain.append(f"[{i}:v]{order}{ramp},fps={fps:g}{zoom}{dim},setsar=1[v{i}]")
 
         # every join is an xfade, a hard cut included (one frame): one timeline, one set of offset maths.
@@ -321,9 +325,9 @@ class FFmpegRenderer:
             chain.append(f"[{prev}]split=2[base][hi];[hi]gblur=sigma=18,curves=all='0/0 0.62/0.12 1/1'[blur];"
                          f"[base][blur]blend=all_mode=screen:all_opacity={style['bloom']:g}[bloomed]")
             prev = "bloomed"
-        dress = []
-        if style["unsharp"]:
-            dress.append(f"unsharp=5:5:{style['unsharp']:g}")
+        # a light luma sharpen on every render (2026-11-12, "not sharp once uploaded"): platform re-encodes soften
+        # fine detail, so the master leaves a little crisper than it looks right; a look's own unsharp overrides
+        dress = [f"unsharp=5:5:{style['unsharp'] or SHARPEN:g}:5:5:0"]
         if style["vignette"]:
             dress.append(f"vignette=angle=PI/{style['vignette']:g}")
         if style["grain"]:
@@ -376,9 +380,10 @@ class FFmpegRenderer:
             a_chain += (";[na]asplit=2[nk][key]"
                         f";[{narr_idx + 1}:a]volume={self.music_volume},afade=t=in:st=0:d=1,"
                         f"afade=t=out:st={max(duration - 1.5, 0):.3f}:d=1.5[mu]"
-                        # ponytail: ratio stands in for the genre's duck depth in dB; close enough by ear
-                        f";[mu][key]sidechaincompress=threshold=0.03:ratio={max(2.0, duck * 1.5):g}"
-                        ":attack=20:release=400[duck]"
+                        # a gentle duck: the genre's depth in dB maps to a soft ratio (2026-11-12: ratio = 1.5 x dB
+                        # ran 7.5-12 and buried the music under every word); the bed stays audible under the voice
+                        f";[mu][key]sidechaincompress=threshold=0.05:ratio={1 + duck / 3:.2f}:knee=4"
+                        ":attack=30:release=600[duck]"
                         ";[nk][duck]amix=inputs=2:duration=first:normalize=0,alimiter=limit=0.89[aout]")
             args += ["-stream_loop", "-1", "-i", str(self.music)]  # a short bed loops rather than stopping mid-video
         else:
@@ -436,7 +441,7 @@ class FFmpegRenderer:
         return info
 
     def render_image(self, *, src: Path | None, out: Path, quote: dict | str, subject_position: str, palette: dict,
-                     design_name: str = "classic", face: str = "auto", position: str = "auto") -> None:
+                     design_name: str = "arch", face: str = "auto", position: str = "auto") -> None:
         """The 4:5 still, art-directed by `design_name` (app/design.py); `src` None is fine for type-only designs."""
         if isinstance(quote, str):
             quote = {"text": quote}

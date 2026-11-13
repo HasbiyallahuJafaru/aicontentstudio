@@ -166,6 +166,31 @@ def _queries(content: dict) -> list[str]:
     return list(dict.fromkeys(q for q in shots + flat if q))
 
 
+OLD_SMALL = 1600  # long edge (px) below which a stored Pexels photo predates the full-size download (2026-11-12)
+
+
+async def _sharpen_old(asset_id: str, provider: VisualProvider) -> None:
+    """A library Pexels photo saved at the old ~1300 px preview size is fetched again at full size when it is reused,
+    so reusing the library never brings back soft renders. Best effort: on any failure the stored file is used."""
+    if provider.name != "pexels":
+        return
+    with connect() as conn:
+        a = conn.execute("SELECT asset_type, provider_asset_id, local_path FROM assets WHERE id = ?",
+                         (asset_id,)).fetchone()
+    if a is None or a["asset_type"] != "image":
+        return
+    path = config.MEDIA_DIR / a["local_path"]
+    try:
+        with Image.open(path) as im:
+            if max(im.size) >= OLD_SMALL:
+                return
+        data = await provider.download(await provider.by_id(a["provider_asset_id"], "image"))
+        Image.open(io.BytesIO(data)).verify()  # never replace a good file with a broken one
+        _store(a["local_path"], data)
+    except (OSError, UserError, ValueError) as e:
+        log.info("kept the stored copy of %s: %r", asset_id, e)
+
+
 async def _take(best: Candidate, meta: dict, piece: dict, providers: list[VisualProvider], seen: list[str],
                 ever: dict, recent: list[dict]) -> dict | None:
     """Store one chosen candidate (downloading it only if it is new) and return its content entry. None when it
@@ -190,6 +215,7 @@ async def _take(best: Candidate, meta: dict, piece: dict, providers: list[Visual
     a = meta["analysis"]
     if row:
         asset_id = row["id"]
+        await _sharpen_old(row["id"], provider)
         if row["quality_score"] is None:  # backfill the analysis columns on pre-M4 rows
             with connect() as conn:
                 conn.execute("UPDATE assets SET brightness = ?, saturation = ?, contrast = ?, dominant_colors = ?, "
@@ -460,20 +486,75 @@ def add_links(piece_id: str, urls: str) -> dict:
         elif got["key"] not in [o["key"] for o in added]:
             added.append(got)
     if added:
-        keys = [o["key"] for o in added]
-        review["options"] = added + [o for o in review["options"] if o["key"] not in keys]
-        linked = list(dict.fromkeys(keys + review.get("linked", [])))  # this paste first, earlier links after
-        review["linked"] = linked
-        review.setdefault("base_want", review["want"])
-        single = brief["format"] == "image"  # a picture post shows one photo; everything else can cut between many
-        review["want"] = 1 if single else min(max(review["base_want"], len(linked)), MAX_SHOTS)
-        rest = [k for k in review["picked"] if k not in linked]
-        review["picked"] = (linked + rest)[: review["want"]]
-        with connect() as conn:
-            conn.execute("UPDATE content_pieces SET content = ? WHERE id = ?",
-                         (json.dumps(content, ensure_ascii=False), piece_id))
+        _use(piece_id, content, review, brief, added)
     elif len(skipped) == 1:
         raise UserError(skipped[0]["reason"], skipped[0]["url"])
+    return {"added": added, "picked": review["picked"], "want": review["want"], "skipped": skipped}
+
+
+def _use(piece_id: str, content: dict, review: dict, brief: dict, added: list[dict]) -> None:
+    """The user's own picks (pasted links, library items) join the piece's options and play first, in the order
+    chosen; the piece grows to hold them (up to MAX_SHOTS; a single picture post keeps one). Saved at once."""
+    keys = [o["key"] for o in added]
+    review["options"] = added + [o for o in review["options"] if o["key"] not in keys]
+    linked = list(dict.fromkeys(keys + review.get("linked", [])))  # this choice first, earlier ones after
+    review["linked"] = linked
+    review.setdefault("base_want", review["want"])
+    single = brief["format"] == "image"  # a picture post shows one photo; everything else can cut between many
+    review["want"] = 1 if single else min(max(review["base_want"], len(linked)), MAX_SHOTS)
+    rest = [k for k in review["picked"] if k not in linked]
+    review["picked"] = (linked + rest)[: review["want"]]
+    with connect() as conn:
+        conn.execute("UPDATE content_pieces SET content = ? WHERE id = ?",
+                     (json.dumps(content, ensure_ascii=False), piece_id))
+
+
+def add_from_library(piece_id: str, asset_ids: list[str]) -> dict:
+    """Reuse photos and clips already downloaded (owner 2026-11-12): library items added to the piece and picked,
+    in the order chosen. Nothing is fetched; the stored file is used (`_take` finds the library row). A video can't
+    go behind a photo post, so those are skipped with a reason, like a pasted link."""
+    from app import jobs, projects
+    ids = list(dict.fromkeys(a for a in asset_ids if a))
+    if not ids:
+        raise UserError("Choose at least one photo or clip from your library.")
+    with connect() as conn:
+        row = conn.execute("SELECT project_id, content FROM content_pieces WHERE id = ?", (piece_id,)).fetchone()
+        assets = {r["id"]: dict(r) for r in conn.execute(
+            f"SELECT * FROM assets WHERE id IN ({','.join('?' * len(ids))})", ids)}
+    if row is None:
+        raise UserError("This piece no longer exists.", f"piece id {piece_id}")
+    jobs.ensure_idle(row["project_id"], "changing its footage")
+    brief = projects.get(row["project_id"])["brief"]
+    content = json.loads(row["content"])
+    review = content.get("review")
+    if not review:
+        raise UserError("This piece has no footage waiting to be picked.")
+    added, skipped = [], []
+    for aid in ids:
+        a = assets.get(aid)
+        if a is None:
+            skipped.append({"id": aid, "reason": "That item is no longer in your library."})
+            continue
+        if a["asset_type"] == "video" and review["type"] == "image":
+            skipped.append({"id": aid, "reason": "A video can't go behind a photo post."})
+            continue
+        c = Candidate(provider=a["provider"], provider_asset_id=a["provider_asset_id"], asset_type=a["asset_type"],
+                      creator=a["creator"] or "", source_url=a["source_url"] or "", download_url="",
+                      thumb_url="", width=a["width"] or 0, height=a["height"] or 0, fps=a["fps"] or 0,
+                      duration=a["duration"] or 0)
+        analysis = {"brightness": a["brightness"], "saturation": a["saturation"], "contrast": a["contrast"],
+                    "dominant_colors": json.loads(a["dominant_colors"] or "[]"),
+                    "subject_position": a["subject_position"], "visual_complexity": a["visual_complexity"],
+                    "temperature": a["temperature"]}
+        if analysis["brightness"] is None:  # a pre-analysis row: read its stored thumbnail now
+            analysis = visual.analyze((config.MEDIA_DIR / a["thumb_path"]).read_bytes())
+        added.append({"key": f"{c.provider}:{c.provider_asset_id}", "candidate": c.model_dump(),
+                      "thumb": a["thumb_path"], "phash": a["perceptual_hash"], "themes": a["themes"] or "[]",
+                      "queries": ["your library"], "score": 1.0, "note": None, "used": 0, "analysis": analysis})
+    if added:
+        _use(piece_id, content, review, brief, added)
+    elif skipped:
+        raise UserError(skipped[0]["reason"], skipped[0]["id"])
     return {"added": added, "picked": review["picked"], "want": review["want"], "skipped": skipped}
 
 

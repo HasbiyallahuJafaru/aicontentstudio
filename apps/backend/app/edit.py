@@ -7,7 +7,7 @@ One table so the grade cannot drift from the cadence. `renders.py` reads CUTS to
 # A colour grade plus the film dressing that rides with it.
 #   grade:    filter terms applied to the whole timeline (curves/eq/colorbalance, no leading comma)
 #   bloom:    halation opacity, 0 disables the blurred highlight pass
-#   grain:    `noise=alls=` strength, at most 5: temporal grain is noise the encoder must spend bits on (8 ran
+#   grain:    `noise=alls=` strength, at most 2 since 2026-11-12 (sharpness after upload; it was 3-5), was at most 5: temporal grain is noise the encoder must spend bits on (8 ran
 #             24 Mbps, 10 ran 50 Mbps, 2026-11-09) and platform re-encodes turn heavy grain into blocks
 #   vignette: corner falloff angle divisor (higher = subtler), None disables
 #   unsharp:  micro-contrast amount, 0 disables
@@ -15,35 +15,35 @@ One table so the grade cannot drift from the cadence. `renders.py` reads CUTS to
 # ponytail: 1D curves per channel, not a 3D LUT. lut3d is verified to work here and buys true cross-channel
 # grading (real bleach bypass, luminance-keyed split tone); move to it when a genre needs more than this.
 LOOKS = {
-    "none": {"grade": "", "bloom": 0.0, "grain": 4, "vignette": 5.0, "unsharp": 0.0, "bars": 0.0},
-    "warm": {"grade": "colorbalance=rm=.07:bm=-.07,eq=saturation=1.08", "bloom": 0.22, "grain": 4,
+    "none": {"grade": "", "bloom": 0.0, "grain": 2, "vignette": 5.0, "unsharp": 0.0, "bars": 0.0},
+    "warm": {"grade": "colorbalance=rm=.07:bm=-.07,eq=saturation=1.08", "bloom": 0.22, "grain": 2,
              "vignette": 5.0, "unsharp": 0.0, "bars": 0.0},
-    "cool": {"grade": "colorbalance=rm=-.06:bm=.07", "bloom": 0.0, "grain": 4, "vignette": 5.0,
+    "cool": {"grade": "colorbalance=rm=-.06:bm=.07", "bloom": 0.0, "grain": 2, "vignette": 5.0,
              "unsharp": 0.0, "bars": 0.0},
-    "mono": {"grade": "hue=s=0", "bloom": 0.18, "grain": 5, "vignette": 4.0, "unsharp": 0.0, "bars": 0.0},
-    "vivid": {"grade": "eq=saturation=1.32:contrast=1.05", "bloom": 0.0, "grain": 4, "vignette": 5.0,
+    "mono": {"grade": "hue=s=0", "bloom": 0.18, "grain": 2, "vignette": 4.0, "unsharp": 0.0, "bars": 0.0},
+    "vivid": {"grade": "eq=saturation=1.32:contrast=1.05", "bloom": 0.0, "grain": 2, "vignette": 5.0,
               "unsharp": 0.0, "bars": 0.0},
     # genre grades: reached when the brief's Look is "auto"
     # 2026-11-10: split-toned (shadows and highlights pushed apart) and about twice as strong as the first cut,
     # which nudged curves ~3% and read as ungraded; the per-shot match in render.NORMALIZE makes this safe to push
     "hope": {"grade": "colorbalance=rs=.04:bs=.05:rh=.08:gh=.03:bh=-.08,"
                       "curves=all='0/0.04 0.25/0.24 0.75/0.8 1/0.97',eq=saturation=1.05:contrast=1.04",
-             "bloom": 0.30, "grain": 4, "vignette": 6.0, "unsharp": 0.0, "bars": 0.0},
+             "bloom": 0.30, "grain": 2, "vignette": 6.0, "unsharp": 0.0, "bars": 0.0},
     "speech": {"grade": "colorbalance=rs=-.05:bs=.07:rh=.05:bh=-.04,"
                         "curves=all='0/0 0.25/0.19 0.75/0.82 1/1',eq=saturation=0.62:contrast=1.2",
-               "bloom": 0.0, "grain": 5, "vignette": 3.5, "unsharp": 0.6, "bars": 0.0},
+               "bloom": 0.0, "grain": 2, "vignette": 3.5, "unsharp": 0.6, "bars": 0.0},
     "stoic": {"grade": "colorbalance=rs=-.04:gs=.01:bs=.06:rh=.05:gh=.02:bh=-.03,"
                        "curves=all='0/0.05 0.25/0.22 0.75/0.78 1/0.95',eq=saturation=0.6:contrast=1.08",
-              "bloom": 0.0, "grain": 3, "vignette": 6.0, "unsharp": 0.0, "bars": 0.0},
+              "bloom": 0.0, "grain": 2, "vignette": 6.0, "unsharp": 0.0, "bars": 0.0},
     "history": {"grade": "eq=saturation=0.42,colorbalance=rs=.03:bs=-.02:rm=.12:gm=.05:bm=-.10:rh=.06:bh=-.08,"
                          "curves=all='0/0.07 0.25/0.24 0.75/0.79 1/0.95'",
-                "bloom": 0.20, "grain": 5, "vignette": 3.0, "unsharp": 0.0, "bars": 0.11},
+                "bloom": 0.20, "grain": 2, "vignette": 3.0, "unsharp": 0.0, "bars": 0.11},
     "books": {"grade": "colorbalance=rs=.03:gs=.01:bs=-.02:rh=.07:gh=.03:bh=-.07,"
                        "curves=all='0/0.05 0.25/0.24 0.75/0.79 1/0.96',eq=saturation=0.85:contrast=1.04",
-              "bloom": 0.18, "grain": 5, "vignette": 5.0, "unsharp": 0.0, "bars": 0.0},
+              "bloom": 0.18, "grain": 2, "vignette": 5.0, "unsharp": 0.0, "bars": 0.0},
     "cinema": {"grade": "colorbalance=rs=-.07:gs=-.01:bs=.09:rh=.08:gh=.02:bh=-.09,"
                         "curves=all='0/0.03 0.25/0.21 0.75/0.8 1/0.97',eq=saturation=1.0:contrast=1.08",
-               "bloom": 0.40, "grain": 4, "vignette": 5.0, "unsharp": 0.0, "bars": 0.11},
+               "bloom": 0.40, "grain": 2, "vignette": 5.0, "unsharp": 0.0, "bars": 0.11},
 }
 
 # How each genre is cut.

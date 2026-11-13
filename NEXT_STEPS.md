@@ -1,9 +1,120 @@
 # Handover
 
-Last updated 2026-11-08. This is the single source of truth for progress and next steps; `.claude/handover.md` is
+Last updated 2026-11-13. This is the single source of truth for progress and next steps; `.claude/handover.md` is
 the older milestone log (M1-M8) and is superseded where they disagree. Read this, then `.claude/CLAUDE.md`.
 
 ## Start here
+
+- **Installer 0.1.2 built 2026-11-13** (package.json + config.VERSION bumped): new picture designs, marker/duet
+  captions, voice pace, premium grandpa default. 286 MB (273 MiB, under Wrangler's 300 MiB cap), essentials
+  ffmpeg, unsigned; packaged smoke ok on the second run (first timed out, the known fresh-exe delay). electron-builder
+  needs `NODE_OPTIONS=--use-system-ca` here too (TLS error downloading its tools otherwise). Built in the session
+  scratchpad, copied to `apps/desktop/release/` (0.1.0 removed); **not uploaded to R2, site not redeployed.** Not run: the dev `npm test` smoke.
+  - Follow-up: the dashboard's sample cards (and the splash BounceCards, owner-approved, ask first) are bundled
+    renders of the retired designs; regenerate them from the new set.
+
+- **NEXT FEATURE (owner 2026-11-13): Reddit stories on Create.** Paste a Reddit post link (or the story text) and
+  get a finished narrated video: the full story voiced (however long), background footage under it, subtitles in
+  the niche's best-converting style (Marker or Karaoke). Reuses tts (premium grandpa pace), footage search,
+  `captions.py`, the long-narration documentary path. New parts: fetch the story, a cleanup pass (expand AITA/TIFU,
+  fix typos so the voice reads them right, a hook line over the title), one continuous background clip for the
+  whole read (the niche does not cut every 2.5 s), and maybe auto-split into parts with cliffhangers.
+  - **Blocker found:** Reddit returns 403 to anonymous JSON requests (checked 2026-11-13). Faking a browser to get
+    past it is off the table. Legitimate options: paste the text (always works, no account), and/or Reddit's
+    official OAuth API (free personal tier; commercial use is restricted by Reddit's Data API terms).
+  - **Owner to decide before building:** (1) footage: gameplay is the niche standard but copyrighted, so free
+    satisfying Pexels clips (kinetic sand, cooking, driving shots), the user's own gameplay file, or both;
+    (2) length: one video however long, or auto parts of ~60-90 s; (3) text source: paste only, or paste plus
+    Reddit sign-in.
+
+- **Session 2026-11-13, voice pace** (owner: voices "slower than an average human would speak"; real speech is
+  brisk overall, rises and falls, and only rarely slows to make a point).
+  - **Measured** on a voiced quote (scratchpad `pace.py`): the voices talk at a normal 2.6-3.2 words/s, but 7-9 s
+    of a 25-30 s read was silence (12-14 pauses up to 1.3 s), so reads averaged 1.9-2.3 words/s.
+  - `tts.tighten`: pauses compressed on a curve (under `PAUSE_MIN` 0.22 s untouched; past it keep `PAUSE_KEEP`
+    40%), so the longest pause stays the longest. `tts.up_to_pace`: a read under `PACE_FLOOR` 2.45 words/s is
+    sped up to it (atempo, cap `PACE_MAX_LIFT` 1.18; reads under 12 words skipped). Both run on every voice.
+  - Directions: `PACE` now asks for a brisk varied pace that slows only once, on the line that carries the point
+    (was "let a real silence fall after each sentence"); personas lost "slow/unhurried"; ELDER rewritten (asking
+    Fish to "slow down only on the line that matters" slowed the whole read); premium tag `[tired]` dropped.
+  - **Result:** warm 1.97 -> 2.58, gravel 2.30 -> 2.56, grandpa premium 2.19 -> 2.50 words/s; longest pause
+    ~1.1 -> ~0.5 s. Grandpa (Fish Drama) was 1.86 -> 2.00, then owner asked +15-20%: tempo 1.06 -> 1.24, measured 2.48.
+  - Owner listened: the premium grandpa's pace is the best (fast talking, short pauses for effect), so it is now the
+    default for stoic/history/books/cinema (`GENRE_VOICES`; was the Fish grandpa). `reveal.HOLD` 0.7 s unchanged.
+
+- **Session 2026-11-13 (uncommitted): picture designs replaced, two new caption styles** (owner: old designs
+  "primitive"; then "completely replace the old designs"; then research subtitle placement/design/motion first).
+  - **Research** (Pinterest's 2026 trend reports via graphicdesignjunction.com/2026/09; Pinterest search itself is
+    login-walled): Poetcore (serif + italic, oversized quote marks, paper), Vamp Romantic (wine/plum, display serif),
+    FunHaus (stripes, oversized type), Extra Celestial / Cool Blue (moon, glow), tactile/imperfect collage, and the
+    "one highlighted beat word" caption pattern. Diagnosis of the old set: one font, one weight, one colour on a
+    darkened photo; nothing for the eye to land on.
+  - **design.py now has 8 designs** (old 13 deleted, helpers kept): arch, verse, marker, strips, velvet, moon,
+    stripes, giant. Every one stresses one word: `design.beat` = the last content word (stopword list `STOP`).
+    `vivid(pal)` lifts the palette hue to sat 0.72-0.78 (not neon); `deep(pal)` is the ink on cream. Saved projects
+    naming a retired design render as Arch (`compose` falls back); `render_image` default is "arch".
+    Known weak spot: `beat` picks "enters" in "where the light enters you" (a noun would be better).
+  - **Captions** (`captions.py`): research found our placement already in the safe band (lower captions end at
+    Y~1360 of 1920; 160 px right margin for the TikTok column), so placement is unchanged. New styles: `marker`
+    (phrases laid out by hand with \pos; a palette block glides 110 ms word to word; phrase rises 160 ms) and `duet`
+    (sans-bold, the key word in Instrument Serif Italic in a lightened accent, words blur into focus in place).
+    libass sizes a font by OS/2 usWinAscent+usWinDescent, not PIL's metrics: `_win_metrics` reads them (PIL's put
+    the block ~10% off the word). Default style is still karaoke (owner has not asked to change it).
+  - Checked: 265 backend tests, desktop typecheck, contact sheets of every design and libass frames of both
+    caption styles. **Not run:** `npm test` smoke (needs the owner hands-off), a real narrated render with the new
+    caption styles, the Create screen's design/caption swatches (they come from the backend, unreviewed in the UI).
+
+- **Session 2026-11-12 later (uncommitted): sharper output** (owner: "not sharp once uploaded").
+  - Root cause: Pexels photos were downloaded as `src.large2x`, only ~1300 px tall, then stretched ~1.5x to 1920.
+    Now `providers._pexels_full`: the original capped at 2560 px on the long edge. Measured on one photo through
+    the same render: frame edge detail 24.9 -> 45.5 (+83%), beard hairs and cloth weave visible. Quote pictures gain
+    too (design.py already resizes with Lanczos). Library assets downloaded before this stay soft: regenerate.
+  - Every resize in render.py and the clipper uses `flags=lanczos` (ffmpeg's default bicubic softens upscales).
+  - A light luma sharpen on every finished render (`render.SHARPEN` 0.45; a look's own unsharp overrides) and on
+    clips (render_clip), to survive platform re-encodes. Film grain capped at 2 (was 3-5): platforms turn grain into
+    smeared blocks. Encode unchanged (CRF 18, 12 Mbps cap, 1080x1920) - it was never the bottleneck.
+  - Checked: 256 backend tests. **Not run:** `npm test` smoke, an installer rebuild (0.1.1 predates this).
+- **Same session: music, voice, cost** (owner: music inaudible, voice slow/robotic and not old enough, ElevenLabs
+  too expensive).
+  - **Music was ~16 dB under speech** (VOLUME 0.32 and a duck ratio of 1.5 x dB = 7.5-12). Now `music.VOLUME` 0.7 and
+    ratio 1 + dB/3 with a soft knee: measured ~9 dB under the voice over a whole piece (voice -15.9, bed -24.8 LUFS).
+  - **Voices** (all through OpenRouter; nine candidates measured for pitch and rasp, `tts.NARRATORS`):
+    `grandpa` = Fish Audio Drama 3 directed as an old raspy grandfather (`tts.ELDER`), ~0.5 cents a voiced quote,
+    sped 12% by atempo (it reads ~14% slower than ElevenLabs); now the default for stoic/history/books/cinema.
+    `grandpa_premium` = ElevenLabs "Grandpa Spuds Oxley" (NOpBlnGInO9m6vDvFkFC). All ElevenLabs narrators moved to
+    eleven-v4-turbo (half price, same voices). `bass` = MiniMax English_ManWithDeepVoice (mp3 only, decoded to WAV;
+    it costs more than ElevenLabs Turbo). Rejected: Seed Audio (3.6 cents for one line), Fish S2.1 (higher, smoother).
+  - **Read pace:** intro is "X once wrote:" (the "..." read as a stiff pause) and section holds are `reveal.HOLD`
+    1.1 s (was 1.6).
+  - **Voice, second pass** (owner: "forced, too much energy, too much emphasis"; the age is a low worn tone and a
+    drawl). `tts.ELDER` now asks for an understated, worn, slow tired drawl with no emphasis; tempo speed-up removed.
+    Measured vs the first direction: 101 -> 72 Hz, pitch swing 3.5 -> 2.8 st, loudness swing 5.9 -> 4.1 dB, more
+    rasp. Premium ElevenLabs tag is "[tired] [quietly]" (less emphatic than none).
+  - **Voiced-quote text redesigned twice; final = the owner's reference posts** (in-app text over a moody photo,
+    "In Quran, Allah says:" then the line, a small "[Quran 57:2]" citation). `reveal.ass` builds the block word by
+    word as spoken, in place (unspoken words transparent, so the layout never moves): opening line, the quote as
+    one paragraph, then "[Book]" smaller; Instrument Sans Regular, sentence case, ~h*0.027, upper third (`TOP`
+    0.16), left-aligned, soft shadow; it holds to the end. **No cut to the designed post any more** (the picture
+    post is still rendered for image posts). Photo/clips only dimmed to 80%, never blurred (`renders.DIM`,
+    render.py `dim`). `reveal.HOLD` 0.7 s breath between sentences. An intermediate bold 1-2 word "pop" version
+    (Montserrat ExtraBold, accent last word) was built and replaced the same day; `chunks`/`SMALL` were removed.
+  - **Grandpa tempo 1.06** (owner: "subtly sped up"); atempo keeps the pitch.
+  - **Bright pictures** (owner: "can be bright, not just dark"): `renders._band` measures the text band (rows
+    12-50%); above `renders.BRIGHT` 0.55 the picture is not dimmed and the words get a soft wide halo
+    (`reveal.ass(bright=True)`); darker ones are dimmed to `renders.DIM` 0.9. Clips: the first clip's middle frame
+    decides, `shot["dim"]` is now the brightness kept. "Bright and airy" in the Create footage colour picks pale
+    photos (Pexels white). Note a vivid blue sky measures dark (saturated blue is low luminance) and stays near-full.
+  - **Reuse the library** (owner): footage review "From your library" (`LibraryPicker`, `visuals.add_from_library`)
+    adds downloaded photos/clips in tick order ahead of the AI picks, no download (`_take` finds the row); links and
+    library share `assets._use`. A reused Pexels photo stored at the old ~1300 px size is re-fetched full size
+    (`assets._sharpen_old`, best effort).
+  - **End on the designed post** is a per-project choice again (owner picked it; brief `end_on_post`, default off,
+    Create "Ending"): the quote completes, holds `POST_HOLD` 1.5 s, cross-fades (`POST_FADE`) to the post for the
+    lesson. The 13 picture designs were never touched.
+  - **Font bug found and fixed:** libass maps a bare "Montserrat" to Arial Bold, so every "montserrat" karaoke
+    caption had been Arial. `captions._face` now names non-RIBBI weights in full; every caption font checked against
+    libass's fontselect log resolves to its bundled file.
+  - Listening folder: scratchpad `listen/` (full video, the three best voices, the old default for comparison).
 
 - **Session 2026-11-12 (uncommitted): voiced quote videos rebuilt, music, voices, links.**
   - **Music:** the bundled library is now Lyria 3 Pro (OpenRouter, streamed audio) written to the owner's brief: slow felt

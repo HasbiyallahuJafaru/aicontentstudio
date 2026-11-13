@@ -17,7 +17,7 @@ SAMPLE = {"text": "Your comfort zone will kill you.", "author": None}
 SAMPLE_PALETTE = {"primary": "#8A5A2B", "secondary": "#A89070", "dark": "#1E1611", "light": "#F1ECE4",
                   "text": "#FFFFFF", "overlay": "#1E1611"}
 STYLE_LABELS = {"karaoke": "Karaoke", "pop": "Word pop", "clean": "Clean", "boxed": "Boxed", "minimal": "Minimal",
-                "serif": "Serif"}
+                "serif": "Serif", "marker": "Marker", "duet": "Duet"}
 
 
 def _backdrop() -> Image.Image | None:

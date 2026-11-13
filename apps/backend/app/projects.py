@@ -54,6 +54,7 @@ class CreativeBrief(BaseModel):
     blur_background: bool = False             # blurred full-bleed background, sharp centred footage
     parallax: bool = False                    # slow push-in on video pieces (stills always push in)
     backdrop: Literal["photo", "clips"] = "photo"  # voiced quote videos: one photo, or footage clips cut together
+    end_on_post: bool = False                 # voiced quote videos: cut to the designed post for the lesson
     ken_burns: bool = True                    # voiced quote videos: slow drifting push on the photo and post
 
 

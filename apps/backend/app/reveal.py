@@ -1,7 +1,9 @@
-"""The voiced quote video's words (owner 2026-11-12, after @soulxsigh): the narrator opens with "Seneca once wrote",
-reads the quote, names the book, then gives the lesson. While he reads the quote, two or three words at a time sit
-in the centre of the frame, in step with his voice; when he finishes a section (a sentence or clause), the whole
-section shows; when the quote is done, the designed post itself takes the screen for the book and the lesson.
+"""The voiced quote video's words (owner 2026-11-12, after @soulxsigh and the reference posts the owner shared):
+the narrator opens with "Seneca once wrote:", reads the quote, names the book, then gives the lesson. The words
+appear one at a time as they are spoken, in place, the way text typed into TikTok or Instagram looks: small, regular,
+sentence case, white with a soft shadow, in the upper third over the photo ("In Quran, Allah says:" then the line).
+The opening sits on its own line, the quote builds under it, and the book lands as a small "[Meditations]" citation.
+The finished quote then stays on screen through the lesson: no cut to the designed post.
 
 `script` writes what the voice reads and remembers which words are which; `timeline` lines those words up with the
 narration's real word timings; `ass` turns that into the subtitle file render_video burns."""
@@ -10,8 +12,11 @@ import re
 import wave
 
 SECTION_MAX = 14  # words: a longer sentence is split at its commas so the reveal never holds a paragraph
-HOLD = 1.6  # seconds a finished section shows whole; the voice waits for it (stretch)
-FONT = "Instrument Serif"  # bundled OFL (assets/fonts): a quiet book serif, the look of the spoken-word pages
+HOLD = 0.7  # seconds of breath between the quote's sentences; inserted only where the voice ran straight on
+FONT = "Instrument Sans"  # bundled OFL Regular: the plain sans of text typed in-app, never bold or capitals
+SIZE = 0.027  # of the frame height (~52 px at 1920): small, like the reference posts
+TOP = 0.16    # the block starts this far down: the upper third, clear of the platform's top bar
+SIDE = 0.10   # side margins
 
 
 def sections(text: str) -> list[str]:
@@ -39,30 +44,14 @@ def sections(text: str) -> list[str]:
     return [s for s in merged if s]
 
 
-def chunks(words: list[str]) -> list[list[int]]:
-    """Indexes of 2-3 word groups: a group closes at three words or at punctuation, a lone last word joins the
-    group before it."""
-    groups, cur = [], []
-    for i, w in enumerate(words):
-        cur.append(i)
-        if len(cur) == 3 or (len(cur) >= 2 and w[-1] in ",.;:!?—-…"):
-            groups.append(cur)
-            cur = []
-    if cur:
-        if groups and len(cur) == 1:
-            groups[-1] += cur
-        else:
-            groups.append(cur)
-    return groups
-
-
 def script(quote: dict, lesson: str = "") -> tuple[str, list[dict]]:
     """(text for the voice, parts). Parts are {kind: intro|quote|source|lesson, text, words: [start, end)} over
     the text's whitespace tokens, in reading order."""
     author, source = (quote.get("author") or "").strip(), (quote.get("source") or "").strip()
     parts = []
     if author:
-        parts.append({"kind": "intro", "text": f"{author} once {'wrote' if source else 'said'}..."})
+        # a colon, not "...": the ellipsis read as a long stiff pause (owner 2026-11-12: "slow and robotic")
+        parts.append({"kind": "intro", "text": f"{author} once {'wrote' if source else 'said'}:"})
     parts += [{"kind": "quote", "text": s} for s in sections(quote["text"])]
     if source:
         parts.append({"kind": "source", "text": source.rstrip(".") + "."})
@@ -172,6 +161,9 @@ def _voice_end(audio: bytes, rate: int, frame: int, width: int, start: float, st
     return min(end + 0.08, stop)
 
 
+QUOTES = "\"\u201c\u201d"  # quote marks never shown on screen
+
+
 def _t(s: float) -> str:
     s = max(s, 0.0)
     return f"{int(s // 3600)}:{int(s % 3600 // 60):02d}:{s % 60:05.2f}"
@@ -181,46 +173,59 @@ def _esc(s: str) -> str:
     return s.replace("\\", "⧵").replace("{", "(").replace("}", ")")
 
 
-def ass(parts: list[dict], times: list[tuple[float, float]], w: int, h: int) -> tuple[str, float]:
-    """(subtitle file, when the post should take over). The intro and every quote section reveal 2-3 words at a
-    time; a finished quote section then shows whole until the next one starts; the last one holds until the post."""
-    words_of = [p["text"].split() for p in parts]
-    reveal = [i for i, p in enumerate(parts) if p["kind"] in ("intro", "quote")]
-    quotes = [i for i, p in enumerate(parts) if p["kind"] == "quote"]
-    end_all = times[-1][1] if times else 0.0
-    last_q = parts[quotes[-1]]["words"][1] - 1
-    nxt = next((p["words"][0] for p in parts if p["kind"] in ("source", "lesson")), None)
-    # the last section shows whole for HOLD seconds, then the post arrives as the book is named
-    post_at = max(times[last_q][1] + HOLD, times[nxt][0] if nxt is not None else 0.0)
-    post_at = min(post_at, max(end_all, times[last_q][1] + HOLD))
-    big, small = round(h * 0.05), round(h * 0.037)
+def finished(parts: list[dict], times: list[tuple[float, float]]) -> float:
+    """When the whole quote (and its "[book]" citation) is on screen: the start of the last word that appears."""
+    last = max(p["words"][1] - 1 for p in parts if p["kind"] in ("intro", "quote", "source"))
+    return times[last][0]
+
+
+def ass(parts: list[dict], times: list[tuple[float, float]], w: int, h: int, until: float,
+        bright: bool = False) -> str:
+    """The subtitle file: the opening line, then the quote, then the "[book]" citation, every word appearing (a 180
+    ms fade) as it is spoken and staying; the finished block holds until `until`. Each event carries the whole block
+    with the words not yet spoken fully transparent, so the layout never moves while it fills in. On a `bright`
+    picture the words carry a soft dark halo (a blurred outline) so white text reads on a pale sky."""
+    shown = [p for p in parts if p["kind"] in ("intro", "quote", "source")]
+    lines: list[list[int]] = []  # each line: indexes into `flat`
+    flat: list[tuple[str, int]] = []  # (word as shown, index into times)
+    prev = None
+    for p in shown:
+        toks = p["text"].split()
+        idx = list(range(p["words"][0], p["words"][1]))
+        if p["kind"] == "source":  # the book lands as one small citation, as the narrator names it
+            toks, idx = [f"[{p['text'].rstrip('.')}]"], idx[:1]
+        start = len(flat)
+        flat += [(_esc(t).strip(QUOTES), i) for t, i in zip(toks, idx)]
+        if p["kind"] == "quote" and prev == "quote":
+            lines[-1] += range(start, len(flat))  # the quote's sections read as one paragraph
+        else:
+            lines.append(list(range(start, len(flat))))
+        prev = p["kind"]
+    chars = sum(len(word) + 1 for word, _ in flat)
+    size = round(h * SIZE * min(1.0, (240 / max(chars, 1)) ** 0.5))  # a long quote steps down rather than overflow
+    cite = round(size * 0.8)
+    # a bright picture: a wide, faint, well-blurred glow (a hard dark outline read as outlined text, not a shadow)
+    edge, outline = ("&H98000000", max(3, h // 400)) if bright else ("&HA0000000", max(1, h // 1100))
+    halo = f"\\blur{max(4, h // 240)}" if bright else ""
+    source_line = len(lines) - 1 if shown and shown[-1]["kind"] == "source" else -1
     events = []
-    for n, i in enumerate(reveal):
-        p, toks = parts[i], words_of[i]
-        base = p["words"][0]
-        groups = chunks(toks)
-        if p["kind"] == "intro" and len(toks) > 2:  # the name on its own, then "once wrote"
-            groups = [list(range(len(toks) - 2)), [len(toks) - 2, len(toks) - 1]]
-        sec_end = times[base + len(toks) - 1][1]
-        later = reveal[n + 1] if n + 1 < len(reveal) else None
-        sec_next = times[parts[later]["words"][0]][0] if later is not None else post_at
-        for g_i, g in enumerate(groups):
-            start = times[base + g[0]][0]
-            if g_i + 1 < len(groups):
-                end = times[base + groups[g_i + 1][0]][0]
-            else:  # the last group stays until the section shows whole (or the next part begins, for the intro)
-                end = sec_end + 0.12 if p["kind"] == "quote" else sec_next
-            text = _esc(" ".join(toks[k] for k in g)).strip("\"“”")
-            if p["kind"] == "intro":  # "once wrote..." reads aloud as a pause; on screen it is just "once wrote"
-                text = text.rstrip(".")
-            events.append(f"Dialogue: 0,{_t(start)},{_t(max(end, start + 0.2))},Chunk,,0,0,0,,"
-                          r"{\fad(140,0)\t(0,260,\fscx100\fscy100)\fscx94\fscy94}" + text)
-        if p["kind"] == "quote":
-            hold_end = max(sec_next, sec_end + 0.4)
-            text = _esc(p["text"]).strip("\"“”")
-            events.append(f"Dialogue: 0,{_t(sec_end + 0.12)},{_t(hold_end)},Section,,0,0,0,,"
-                          r"{\fad(220,160)}" + text)
-    margin = round(w * 0.12)
+    for k, (_, ti) in enumerate(flat):
+        start = times[ti][0]
+        end = times[flat[k + 1][1]][0] if k + 1 < len(flat) else until
+        if end <= start:
+            continue
+        out = []
+        for li, line in enumerate(lines):
+            words = []
+            for j in line:
+                tag = ("{\\alpha&H00&}" if j < k else "{\\alpha&HFF&\\t(0,180,\\alpha&H00&)}" if j == k
+                       else "{\\alpha&HFF&}")
+                words.append(tag + flat[j][0])
+            text = " ".join(words)
+            out.append(f"{{\\fs{cite}}}" + text if li == source_line else text)
+        events.append(f"Dialogue: 0,{_t(start)},{_t(end)},Words,,0,0,0,,{{\\fs{size}{halo}}}" + "\\N".join(out))
+    side, top = round(w * SIDE), round(h * TOP)
+    # on a dark picture: a thin outline and a small shadow. On a bright one: a wider, softer, darker halo
     header = f"""[Script Info]
 ScriptType: v4.00+
 PlayResX: {w}
@@ -230,10 +235,9 @@ ScaledBorderAndShadow: yes
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Chunk,{FONT},{big},&H00FFFFFF,&H00FFFFFF,&H00000000,&H80000000,0,0,0,0,100,100,1,0,1,0,{max(2, h // 640)},5,{margin},{margin},0,1
-Style: Section,{FONT},{small},&H00FFFFFF,&H00FFFFFF,&H00000000,&H80000000,0,0,0,0,100,100,0,0,1,0,{max(2, h // 640)},5,{margin},{margin},0,1
+Style: Words,{FONT},{size},&H00FFFFFF,&H00FFFFFF,{edge},&H80000000,0,0,0,0,100,100,0,0,1,{outline},{max(1, h // 900)},7,{side},{side},{top},1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
-    return header + "\n".join(events) + "\n", post_at
+    return header + "\n".join(events) + "\n"

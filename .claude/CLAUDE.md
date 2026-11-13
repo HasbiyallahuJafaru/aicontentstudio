@@ -35,10 +35,12 @@ alternating zoom-in / pan / zoom-out motion), a still cutaway merged between vid
 grade (`brief.look_filter`, default `auto` = genre grade), film dressing (vignette + grain), loudnorm narration,
 optional karaoke subtitles (`brief.subtitles`). Quote text is NOT burned into videos (user decision). Rendering
 belongs to `render.py render_video(shots=...)`; renders.py builds the shot plan in `_shots_for`.
-Stills are art-directed designs in `app/design.py` (thirteen designs since 2026-11-08: the original seven plus
-Notes page, Book highlight, Riso print, Film subtitle, Instant print and Swiss grid, researched against 2026 feeds;
-each genre rotates through 5-6 of them in `GENRE_DESIGNS`; bundled OFL fonts, typographic rules in its docstring;
-new designs never imitate a real app's interface); subtitles are styled by `CaptionStyle` in `app/clipper/captions.py`. Never fall back to plain text on a scrim.
+Stills are art-directed designs in `app/design.py` (since 2026-11-13 eight designs that replaced the old thirteen at
+the owner's request, researched against Pinterest's 2026 trends: Arch window, Verse, Marker word, Torn strips, Velvet,
+Moonlit, Stripes, Giant word; each stresses one beat word of the quote, `design.beat`; each genre rotates through 5-6
+in `GENRE_DESIGNS`; retired names in saved projects render as Arch; bundled OFL fonts; new designs never imitate a
+real app's interface); subtitles are styled by `CaptionStyle` in `app/clipper/captions.py` (incl. `marker`, a block
+gliding under the spoken word, and `duet`, sans with the key word in italic serif). Never fall back to plain text on a scrim.
 
 Backlog + integration statuses (IP routing research; Buffer/Metricool history, both removed) live in
 `.claude/handover.md` under "Feature backlog / product direction". Publishing integrations must stay OAuth-based
@@ -91,9 +93,11 @@ Skip long design ceremonies; one screenshot review round per UI phase.
   `apps/desktop/resources/ffmpeg` holds the gyan.dev **essentials** build (`ACS_FFMPEG_DOWNLOAD=1 node
   scripts/fetch-ffmpeg.mjs` after removing the folder; the PC's full build makes a 315 MiB installer, over Wrangler's
   300 MiB upload cap), `npm run build`, then electron-builder **with the output outside the repo**
-  (`npx electron-builder --win nsis --config.directories.output=<scratch dir>`; inside the workspace the
-  `win-unpacked.tmp` rename fails with EPERM). Check it: `ACS_UNPACKED=<dir>/win-unpacked node
+  (`NODE_OPTIONS=--use-system-ca npx electron-builder --win nsis --config.directories.output=<scratch dir>`; inside
+  the workspace the `win-unpacked.tmp` rename fails with EPERM). Check it: `ACS_UNPACKED=<dir>/win-unpacked node
   scripts/smoke-packaged.mjs` (the first launch of a fresh unsigned exe can time out; rerun). Unsigned for now.
+  **Then copy the `.exe` into `apps/desktop/release/`, replacing the older installer there (owner 2026-11-13:
+  that is where they look; never leave it only in the scratchpad).** `release/` is gitignored.
 - **Upload:** `wrangler r2 object put ytclipper-releases/YT-Clipper-Setup.exe --remote --file <exe>` (private
   bucket, served by the Worker). Wrangler needs `NODE_OPTIONS=--use-system-ca` on this machine; run it from a temp
   dir, never inside the repo (it writes `.wrangler/` caches with account info; `.wrangler/` is gitignored anyway).

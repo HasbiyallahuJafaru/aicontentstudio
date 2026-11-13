@@ -403,7 +403,7 @@ PEXELS_VIDEOS = {"videos": [{
 
 PEXELS_PHOTOS = {"photos": [{
     "id": 4, "width": 4000, "height": 6000, "url": "https://pexels.com/p/4", "photographer": "Shooter",
-    "src": {"large2x": "https://img/4@2x", "medium": "https://img/4m"}}]}
+    "src": {"original": "https://img/4.jpeg", "large2x": "https://img/4@2x", "medium": "https://img/4m"}}]}
 
 UNSPLASH = {"results": [{
     "id": "u1", "width": 3000, "height": 4500,
@@ -431,7 +431,7 @@ class Providers(unittest.TestCase):
 
         out = asyncio.run(PexelsProvider("k", transport=httpx.MockTransport(handler)).search_images("fog", 8))
         self.assertEqual((out[0].provider_asset_id, out[0].download_url, out[0].thumb_url, out[0].creator),
-                         ("4", "https://img/4@2x", "https://img/4m", "Shooter"))
+                         ("4", "https://img/4.jpeg?h=2560", "https://img/4m", "Shooter"))  # full size, not large2x
 
     def test_unsplash_photos_and_no_videos(self):
         def handler(request: httpx.Request):

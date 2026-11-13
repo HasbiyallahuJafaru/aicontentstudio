@@ -261,13 +261,20 @@ class RenderJob(unittest.TestCase):
 
     def test_voiced_quote_renders_the_picture_then_reads_it(self):
         """image_voiced (2026-11-09): the quote picture, then a 9:16 video of it read aloud, at least 10 s."""
+        self._voiced({}, "Begin again, and mean it this time.")
+
+    def test_voiced_quote_can_end_on_the_designed_post(self):
+        """brief.end_on_post (owner 2026-11-12): the same job with the cut to the designed post renders too."""
+        self._voiced({"end_on_post": True}, "Stand still long enough to hear yourself.")  # a quote is never reused
+
+    def _voiced(self, extra: dict, line: str):
         settings.update(render_width=540, render_height=960)
-        p = projects.create({**BRIEF, "quantity": 1, "format": "image_voiced"})
+        p = projects.create({**BRIEF, "quantity": 1, "format": "image_voiced", **extra})
         with database.connect() as conn:
             conn.execute("DELETE FROM asset_usage")
         make_thumbs("a1")
         run_job_with([FakeProvider2([cand("a1", "image", h=1350, w=1080)])],
-                     FakeModel(["Begin again, and mean it this time."]), p["id"])  # quote pictures want photos
+                     FakeModel([line]), p["id"])  # quote pictures want photos
         piece = content.pieces(p["id"])[0]
         with database.connect() as conn:
             row = conn.execute("SELECT id, local_path FROM assets WHERE id = ?",
@@ -295,9 +302,9 @@ class RenderJob(unittest.TestCase):
         rows = {r["kind"]: r for r in renders.list_(p["id"])}
         self.assertEqual(set(rows), {"image", "video"})
         # 2026-11-12: "<author> once said...", then the quote (no author: the quote itself opens)
-        self.assertIn("Begin again, and mean it this time.", said[0])
+        self.assertIn(line, said[0])
         author = piece["content"]["quote"].get("author")
-        self.assertTrue(said[0].startswith(f"{author} once" if author else "Begin again"), said[0])
+        self.assertTrue(said[0].startswith(f"{author} once" if author else line), said[0])
         self.assertGreaterEqual(rows["video"]["duration"], renders.VOICED_HOLD - 0.1)  # 2 s of voice, 10 s on screen
 
     def test_full_render_job(self):
@@ -425,7 +432,7 @@ class QuoteImages(unittest.TestCase):
 
     def test_image_only_render_never_calls_narration(self):
         """A quote image has no voice: rendering it must not touch TTS (no key, no cost, no wait)."""
-        p = projects.create({**BRIEF, "format": "image", "platforms": ["instagram_feed"], "image_design": "noir",
+        p = projects.create({**BRIEF, "format": "image", "platforms": ["instagram_feed"], "image_design": "velvet",
                              "quotes": ["Begin before you feel ready."]})
         with database.connect() as conn:
             conn.execute("DELETE FROM asset_usage")

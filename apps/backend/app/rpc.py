@@ -45,6 +45,7 @@ METHODS = {
     "assets.list": assets.list_assets,
     "visuals.pick": assets.pick,
     "visuals.add_links": assets.add_links,
+    "visuals.add_from_library": assets.add_from_library,
     "assets.delete": assets.delete_asset,
     "pieces.delete": content.delete_piece,
     "renders.delete": renders.delete,

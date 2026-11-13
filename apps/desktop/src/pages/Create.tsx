@@ -49,7 +49,7 @@ export function Create({ onCreated }: { onCreated: (id: string) => void }) {
         topic: label(settings.default_topic), tone: settings.default_tone, mood: '', audience: '',
         format: 'video', quantity: settings.default_quantity, platforms: ['youtube_shorts', 'instagram_reels', 'tiktok'],
         voice: '', fps: 30, target_seconds: null, subtitles: true, look_filter: 'auto',
-        blur_background: false, parallax: false, ken_burns: true, backdrop: 'photo', captions: DEFAULT_CAPTIONS, image_design: 'auto',
+        blur_background: false, parallax: false, ken_burns: true, backdrop: 'photo', end_on_post: false, captions: DEFAULT_CAPTIONS, image_design: 'auto',
         image_font: 'auto', image_position: 'auto', palette: 'auto',
       })
       setCustom(!PRESETS.includes(settings.default_quantity))
@@ -289,7 +289,7 @@ function ImagesForm({ brief, setBrief, own, setOwn, quotesText, setQuotesText, c
               platforms: v === 'image_voiced' ? ['instagram_feed', 'instagram_reels', 'tiktok', 'youtube_shorts'] : ['instagram_feed'] })}
             options={[{ value: 'image', label: 'Pictures' }, { value: 'image_voiced', label: 'Pictures + voiced videos' }]} />
           {brief.format === 'image_voiced' && (
-            <Field label="Voice" hint="Each quote also becomes a 9:16 video: the narrator names the author, the words appear two or three at a time as they are read, then the finished post holds for the lesson. One voice across the series keeps it recognisable.">
+            <Field label="Voice" hint="Each quote also becomes a 9:16 video: the narrator names the author and the book, and the quote writes itself on the photo word by word as it is read, then stays through the lesson. One voice across the series keeps it recognisable.">
               {(id) => <Select id={id} value={brief.voice} onChange={(v) => set('voice', v)} options={voiceOptions(voices)} />}
             </Field>
           )}
@@ -301,6 +301,9 @@ function ImagesForm({ brief, setBrief, own, setOwn, quotesText, setQuotesText, c
               <Choices legend="Camera move" value={brief.ken_burns === false ? 'off' : 'on'}
                 options={[{ value: 'on', label: 'Slow Ken Burns drift' }, { value: 'off', label: 'Still' }]}
                 onChange={(v) => set('ken_burns', v === 'on')} />
+              <Choices legend="Ending" value={brief.end_on_post ? 'post' : 'photo'}
+                options={[{ value: 'photo', label: 'Quote stays on the photo' }, { value: 'post', label: 'Cut to the designed post' }]}
+                onChange={(v) => set('end_on_post', v === 'post')} />
             </div>
           )}
           <ImageDesignPicker design={brief.image_design} font={brief.image_font} position={brief.image_position}

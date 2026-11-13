@@ -30,6 +30,8 @@ def _assets_for(piece: dict) -> list[dict]:
     return [rows[i] for i in ids if i in rows]
 
 
+POST_HOLD = 1.5   # seconds the finished quote holds before the designed post (brief.end_on_post)
+POST_FADE = 0.8   # the cross-fade into that post
 VOICED_HOLD = 10.0  # seconds: a voiced quote video never runs shorter; longer quotes run as long as they're read
 
 
@@ -147,32 +149,41 @@ def render_project(project_id: str, report, piece_ids: list[str] | None = None) 
                 full_out = config.MEDIA_DIR / out
                 try:
                     if kind == "video" and voiced:
-                        # the photo, dimmed, with the quote revealed 2-3 words at a time as it is read (reveal.py);
-                        # then the quote picture just rendered, over a blurred fill of itself, for the book and the
-                        # lesson. At least VOICED_HOLD seconds so a short quote still gets a moment on screen.
+                        # the photo (or the picked clips), with the quote appearing word by word as it is read, in
+                        # the upper third (reveal.py); the finished quote stays through the book and the lesson. At
+                        # least VOICED_HOLD seconds so a short quote still gets a moment on screen.
                         at("Timing the words", 0.25)
                         words = _words(script, narration.path, narration.duration)
                         times = reveal.timeline(script, words, narration.duration)
-                        times = reveal.stretch(narration.path, parts, times)  # pauses for the reveal
+                        times = reveal.stretch(narration.path, parts, times)  # a breath between sentences
                         narration = tts.AudioResult(narration.path)
-                        ass_text, post_at = reveal.ass(parts, times, renderer.w, renderer.h)
+                        total = round(max(narration.duration + 0.6, VOICED_HOLD), 3)  # render_video's own length
                         subs = config.MEDIA_DIR / "tmp" / f"{piece['id']}-subs.ass"
                         subs.parent.mkdir(parents=True, exist_ok=True)
-                        subs.write_text(ass_text, encoding="utf-8")
-                        total = round(max(narration.duration + 0.6, VOICED_HOLD), 3)  # render_video's own length
                         kb = brief.get("ken_burns", True)  # briefs saved before the toggle keep the move
-                        fade = 0.8
-                        first = min(post_at + fade / 2, total - 1.0)
+                        # brief.end_on_post (owner's choice, 2026-11-12): once the quote stands complete it holds
+                        # POST_HOLD s, then the designed post cross-fades in for the lesson; otherwise the finished
+                        # quote stays on the photo to the end
+                        post = brief.get("end_on_post", False)
+                        span = min(reveal.finished(parts, times) + POST_HOLD, total - 1.0) if post else total
                         if len(pool) > 1 or asset["asset_type"] == "video":  # clips behind the words
-                            shots = _behind_words(pool, first, kb, piece["idx"])
+                            bright = _clips_bright(pool, config.MEDIA_DIR / "tmp" / f"{piece['id']}-frame.jpg")
+                            shots = _behind_words(pool, span + (POST_FADE / 2 if post else 0), kb, piece["idx"])
+                            for shot in shots:
+                                shot["dim"] = 1.0 if bright else DIM
                             dim = Path(shots[0]["src"])
                         else:
-                            dim = _dimmed(asset, config.MEDIA_DIR / "tmp" / f"{piece['id']}-dim.jpg")
-                            shots = [{"src": str(dim), "length": first, "still": True,
+                            dim, bright = _backdrop(asset, config.MEDIA_DIR / "tmp" / f"{piece['id']}-dim.jpg")
+                            shots = [{"src": str(dim), "length": span + (POST_FADE / 2 if post else 0), "still": True,
                                       "motion": "drift" if kb else "none"}]
-                        shots += [{"src": str(full_out.with_name(f"{piece['idx']:03d}-image.jpg")), "still": True,
-                                  "length": total - first + fade, "blur": True, "motion": "push" if kb else "none",
-                                  "transition": "fade", "tdur": fade}]
+                        if post:
+                            shots.append({"src": str(full_out.with_name(f"{piece['idx']:03d}-image.jpg")),
+                                          "still": True, "length": total - span + POST_FADE / 2, "blur": True,
+                                          "motion": "push" if kb else "none", "transition": "fade",
+                                          "tdur": POST_FADE})
+                        subs.write_text(reveal.ass(parts, times, renderer.w, renderer.h,
+                                                   span - POST_FADE / 2 if post else total, bright=bright),
+                                        encoding="utf-8")
                         at("Encoding video", enc[0])
                         info = renderer.render_video(src=dim, narration=narration.path, out=full_out,
                                                      subject_position="center", src_fps=0, src_duration=0, still=True,
@@ -314,10 +325,25 @@ def _behind_words(pool: list[dict], span: float, ken_burns: bool, seed: int = 0)
     return shots
 
 
-def _dimmed(asset: dict, out: Path) -> Path:
-    """The piece's photo, darkened and softened so white words read on it anywhere, a busy texture included (a
-    video asset gives its middle frame)."""
-    from PIL import Image, ImageEnhance, ImageFilter
+# Behind the words (owner 2026-11-12: "the design can be bright, not just dark"): a picture whose text band is
+# bright keeps its full brightness and the words get a soft dark halo instead; a darker one is dimmed only lightly.
+BRIGHT = 0.55  # mean luminance (0-1) of the text band above which a picture counts as bright
+DIM = 0.9      # what a darker picture keeps
+
+
+def _band(img) -> float:
+    """Mean luminance (0-1) of where the words sit: the upper third of the frame, rows 12-50% of the picture."""
+    from PIL import ImageStat
+    g = img.convert("L")
+    w, h = g.size
+    return ImageStat.Stat(g.crop((0, int(h * 0.12), w, int(h * 0.5)))).mean[0] / 255
+
+
+def _backdrop(asset: dict, out: Path) -> tuple[Path, bool]:
+    """(the piece's picture ready for the words, whether it is bright). A bright picture is left as it is; a darker
+    one is dimmed to DIM. Natural and sharp, never blurred (it used to be 40% and blurred for big centred
+    captions). A video asset gives its middle frame."""
+    from PIL import Image, ImageEnhance
     src = config.MEDIA_DIR / asset["local_path"]
     out.parent.mkdir(parents=True, exist_ok=True)
     if asset["asset_type"] == "video":
@@ -325,9 +351,21 @@ def _dimmed(asset: dict, out: Path) -> Path:
         src = out
     with Image.open(src) as im:
         rgb = im.convert("RGB")
-        dark = ImageEnhance.Brightness(rgb.filter(ImageFilter.GaussianBlur(rgb.width / 300))).enhance(0.4)
-    dark.save(out, quality=92)
-    return out
+    bright = _band(rgb) > BRIGHT
+    (rgb if bright else ImageEnhance.Brightness(rgb).enhance(DIM)).save(out, quality=92)
+    return out, bright
+
+
+def _clips_bright(pool: list[dict], scratch: Path) -> bool:
+    """Whether the first clip (or photo) behind the words is bright where the text sits."""
+    from PIL import Image
+    a = pool[0]
+    src = config.MEDIA_DIR / a["local_path"]
+    if a["asset_type"] == "video":
+        render.thumbnail(src, scratch, at=max((a["duration"] or 0) / 2, 0.5))
+        src = scratch
+    with Image.open(src) as im:
+        return _band(im.convert("RGB")) > BRIGHT
 
 
 def _subtitles_ass(piece: dict, words: list[dict], duration: float, w: int, h: int,

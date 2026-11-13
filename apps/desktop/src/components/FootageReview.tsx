@@ -5,9 +5,11 @@
 // separated by commas, spaces or new lines) add those exact photos and clips, played first in the order pasted; the
 // piece grows to hold them all (owner 2026-11-12).
 import { useRef, useState, type CSSProperties } from 'react'
-import { DownloadSimple, LinkSimple, Play } from '@phosphor-icons/react'
-import { call, mediaUrl, BackendError, type FootageOption, type Piece } from '../lib/studio'
-import { Button, ErrorNote, Textarea, cx } from './ui'
+import { Books, DownloadSimple, LinkSimple, Play } from '@phosphor-icons/react'
+import { call, mediaUrl, useQuery, BackendError, type Asset, type FootageOption, type Piece } from '../lib/studio'
+import { Button, Dialog, ErrorNote, Textarea, cx } from './ui'
+
+type Added = { added: FootageOption[]; picked: string[]; want: number; skipped: { url?: string; id?: string; reason: string }[] }
 
 export function FootageReview({ pieces, onStarted, disabled }: {
   pieces: Piece[]; onStarted: () => void; disabled?: boolean
@@ -19,8 +21,9 @@ export function FootageReview({ pieces, onStarted, disabled }: {
   const [added, setAdded] = useState<Record<string, FootageOption[]>>({})  // linked shots, shown before the backend reload
   const [links, setLinks] = useState<Record<string, string>>({})
   const [adding, setAdding] = useState<string>()
+  const [browsing, setBrowsing] = useState<Piece>()  // the piece whose library picker is open
   const [wants, setWants] = useState<Record<string, number>>({})  // a piece grows when links outnumber its shots
-  const [skipped, setSkipped] = useState<Record<string, { url: string; reason: string }[]>>({})
+  const [skipped, setSkipped] = useState<Record<string, Added['skipped']>>({})
   // each piece's saves run in order (a later click never lands before an earlier one), and "Download and render"
   // waits for all of them, so the job downloads exactly what is on screen
   const saving = useRef<Record<string, Promise<void>>>({})
@@ -51,14 +54,28 @@ export function FootageReview({ pieces, onStarted, disabled }: {
     setError(undefined)
     try {
       await (saving.current[piece.id] ?? Promise.resolve())  // a pick still saving lands first
-      const r = await call<{ added: FootageOption[]; picked: string[]; want: number; skipped: { url: string; reason: string }[] }>(
-        'visuals.add_links', { piece_id: piece.id, urls })
-      setAdded((a) => ({ ...a, [piece.id]: [...r.added, ...(a[piece.id] ?? []).filter((o) => !r.added.some((x) => x.key === o.key))] }))
-      setPicks((p) => ({ ...p, [piece.id]: r.picked }))
-      setWants((w) => ({ ...w, [piece.id]: r.want }))
-      setSkipped((k) => ({ ...k, [piece.id]: r.skipped }))
+      const r = await call<Added>('visuals.add_links', { piece_id: piece.id, urls })
+      landed(piece, r)
       // keep only the links that didn't land, so they can be fixed and added again
-      setLinks((l) => ({ ...l, [piece.id]: r.skipped.map((x) => x.url).join(', ') }))
+      setLinks((l) => ({ ...l, [piece.id]: r.skipped.map((x) => x.url ?? '').filter(Boolean).join(', ') }))
+    } catch (e) { setError(e as BackendError) } finally { setAdding(undefined) }
+  }
+
+  /** your own picks (links or library items) now lead the piece: show them, their order and the grown count */
+  function landed(piece: Piece, r: Added) {
+    setAdded((a) => ({ ...a, [piece.id]: [...r.added, ...(a[piece.id] ?? []).filter((o) => !r.added.some((x) => x.key === o.key))] }))
+    setPicks((p) => ({ ...p, [piece.id]: r.picked }))
+    setWants((w) => ({ ...w, [piece.id]: r.want }))
+    setSkipped((k) => ({ ...k, [piece.id]: r.skipped }))
+  }
+
+  async function addFromLibrary(piece: Piece, ids: string[]) {
+    setAdding(piece.id)
+    setError(undefined)
+    try {
+      await (saving.current[piece.id] ?? Promise.resolve())
+      landed(piece, await call<Added>('visuals.add_from_library', { piece_id: piece.id, asset_ids: ids }))
+      setBrowsing(undefined)
     } catch (e) { setError(e as BackendError) } finally { setAdding(undefined) }
   }
 
@@ -141,13 +158,16 @@ export function FootageReview({ pieces, onStarted, disabled }: {
                 <Button type="submit" disabled={disabled || adding === p.id || !(links[p.id] ?? '').trim()}>
                   <LinkSimple size={14} weight="bold" />{adding === p.id ? 'Adding…' : 'Add links'}
                 </Button>
+                <Button type="button" onClick={() => setBrowsing(p)} disabled={disabled || adding === p.id}>
+                  <Books size={14} weight="bold" />From your library
+                </Button>
                 {review.type === 'video' && (
                   <span className="text-xs text-ink-3">Each clip lends a short slice, never its full length.</span>
                 )}
               </div>
               {!!skipped[p.id]?.length && (
                 <ul className="grid gap-1 text-xs text-danger">
-                  {skipped[p.id].map((x) => <li key={x.url} className="break-all">{x.reason} <span className="text-ink-3">{x.url}</span></li>)}
+                  {skipped[p.id].map((x) => <li key={x.url ?? x.id} className="break-all">{x.reason} <span className="text-ink-3">{x.url ?? ''}</span></li>)}
                 </ul>
               )}
             </form>
@@ -166,6 +186,65 @@ export function FootageReview({ pieces, onStarted, disabled }: {
         </Button>
       </div>
       {error && <ErrorNote error={error} />}
+      {browsing && (
+        <LibraryPicker photosOnly={browsing.content.review!.type === 'image'} busy={adding === browsing.id}
+          onClose={() => setBrowsing(undefined)} onUse={(ids) => addFromLibrary(browsing, ids)} />
+      )}
     </section>
+  )
+}
+
+/** Photos and clips already downloaded (owner 2026-11-12: "reuse already downloaded Pexels and Unsplash content").
+ *  Tick any number; they are added to the piece in the order ticked and play first. Nothing downloads again. */
+function LibraryPicker({ photosOnly, busy, onClose, onUse }: {
+  photosOnly: boolean; busy: boolean; onClose: () => void; onUse: (ids: string[]) => void
+}) {
+  const { data, error } = useQuery<Asset[]>('assets.list')
+  const [chosen, setChosen] = useState<string[]>([])
+  const items = (data ?? []).filter((a) => !photosOnly || a.asset_type === 'image')
+  const toggle = (id: string) => setChosen((c) => c.includes(id) ? c.filter((x) => x !== id) : [...c, id])
+  return (
+    <Dialog label="Your library" width={760} onClose={onClose} locked={busy}>
+      <div className="grid gap-5 p-7">
+        <div className="grid gap-1">
+          <h3 className="font-display text-[19px] font-semibold tracking-[-0.02em]">Reuse from your library</h3>
+          <p className="text-[13px] text-ink-2">
+            {photosOnly ? 'Photos' : 'Photos and clips'} you have downloaded before. Tick the ones you want; they play in the order you tick them.
+          </p>
+        </div>
+        {error && <ErrorNote error={error} />}
+        {data && !items.length && <p className="text-[13px] text-ink-2">Nothing downloaded yet. Your picks are saved here after the first render.</p>}
+        <ul className="grid max-h-[52vh] grid-cols-[repeat(auto-fill,minmax(96px,1fr))] gap-3 overflow-y-auto p-1">
+          {items.map((a) => {
+            const order = chosen.indexOf(a.id)
+            return (
+              <li key={a.id}>
+                <button type="button" onClick={() => toggle(a.id)} aria-pressed={order >= 0}
+                  title={`${a.creator || 'Unknown creator'} · ${a.provider}`}
+                  className={cx('relative block aspect-[9/16] w-full overflow-hidden rounded-[12px] bg-black/30',
+                    order >= 0 ? 'halo' : 'shadow-[inset_0_0_0_1px_rgb(17_18_20/0.1)]')}>
+                  <img src={mediaUrl(a.thumb_path)} alt={`${a.asset_type === 'video' ? 'Clip' : 'Photo'} by ${a.creator || 'unknown'}`}
+                    loading="lazy" className={cx('absolute inset-0 size-full object-cover', order < 0 && 'opacity-80')} />
+                  {order >= 0 && (
+                    <span className="tnum absolute left-1.5 top-1.5 grid size-6 place-items-center rounded-full bg-pop text-2xs font-semibold text-white">{order + 1}</span>
+                  )}
+                  {a.asset_type === 'video' && (
+                    <span className="absolute bottom-1.5 left-1.5 inline-flex items-center gap-0.5 rounded-full bg-black/60 px-1.5 py-0.5 text-[10px] text-white">
+                      <Play size={7} weight="fill" />{Math.round(a.duration)}s
+                    </span>
+                  )}
+                </button>
+              </li>
+            )
+          })}
+        </ul>
+        <div className="flex items-center justify-end gap-3">
+          <Button type="button" onClick={onClose} disabled={busy}>Cancel</Button>
+          <Button variant="primary" type="button" onClick={() => onUse(chosen)} disabled={busy || !chosen.length}>
+            {busy ? 'Adding…' : chosen.length ? `Use ${chosen.length} from library` : 'Use from library'}
+          </Button>
+        </div>
+      </div>
+    </Dialog>
   )
 }

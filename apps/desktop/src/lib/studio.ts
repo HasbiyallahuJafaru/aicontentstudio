@@ -21,13 +21,13 @@ export type Format = 'automatic' | 'video' | 'image' | 'video_image' | 'image_vo
 export type Platform = 'youtube_shorts' | 'instagram_reels' | 'instagram_feed' | 'tiktok'
 export type Look = 'auto' | 'none' | 'warm' | 'cool' | 'mono' | 'vivid'
 export type CaptionStyle = {
-  style: 'karaoke' | 'pop' | 'clean' | 'boxed' | 'minimal' | 'serif'; font: string
+  style: 'karaoke' | 'pop' | 'clean' | 'boxed' | 'minimal' | 'serif' | 'marker' | 'duet'; font: string
   position: 'lower' | 'middle' | 'upper'; size: 'small' | 'medium' | 'large'
   highlight: 'auto' | 'palette' | 'yellow' | 'orange' | 'green' | 'red' | 'white'; case: 'auto' | 'upper' | 'lower' | 'as_spoken'
 }
 export const DEFAULT_CAPTIONS: CaptionStyle = { style: 'karaoke', font: 'auto', position: 'lower', size: 'medium', highlight: 'auto', case: 'auto' }
 export type TextPosition = 'auto' | 'top' | 'center' | 'bottom'
-export type Brief = { kind?: never; topic: string; tone: string; mood: string; audience: string; format: Format; quantity: number; platforms: Platform[]; voice: string; fps: number; target_seconds: number | null; subtitles: boolean; look_filter: Look; blur_background: boolean; parallax: boolean; ken_burns?: boolean; backdrop?: 'photo' | 'clips'
+export type Brief = { kind?: never; topic: string; tone: string; mood: string; audience: string; format: Format; quantity: number; platforms: Platform[]; voice: string; fps: number; target_seconds: number | null; subtitles: boolean; look_filter: Look; blur_background: boolean; parallax: boolean; ken_burns?: boolean; backdrop?: 'photo' | 'clips'; end_on_post?: boolean
   captions: CaptionStyle; image_design: string; image_font: string; image_position: TextPosition; quotes?: string[]; palette: string }
 export type ClipBrief = {
   kind: 'clip'; source: string; n: number | null; min_len: number; max_len: number

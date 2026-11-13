@@ -119,5 +119,69 @@ class VoicedClips(unittest.TestCase):
         json.dumps(c.model_dump())  # stored in the piece's review as JSON
 
 
+    def _library_asset(self, kind: str, size=(90, 160), provider="pexels", pid=None) -> str:
+        from app import config
+        aid = uuid.uuid4().hex[:12]
+        rel = f"assets/{aid}.{'mp4' if kind == 'video' else 'jpg'}"
+        (config.MEDIA_DIR / "assets").mkdir(parents=True, exist_ok=True)
+        (config.MEDIA_DIR / "thumbs").mkdir(parents=True, exist_ok=True)
+        Image.new("RGB", size, (90, 120, 150)).save(config.MEDIA_DIR / rel.replace(".mp4", ".jpg"), "JPEG")
+        Image.new("RGB", (60, 100), (90, 120, 150)).save(config.MEDIA_DIR / f"thumbs/{aid}.jpg", "JPEG")
+        with database.connect() as conn:
+            conn.execute("INSERT INTO assets (id, provider, provider_asset_id, asset_type, local_path, thumb_path, "
+                         "brightness, saturation, contrast, perceptual_hash) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                         (aid, provider, pid or aid, kind, rel.replace(".mp4", ".jpg") if kind == "image" else rel,
+                          f"thumbs/{aid}.jpg", 0.4, 0.3, 0.5, "00ff00ff00ff00ff"))
+        return aid
+
+    def _piece(self, fmt="image_voiced", backdrop="clips", kind="video", want=5) -> str:
+        p = projects.create({"topic": "patience", "tone": "stoic", "format": fmt, "backdrop": backdrop,
+                             "quantity": 1, "platforms": ["tiktok"]})
+        piece_id = uuid.uuid4().hex[:12]
+        ai = [{"key": f"pexels:{8000 + i}", "queries": ["fog"], "note": None} for i in range(want)]
+        with database.connect() as conn:
+            conn.execute("INSERT INTO content_pieces (id, project_id, idx, status, angle, quote, content) "
+                         "VALUES (?,?,?,?,?,?,?)", (piece_id, p["id"], 1, "written", "a", "q", json.dumps(
+                             {"review": {"want": want, "type": kind, "options": ai,
+                                         "picked": [o["key"] for o in ai]}})))
+        return piece_id
+
+    def test_library_items_are_reused_first_without_downloading(self):
+        piece = self._piece()
+        clip, photo = self._library_asset("video"), self._library_asset("image")
+        r = assets.add_from_library(piece, [clip, photo])
+        self.assertEqual(r["picked"][:2], [o["key"] for o in r["added"]])  # in the order ticked, ahead of the AI
+        self.assertEqual([o["queries"] for o in r["added"]], [["your library"]] * 2)
+        self.assertTrue(r["added"][0]["thumb"].startswith("thumbs/"))  # the library's own thumbnail, kept forever
+
+    def test_a_photo_post_refuses_library_clips_with_a_reason(self):
+        piece = self._piece(fmt="image_voiced", backdrop="photo", kind="image", want=1)
+        clip, photo = self._library_asset("video"), self._library_asset("image")
+        r = assets.add_from_library(piece, [clip, photo])
+        self.assertEqual(len(r["added"]), 1)
+        self.assertIn("video", r["skipped"][0]["reason"])
+
+    def test_an_old_small_pexels_photo_is_fetched_full_size_when_reused(self):
+        from app import config
+        aid = self._library_asset("image", size=(731, 1300), pid="777")
+
+        class Pexels:
+            name = "pexels"
+
+            async def by_id(self, slug, kind):
+                return Candidate(provider="pexels", provider_asset_id=slug, asset_type=kind, download_url="u",
+                                 thumb_url="t")
+
+            async def download(self, c):
+                out = io.BytesIO()
+                Image.new("RGB", (1440, 2560), (1, 2, 3)).save(out, "JPEG")
+                return out.getvalue()
+        asyncio.run(assets._sharpen_old(aid, Pexels()))
+        with database.connect() as conn:
+            rel = conn.execute("SELECT local_path FROM assets WHERE id = ?", (aid,)).fetchone()[0]
+        with Image.open(config.MEDIA_DIR / rel) as im:
+            self.assertEqual(im.size, (1440, 2560))
+        asyncio.run(assets._sharpen_old(aid, Pexels()))  # already full size: left alone
+
 if __name__ == "__main__":
     unittest.main()

@@ -48,7 +48,7 @@ def render(video, start: float, end: float, out: Path, words: list[dict], burn: 
         # push-in centred across, a little above centre down: the face sits in the upper half, keep its headroom
         push = f",crop=iw/{z:.3f}:ih/{z:.3f}:(iw-iw/{z:.3f})/2:(ih-ih/{z:.3f})*0.4" if z > 1.001 else ""
         graph.append(f"[{i}:v]setpts=PTS-STARTPTS,"
-                     f"{crop_filter(video, a, b, (rw, rh))}{push},scale={width}:{height},setsar=1[v{i}]")
+                     f"{crop_filter(video, a, b, (rw, rh))}{push},scale={width}:{height}:flags=lanczos,unsharp=5:5:0.45:5:5:0,setsar=1[v{i}]")
         graph.append(f"[{i}:a]asetpts=PTS-STARTPTS,"
                      f"afade=t=in:d={FADE},afade=t=out:st={max(0, d - FADE):.3f}:d={FADE}[a{i}]")
         joins += f"[v{i}][a{i}]"
